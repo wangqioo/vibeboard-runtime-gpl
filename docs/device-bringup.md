@@ -283,6 +283,79 @@ source /Users/wq/esp-idf/export.sh did not add xtensa-esp32s3-elf-gcc to PATH in
 Build succeeded after explicitly adding /Users/wq/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20260121/xtensa-esp-elf/bin.
 ```
 
+### Flash Evidence
+
+Date: 2026-06-12
+
+Project:
+
+```text
+/Users/wq/Downloads/szpi-s3-esp/08-lcd_lvgl
+```
+
+First `idf.py flash` attempts failed because the board reset caused the serial port to alternate between:
+
+```text
+/dev/cu.usbmodem11301
+/dev/cu.usbmodem1101
+```
+
+Direct esptool flashing on the stable current port succeeded:
+
+```bash
+python -m esptool --chip esp32s3 -p /dev/cu.usbmodem11301 -b 460800 --before default_reset --after hard_reset write_flash @flash_args
+```
+
+Result:
+
+```text
+Wrote 20832 bytes at 0x00000000.
+Wrote 574432 bytes at 0x00010000.
+Wrote 3072 bytes at 0x00008000.
+Hash of data verified for all images.
+Hard resetting via RTS pin.
+```
+
+### Boot Log Evidence
+
+Date: 2026-06-12
+
+Captured with pyserial at 115200 baud.
+
+Key boot lines:
+
+```text
+ESP-IDF v5.5.4-dirty 2nd stage bootloader
+Boot SPI Speed : 80MHz
+SPI Mode       : DIO
+SPI Flash Size : 16MB
+Loaded app from partition at offset 0x10000
+Found 8MB PSRAM device
+Speed: 80MHz
+SPI SRAM memory test OK
+Project name: lvgl
+ESP-IDF: v5.5.4-dirty
+LVGL: Starting LVGL task
+esp32_s3_szp: Setting LCD backlight: 100%
+main_task: Returned from app_main()
+```
+
+Serial boot result:
+
+```text
+Boot success.
+PSRAM success.
+LVGL task started.
+LCD backlight command issued.
+```
+
+Physical screen result:
+
+```text
+Confirmed by user: screen shows animation.
+Touch input not yet verified.
+```
+
 ## Current Status
 
 Status as of 2026-06-12:
@@ -294,6 +367,8 @@ Local /Users/wq/Downloads/szpi-s3-esp source tree inspected.
 Source tree matches the 立创·实战派ESP32-S3 example set.
 Board identified over serial as ESP32-S3 with 8 MB PSRAM and 16 MB flash.
 Official 08-lcd_lvgl example built successfully.
-No firmware has been flashed in this repo for this board yet.
-No SD/LCD/LVGL serial logs have been collected yet.
+Official 08-lcd_lvgl example flashed successfully.
+Serial boot log confirms PSRAM, LVGL task, and LCD backlight command.
+Physical screen animation confirmed by user.
+Touch input still needs verification.
 ```
