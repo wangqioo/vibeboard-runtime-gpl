@@ -1,0 +1,4 @@
+name = Timer
+entry = main.lua
+description = Simple timer
+capabilities = lvgl,timer
