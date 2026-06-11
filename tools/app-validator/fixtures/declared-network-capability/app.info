@@ -1,0 +1,4 @@
+name = Declared Network
+entry = main.lua
+description = Uses network APIs with the capability declared
+capabilities = network

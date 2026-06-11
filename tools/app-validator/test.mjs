@@ -29,6 +29,19 @@ describe("validateAppDirectory", () => {
     assert.deepEqual(result.capabilities, ["lvgl", "timer"]);
   });
 
+  it("rejects restricted API usage without a matching capability", () => {
+    const result = validateAppDirectory(join(here, "fixtures/missing-network-capability"));
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.errors, ["Missing capability declaration: network"]);
+  });
+
+  it("accepts restricted API usage with a matching capability", () => {
+    const result = validateAppDirectory(join(here, "fixtures/declared-network-capability"));
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.capabilities, ["network"]);
+  });
+
   it("rejects a package with a missing entry file", () => {
     const result = validateAppDirectory(join(here, "fixtures/missing-entry"));
     assert.equal(result.ok, false);

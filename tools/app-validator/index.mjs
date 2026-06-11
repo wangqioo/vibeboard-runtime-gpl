@@ -1,6 +1,13 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, relative } from "node:path";
 
+const CAPABILITY_USAGE_PATTERNS = [
+  { capability: "network", pattern: /\b(?:http|net|mqtt|wifi)\s*\.|\bwebsocket\b/ },
+  { capability: "audio", pattern: /\bi2s\s*\./ },
+  { capability: "file", pattern: /\bfile\s*\./ },
+  { capability: "module", pattern: /\brequire\s*\(/ }
+];
+
 export function parseAppInfo(text) {
   const data = {};
   for (const rawLine of text.split(/\r?\n/)) {
@@ -42,6 +49,7 @@ export function validateAppDirectory(appDir) {
     if (!metadata[field]) errors.push(`Missing required field: ${field}`);
   }
 
+  let validatedEntryPath = "";
   if (metadata.entry) {
     const normalizedEntry = normalize(metadata.entry);
     if (
@@ -67,6 +75,8 @@ export function validateAppDirectory(appDir) {
           errors.push("Entry path must stay inside the app directory");
         } else if (!statSync(entryPath).isFile()) {
           errors.push(`Entry path is not a file: ${metadata.entry}`);
+        } else {
+          validatedEntryPath = entryPath;
         }
       }
     }
@@ -75,9 +85,19 @@ export function validateAppDirectory(appDir) {
   const capabilities = metadata.capabilities
     ? metadata.capabilities.split(",").map((item) => item.trim()).filter(Boolean)
     : [];
+  const declaredCapabilities = new Set(capabilities);
 
   if (metadata.kind === "service" && !capabilities.includes("service")) {
     warnings.push("Service apps should declare capabilities = service");
+  }
+
+  if (validatedEntryPath) {
+    const entryContent = readFileSync(validatedEntryPath, "utf8");
+    for (const { capability, pattern } of CAPABILITY_USAGE_PATTERNS) {
+      if (pattern.test(entryContent) && !declaredCapabilities.has(capability)) {
+        errors.push(`Missing capability declaration: ${capability}`);
+      }
+    }
   }
 
   return {

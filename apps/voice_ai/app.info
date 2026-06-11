@@ -1,3 +1,4 @@
 name = Voice AI
 entry = main.lua
 description = Voice assistant with desktop OpenAI bridge
+capabilities = network,audio,file
