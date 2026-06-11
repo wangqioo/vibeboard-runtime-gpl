@@ -300,6 +300,12 @@ npm run write:app-plan -- plan.json --package
    docs/device-bringup.md
    ```
 
+   本地立创示例源码映射：
+
+   ```text
+   docs/lckfb-szpi-s3-source-map.md
+   ```
+
 2. 决定 runtime 基线
 
    两个选择：

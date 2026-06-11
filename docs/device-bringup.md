@@ -8,6 +8,18 @@ Current user device description:
 立创 ESP32S3 开发板
 ```
 
+Local source snapshot provided by the user:
+
+```text
+/Users/wq/Downloads/szpi-s3-esp
+```
+
+Source map:
+
+```text
+docs/lckfb-szpi-s3-source-map.md
+```
+
 There are at least two relevant LCKFB documentation tracks:
 
 - `立创·实战派ESP32-S3开发板`
@@ -223,7 +235,9 @@ Status as of 2026-06-12:
 ```text
 Official documentation found.
 Docs URLs returned HTTP 200 during planning.
-Board variant not yet physically verified.
+Local /Users/wq/Downloads/szpi-s3-esp source tree inspected.
+Source tree matches the 立创·实战派ESP32-S3 example set.
+Board variant still needs physical serial/chip verification.
 No firmware has been built or flashed in this repo for this board yet.
 No SD/LCD/LVGL serial logs have been collected yet.
 ```
