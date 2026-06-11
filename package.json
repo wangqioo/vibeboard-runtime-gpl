@@ -13,6 +13,7 @@
     "test:plan-writer": "node --test tools/app-plan-writer/test.mjs",
     "validate:apps": "node tools/app-validator/validate-demo-apps.mjs",
     "package:app": "node tools/app-packager/cli.mjs",
-    "package:demos": "node tools/app-packager/package-demos.mjs"
+    "package:demos": "node tools/app-packager/package-demos.mjs",
+    "write:app-plan": "node tools/app-plan-writer/cli.mjs"
   }
 }

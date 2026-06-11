@@ -78,6 +78,29 @@ dist/apps/<app-id>/
 
 Copy the contents of `dist/apps/<app-id>/` to `/sd/apps/<app-id>/` on the device storage. This package step does not flash firmware.
 
+## Write AI App Plans
+
+Turn an AI package plan JSON file into a local app directory:
+
+```bash
+npm run write:app-plan -- plan.json
+```
+
+Write and package it in one step:
+
+```bash
+npm run write:app-plan -- plan.json --package
+```
+
+Outputs:
+
+```text
+generated/apps/<app-id>/
+dist/apps/<app-id>/        # only with --package
+```
+
+This is still a file-level workflow. It does not call an AI model, flash firmware, or upload to a device.
+
 ## AI App Generation
 
 See [docs/ai-generation-contract.md](docs/ai-generation-contract.md) for the package-plan format and fallback rules.

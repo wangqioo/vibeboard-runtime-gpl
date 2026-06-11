@@ -36,6 +36,32 @@ The package plan maps to the on-disk app package as follows:
 - `app.entry` must name the Lua entry file written by `files[]`.
 - Generated asset paths must stay inside the app directory.
 
+Write a package plan to disk:
+
+```bash
+npm run write:app-plan -- plan.json
+```
+
+Write and package it for device-storage deployment:
+
+```bash
+npm run write:app-plan -- plan.json --package
+```
+
+The writer generates `app.info` from `app` metadata. If `files[]` also contains `app.info`, the generated metadata wins so the plan has one authoritative metadata source.
+
+Default output:
+
+```text
+generated/apps/<app-id>/
+```
+
+With `--package`, the existing packager also writes:
+
+```text
+dist/apps/<app-id>/
+```
+
 Prefer Lua/LVGL app generation when the request is for:
 
 - small-screen UI;

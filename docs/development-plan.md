@@ -2,9 +2,9 @@
 
 ## 当前阶段
 
-当前项目处于 **Phase 2A：App 文件级打包工具可用**。
+当前项目处于 **Phase 2A：App 文件级打包和 AI plan 落盘工具可用**。
 
-这不是一个已经可以直接烧录到 ESP32-S3 的完整运行时固件。它现在的价值是把 HoloCubic/Cubic Lua 的 Lua/LVGL App 生态、NES 动态模块源码、VibeBoard 自己的 App 包规范、验证工具和文件级打包工具整理成一个独立 GPL 项目，为后续做真实设备运行时和上传闭环打底。
+这不是一个已经可以直接烧录到 ESP32-S3 的完整运行时固件。它现在的价值是把 HoloCubic/Cubic Lua 的 Lua/LVGL App 生态、NES 动态模块源码、VibeBoard 自己的 App 包规范、验证工具、AI package plan 落盘工具和文件级打包工具整理成一个独立 GPL 项目，为后续做真实设备运行时和上传闭环打底。
 
 项目路径：
 
@@ -141,6 +141,7 @@ npm run validate:apps
 - upstream map 测试；
 - AI contract 测试；
 - packager 测试；
+- AI plan writer 测试；
 - curated app 包验证。
 
 ### 7. App 文件级打包器
@@ -188,6 +189,33 @@ dist/apps/weather/* -> /sd/apps/weather/
 
 这一步仍然是文件级部署包，不会烧录固件。
 
+### 8. AI package plan 落盘工具
+
+已实现：
+
+```text
+tools/app-plan-writer/
+```
+
+当前能做：
+
+- 读取 `docs/ai-generation-contract.md` 定义的 JSON package plan；
+- 生成 `generated/apps/<app-id>/`；
+- 从 `app` 元数据生成权威 `app.info`；
+- 安全写入 plan 内的文本文件；
+- 拒绝绝对路径和 `..` 路径逃逸；
+- 写入后复用 validator；
+- 可选调用 packager 输出 `dist/apps/<app-id>/`。
+
+可用命令：
+
+```bash
+npm run write:app-plan -- plan.json
+npm run write:app-plan -- plan.json --package
+```
+
+这一步不调用 AI 模型，只接收 AI 已经生成好的 JSON 文件。
+
 ## 当前能用什么
 
 现在能用的是 **项目底座和文件级开发能力**：
@@ -195,6 +223,8 @@ dist/apps/weather/* -> /sd/apps/weather/
 - 可以查看和继续整理上游 Lua/LVGL App；
 - 可以验证 app 包是否满足 VibeBoard Runtime 规范；
 - 可以把 curated app 打包成 `dist/apps/<app-id>/` 文件级部署包；
+- 可以把 AI package plan JSON 落盘为 `generated/apps/<app-id>/`；
+- 可以用 `--package` 把生成的 app 继续打成 `dist/apps/<app-id>/`；
 - 可以基于 `apps/weather`、`apps/voice_ai`、`apps/nesgame` 研究 App 包结构；
 - 可以基于 `docs/ai-generation-contract.md` 让 AI 生成 app package plan；
 - 可以基于 `modules/nes` 继续研究 ESP-ELFLoader 动态模块方向。
@@ -206,6 +236,7 @@ dist/apps/weather/* -> /sd/apps/weather/
 现在还不能直接完成这些事情：
 
 - 不能直接生成一个可烧录的 VibeBoard Runtime 固件；
+- 不能直接调用大模型生成 JSON plan；
 - 不能直接把 App 从浏览器上传到 ESP32 设备；
 - 不能在 VibeBoard 自己的设备 launcher 中运行这些 App；
 - 不能证明 `apps/weather` 已在目标设备上真实跑通；
@@ -239,16 +270,19 @@ dist/apps/weather/* -> /sd/apps/weather/
 
 - `package:app`；
 - `package:demos`；
+- `write:app-plan`；
 - package manifest；
 - install notes；
+- generated app writer；
 - packager 测试接入 `npm test`。
+- plan writer 测试接入 `npm test`。
 
 剩余增强：
 
-- 从 AI package plan 直接落盘生成 app 目录；
 - manifest schema 独立文档化；
 - 输出 zip/tar 包；
 - 对 assets 体积、文件数量、文件名规则做更细限制。
+- 支持 base64 二进制资产写入。
 
 ### Phase 2B：真实设备手动部署
 
