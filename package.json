@@ -5,9 +5,10 @@
   "type": "module",
   "license": "GPL-3.0-only",
   "scripts": {
-    "test": "npm run test:validator && npm run test:upstream-map",
+    "test": "npm run test:validator && npm run test:upstream-map && npm run test:ai-contract",
     "test:validator": "node --test tools/app-validator/test.mjs",
     "test:upstream-map": "node scripts/test-upstream-map.mjs",
+    "test:ai-contract": "node scripts/test-ai-contract.mjs",
     "validate:apps": "node tools/app-validator/validate-demo-apps.mjs"
   }
 }

@@ -18,4 +18,4 @@ Relevant phase documents:
 - [`docs/deployment-flow.md`](../docs/deployment-flow.md)
 - [`docs/app-package-format.md`](../docs/app-package-format.md)
 - [`docs/runtime-boundary.md`](../docs/runtime-boundary.md)
-- AI generation contract docs will be added in the next phase.
+- [`docs/ai-generation-contract.md`](../docs/ai-generation-contract.md)

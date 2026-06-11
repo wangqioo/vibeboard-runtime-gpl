@@ -46,3 +46,7 @@ Still requires runtime firmware work:
 npm test
 npm run validate:apps
 ```
+
+## AI App Generation
+
+See [docs/ai-generation-contract.md](docs/ai-generation-contract.md) for the package-plan format and fallback rules.
