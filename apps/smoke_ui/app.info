@@ -1,0 +1,4 @@
+name = smoke_ui
+entry = main.lua
+description = LVGL Lua smoke test
+capabilities = lvgl

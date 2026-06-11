@@ -3,6 +3,7 @@ idf_component_register(
         "app_runner.c"
         "app_registry.c"
         "board_lckfb_szpi_s3.c"
+        "lua_lvgl.c"
         "main.c"
     INCLUDE_DIRS "."
     REQUIRES
@@ -11,9 +12,11 @@ idf_component_register(
         esp_driver_sdmmc
         esp_driver_spi
         esp_lcd
+        espressif__esp_lvgl_port
         esp_psram
         fatfs
         georgik__lua
+        lvgl__lvgl
         sdmmc
         vfs
 )

@@ -54,6 +54,8 @@ static void show_boot_screen(const vb_board_status_t *board,
 
     if (scan_err != ESP_OK || apps->app_count <= 0) {
         snprintf(line, sizeof(line), "Lua: no app");
+    } else if (run == NULL) {
+        snprintf(line, sizeof(line), "Lua: pending");
     } else if (run_err == ESP_OK) {
         snprintf(line, sizeof(line), "Lua: OK");
     } else {
@@ -77,10 +79,13 @@ void app_main(void)
         ESP_LOGW(TAG, "app scan unavailable: %s", esp_err_to_name(scan_err));
     }
 
+    show_boot_screen(&board, &apps, scan_err, NULL, ESP_ERR_INVALID_STATE);
+
     vb_app_runner_result_t run = {0};
     esp_err_t run_err = (scan_err == ESP_OK && apps.app_count > 0) ? vb_app_runner_run(&apps, &run) : scan_err;
-
-    show_boot_screen(&board, &apps, scan_err, &run, run_err);
+    if (run_err != ESP_OK) {
+        show_boot_screen(&board, &apps, scan_err, &run, run_err);
+    }
     ESP_LOGI(TAG,
              "VibeBoard Runtime ready: sd=%s apps=%d lua=%s",
              board.sd_ok ? "ok" : "missing",

@@ -11,6 +11,9 @@ const registrySourcePath = join(firmwareRoot, "main/app_registry.c");
 const registryHeaderPath = join(firmwareRoot, "main/app_registry.h");
 const runnerSourcePath = join(firmwareRoot, "main/app_runner.c");
 const mainSourcePath = join(firmwareRoot, "main/main.c");
+const luaLvglSourcePath = join(firmwareRoot, "main/lua_lvgl.c");
+const luaLvglHeaderPath = join(firmwareRoot, "main/lua_lvgl.h");
+const smokeUiSourcePath = join(repoRoot, "apps/smoke_ui/main.lua");
 
 function readRequired(path) {
   assert.equal(existsSync(path), true, `${path} should exist`);
@@ -74,5 +77,32 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /luaL_dofile/);
     assert.match(runner, /Lua app ok/);
     assert.match(main, /vb_app_runner_run/);
+  });
+
+  it("registers a minimal LVGL Lua surface", () => {
+    const header = readRequired(luaLvglHeaderPath);
+    const source = readRequired(luaLvglSourcePath);
+    const runner = readRequired(runnerSourcePath);
+
+    assert.match(header, /vb_lua_lvgl_register/);
+    assert.match(source, /lvgl_port_lock/);
+    assert.match(source, /lv_scr_act/);
+    assert.match(source, /lv_obj_clean/);
+    assert.match(source, /lv_label_create/);
+    assert.match(source, /lv_label_set_text/);
+    assert.match(source, /lv_obj_align/);
+    assert.match(source, /LV_ALIGN_CENTER/);
+    assert.match(runner, /vb_lua_lvgl_register\(L\)/);
+  });
+
+  it("ships a Lua smoke UI app", () => {
+    const source = readRequired(smokeUiSourcePath);
+
+    assert.match(source, /lv_scr_act\(\)/);
+    assert.match(source, /lv_obj_clean\(root\)/);
+    assert.match(source, /lv_label_create\(root\)/);
+    assert.match(source, /lv_label_set_text\(label,\s*"Hello LVGL Lua"\)/);
+    assert.match(source, /lv_obj_align\(label,\s*LV_ALIGN_CENTER,\s*0,\s*0\)/);
+    assert.match(source, /lvgl smoke ok/);
   });
 });

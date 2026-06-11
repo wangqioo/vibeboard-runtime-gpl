@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lua_lvgl.h"
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
@@ -71,6 +72,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner
     luaL_openlibs(L);
     lua_pushcfunction(L, vb_lua_print);
     lua_setglobal(L, "print");
+    vb_lua_lvgl_register(L);
 
     int lua_err = luaL_dofile(L, app->first_app_path);
     if (lua_err != LUA_OK) {
