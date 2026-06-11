@@ -1,0 +1,4 @@
+name = smoke
+entry = main.lua
+description = Lua smoke test
+capabilities =

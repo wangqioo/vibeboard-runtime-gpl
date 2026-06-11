@@ -1,5 +1,6 @@
 idf_component_register(
     SRCS
+        "app_runner.c"
         "app_registry.c"
         "board_lckfb_szpi_s3.c"
         "main.c"
@@ -12,6 +13,7 @@ idf_component_register(
         esp_lcd
         esp_psram
         fatfs
+        georgik__lua
         sdmmc
         vfs
 )

@@ -8,6 +8,9 @@ const firmwareRoot = join(repoRoot, "firmware/vibeboard_runtime");
 const boardHeaderPath = join(firmwareRoot, "main/board_lckfb_szpi_s3.h");
 const boardSourcePath = join(firmwareRoot, "main/board_lckfb_szpi_s3.c");
 const registrySourcePath = join(firmwareRoot, "main/app_registry.c");
+const registryHeaderPath = join(firmwareRoot, "main/app_registry.h");
+const runnerSourcePath = join(firmwareRoot, "main/app_runner.c");
+const mainSourcePath = join(firmwareRoot, "main/main.c");
 
 function readRequired(path) {
   assert.equal(existsSync(path), true, `${path} should exist`);
@@ -42,11 +45,32 @@ describe("vibeboard runtime firmware static guardrails", () => {
   });
 
   it("scans the board app directory", () => {
-    const header = readRequired(join(firmwareRoot, "main/app_registry.h"));
+    const header = readRequired(registryHeaderPath);
     const source = readRequired(registrySourcePath);
 
     assert.match(header, /VB_APPS_PATH\s+"\/sdcard\/apps"/);
     assert.match(source, /VB_APPS_PATH/);
     assert.match(source, /app\.info/);
+  });
+
+  it("tracks the first app entry path for execution", () => {
+    const header = readRequired(registryHeaderPath);
+    const source = readRequired(registrySourcePath);
+
+    assert.match(header, /first_app_entry/);
+    assert.match(header, /first_app_path/);
+    assert.match(source, /entry/);
+    assert.match(source, /main\.lua/);
+  });
+
+  it("runs the first app through a Lua runner", () => {
+    const runner = readRequired(runnerSourcePath);
+    const main = readRequired(mainSourcePath);
+
+    assert.match(runner, /luaL_newstate/);
+    assert.match(runner, /luaL_openlibs/);
+    assert.match(runner, /luaL_dofile/);
+    assert.match(runner, /Lua app ok/);
+    assert.match(main, /vb_app_runner_run/);
   });
 });
