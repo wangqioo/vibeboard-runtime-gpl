@@ -52,3 +52,7 @@ npm run validate:apps
 ## AI App Generation
 
 See [docs/ai-generation-contract.md](docs/ai-generation-contract.md) for the package-plan format and fallback rules.
+
+## Development Plan
+
+See [docs/development-plan.md](docs/development-plan.md) for the current status, completed work, and next-phase roadmap.
