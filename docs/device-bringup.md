@@ -520,6 +520,71 @@ The runtime executed /sdcard/apps/smoke/main.lua.
 Lua print() output reached ESP-IDF serial logs.
 ```
 
+### LVGL Lua Smoke UI Evidence
+
+Date: 2026-06-12
+
+Source commit:
+
+```text
+66b71a3 feat: add minimal LVGL Lua bindings
+```
+
+Implemented Lua API surface:
+
+```text
+lv_scr_act()
+lv_obj_clean(obj)
+lv_label_create(parent)
+lv_label_set_text(label, text)
+lv_obj_align(obj, align, x, y)
+LV_ALIGN_CENTER
+```
+
+SD card preparation:
+
+```text
+Copied package: /Users/wq/vibeboard-runtime-gpl/dist/apps/smoke_ui
+Device path on SD: /apps/smoke_ui
+Only enabled app.info left on SD: /apps/smoke_ui/app.info
+Disabled old smoke package by renaming /apps/smoke/app.info to /apps/smoke/app.info.disabled.
+```
+
+Build and flash result:
+
+```text
+idf.py build completed.
+vibeboard_runtime.bin binary size 0xb0180 bytes.
+Flashed bootloader, partition table, and vibeboard_runtime.bin to /dev/cu.usbmodem11301.
+Flash hash verification passed.
+```
+
+Key boot lines:
+
+```text
+Project name:     vibeboard_runtime
+App version:      41c685b-dirty
+Name: SD64G
+Type: SDHC
+SSR: bus_width=1
+app_registry: found 1 apps
+Lua app start: smoke_ui
+lvgl smoke ok
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+```
+
+Runtime result:
+
+```text
+FAT32 SD mount succeeded.
+The runtime scanned /sdcard/apps.
+The smoke_ui package was discovered as the only enabled app.
+The runtime executed /sdcard/apps/smoke_ui/main.lua.
+Lua called the firmware LVGL bridge without crashing.
+The app cleared the screen, created a label, set text to "Hello LVGL Lua", and centered it.
+```
+
 ## Current Status
 
 Status as of 2026-06-12:
@@ -542,6 +607,8 @@ FAT32 SD card mount verified.
 Weather app package discovery verified: app_registry found 1 app and runtime reports sd=ok apps=1.
 Lua smoke app execution verified from SD card.
 Lua print() bridge verified in serial logs.
+Minimal LVGL Lua binding implemented and verified with smoke_ui from SD card.
+smoke_ui serial logs verified: Lua app start, lvgl smoke ok, Lua app ok.
 Touch input still needs verification.
-LVGL Lua bindings still need implementation before visual apps can run.
+Broader LVGL API coverage, fonts, images, timers, events, and real weather UI still need implementation.
 ```
