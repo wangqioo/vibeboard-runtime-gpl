@@ -356,6 +356,82 @@ Confirmed by user: screen shows animation.
 Touch input not yet verified.
 ```
 
+### VibeBoard Runtime Skeleton Evidence
+
+Date: 2026-06-12
+
+Project:
+
+```text
+/Users/wq/vibeboard-runtime-gpl/firmware/vibeboard_runtime
+```
+
+Committed source version:
+
+```text
+147fdfb feat: add LCKFB runtime firmware skeleton
+```
+
+Build command:
+
+```bash
+export IDF_PATH=/Users/wq/esp-idf
+export IDF_PYTHON_ENV_PATH=/Users/wq/.espressif/python_env/idf5.5_py3.13_env
+export PATH=/Users/wq/.espressif/python_env/idf5.5_py3.13_env/bin:/Users/wq/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20260121/xtensa-esp-elf/bin:$PATH
+python /Users/wq/esp-idf/tools/idf.py build
+```
+
+Build result:
+
+```text
+Project build complete.
+Generated build/vibeboard_runtime.bin
+vibeboard_runtime.bin binary size: 0x8a5c0
+Smallest app partition: 0x100000
+Free app partition space: 0x75a40
+```
+
+Flash command:
+
+```bash
+python -m esptool --chip esp32s3 -p /dev/cu.usbmodem11301 -b 460800 --before default_reset --after hard_reset write_flash @flash_args
+```
+
+Flash result:
+
+```text
+Wrote 20832 bytes at 0x00000000.
+Wrote 566720 bytes at 0x00010000.
+Wrote 3072 bytes at 0x00008000.
+Hash of data verified for all images.
+Hard resetting via RTS pin.
+```
+
+Key boot lines:
+
+```text
+Project name:     vibeboard_runtime
+App version:      147fdfb
+Found 8MB PSRAM device
+VibeBoard Runtime start
+VibeBoard Runtime board start
+LVGL: Starting LVGL task
+SD mount failed: ESP_ERR_TIMEOUT
+app scan unavailable: ESP_ERR_TIMEOUT
+VibeBoard Runtime ready: sd=missing apps=0
+```
+
+Runtime result:
+
+```text
+Boot success.
+PSRAM success.
+LVGL task started.
+Runtime UI path reached.
+SD card mount did not succeed in this run: ESP_ERR_TIMEOUT.
+App scan did not run because SD was unavailable.
+```
+
 ## Current Status
 
 Status as of 2026-06-12:
@@ -370,5 +446,10 @@ Official 08-lcd_lvgl example built successfully.
 Official 08-lcd_lvgl example flashed successfully.
 Serial boot log confirms PSRAM, LVGL task, and LCD backlight command.
 Physical screen animation confirmed by user.
+VibeBoard Runtime skeleton builds successfully.
+VibeBoard Runtime skeleton flashed successfully.
+Serial boot log confirms the committed runtime version 147fdfb starts and reaches Runtime ready.
+Runtime currently tolerates missing SD card and reports sd=missing apps=0.
 Touch input still needs verification.
+SD card mount still needs verification.
 ```
