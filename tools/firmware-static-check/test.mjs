@@ -87,22 +87,41 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /vb_lua_lvgl_register/);
     assert.match(source, /lvgl_port_lock/);
     assert.match(source, /lv_scr_act/);
+    assert.match(source, /lv_obj_create/);
     assert.match(source, /lv_obj_clean/);
+    assert.match(source, /lv_obj_set_size/);
+    assert.match(source, /lv_obj_set_width/);
+    assert.match(source, /lv_obj_set_height/);
+    assert.match(source, /lv_obj_set_style_bg_color/);
+    assert.match(source, /lv_obj_set_style_text_color/);
+    assert.match(source, /lv_obj_set_style_radius/);
+    assert.match(source, /lv_obj_set_style_pad_all/);
+    assert.match(source, /lv_obj_set_style_border_width/);
+    assert.match(source, /lv_obj_set_style_border_color/);
     assert.match(source, /lv_label_create/);
     assert.match(source, /lv_label_set_text/);
     assert.match(source, /lv_obj_align/);
     assert.match(source, /LV_ALIGN_CENTER/);
+    assert.match(source, /LV_ALIGN_TOP_LEFT/);
+    assert.match(source, /LV_ALIGN_TOP_MID/);
+    assert.match(source, /LV_ALIGN_BOTTOM_LEFT/);
     assert.match(runner, /vb_lua_lvgl_register\(L\)/);
   });
 
-  it("ships a Lua smoke UI app", () => {
+  it("ships a Lua weather card smoke UI app", () => {
     const source = readRequired(smokeUiSourcePath);
 
     assert.match(source, /lv_scr_act\(\)/);
     assert.match(source, /lv_obj_clean\(root\)/);
-    assert.match(source, /lv_label_create\(root\)/);
-    assert.match(source, /lv_label_set_text\(label,\s*"Hello LVGL Lua"\)/);
-    assert.match(source, /lv_obj_align\(label,\s*LV_ALIGN_CENTER,\s*0,\s*0\)/);
-    assert.match(source, /lvgl smoke ok/);
+    assert.match(source, /lv_obj_set_style_bg_color\(root,\s*0x[0-9a-fA-F]+\)/);
+    assert.match(source, /lv_obj_create\(root\)/);
+    assert.match(source, /lv_obj_set_size\(card,\s*288,\s*196\)/);
+    assert.match(source, /lv_label_set_text\(title,\s*"VibeBoard Weather"\)/);
+    assert.match(source, /lv_label_set_text\(location,\s*"Shenzhen"\)/);
+    assert.match(source, /lv_label_set_text\(temp,\s*"26C"\)/);
+    assert.match(source, /lv_label_set_text\(condition,\s*"Cloudy"\)/);
+    assert.match(source, /Humidity 68%/);
+    assert.match(source, /Wind 12 km\/h/);
+    assert.match(source, /weather card ok/);
   });
 });

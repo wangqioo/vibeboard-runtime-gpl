@@ -55,6 +55,26 @@ static int l_lv_obj_clean(lua_State *L)
     return 0;
 }
 
+static int l_lv_obj_create(lua_State *L)
+{
+    int parent_id = check_object_id(L, 1);
+    if (s_object_count >= VB_LVGL_OBJECT_MAX) {
+        return luaL_error(L, "lvgl object table full");
+    }
+
+    lvgl_port_lock(0);
+    lv_obj_t *parent = resolve_object(parent_id);
+    lv_obj_t *object = lv_obj_create(parent);
+    lvgl_port_unlock();
+    if (object == NULL) {
+        return luaL_error(L, "lvgl object allocation failed");
+    }
+
+    int id = store_object(object);
+    lua_pushinteger(L, id);
+    return 1;
+}
+
 static int l_lv_label_create(lua_State *L)
 {
     int parent_id = check_object_id(L, 1);
@@ -73,6 +93,115 @@ static int l_lv_label_create(lua_State *L)
     int id = store_object(label);
     lua_pushinteger(L, id);
     return 1;
+}
+
+static int l_lv_obj_set_size(lua_State *L)
+{
+    int id = check_object_id(L, 1);
+    int width = (int)luaL_checkinteger(L, 2);
+    int height = (int)luaL_checkinteger(L, 3);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = resolve_object(id);
+    lv_obj_set_size(object, width, height);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_width(lua_State *L)
+{
+    int id = check_object_id(L, 1);
+    int width = (int)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = resolve_object(id);
+    lv_obj_set_width(object, width);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_height(lua_State *L)
+{
+    int id = check_object_id(L, 1);
+    int height = (int)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = resolve_object(id);
+    lv_obj_set_height(object, height);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_style_bg_color(lua_State *L)
+{
+    int id = check_object_id(L, 1);
+    uint32_t color = (uint32_t)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = resolve_object(id);
+    lv_obj_set_style_bg_color(object, lv_color_hex(color), 0);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_style_text_color(lua_State *L)
+{
+    int id = check_object_id(L, 1);
+    uint32_t color = (uint32_t)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = resolve_object(id);
+    lv_obj_set_style_text_color(object, lv_color_hex(color), 0);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_style_radius(lua_State *L)
+{
+    int id = check_object_id(L, 1);
+    int radius = (int)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = resolve_object(id);
+    lv_obj_set_style_radius(object, radius, 0);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_style_pad_all(lua_State *L)
+{
+    int id = check_object_id(L, 1);
+    int pad = (int)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = resolve_object(id);
+    lv_obj_set_style_pad_all(object, pad, 0);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_style_border_width(lua_State *L)
+{
+    int id = check_object_id(L, 1);
+    int width = (int)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = resolve_object(id);
+    lv_obj_set_style_border_width(object, width, 0);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_style_border_color(lua_State *L)
+{
+    int id = check_object_id(L, 1);
+    uint32_t color = (uint32_t)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = resolve_object(id);
+    lv_obj_set_style_border_color(object, lv_color_hex(color), 0);
+    lvgl_port_unlock();
+    return 0;
 }
 
 static int l_lv_label_set_text(lua_State *L)
@@ -112,8 +241,38 @@ void vb_lua_lvgl_register(lua_State *L)
     lua_pushcfunction(L, l_lv_obj_clean);
     lua_setglobal(L, "lv_obj_clean");
 
+    lua_pushcfunction(L, l_lv_obj_create);
+    lua_setglobal(L, "lv_obj_create");
+
     lua_pushcfunction(L, l_lv_label_create);
     lua_setglobal(L, "lv_label_create");
+
+    lua_pushcfunction(L, l_lv_obj_set_size);
+    lua_setglobal(L, "lv_obj_set_size");
+
+    lua_pushcfunction(L, l_lv_obj_set_width);
+    lua_setglobal(L, "lv_obj_set_width");
+
+    lua_pushcfunction(L, l_lv_obj_set_height);
+    lua_setglobal(L, "lv_obj_set_height");
+
+    lua_pushcfunction(L, l_lv_obj_set_style_bg_color);
+    lua_setglobal(L, "lv_obj_set_style_bg_color");
+
+    lua_pushcfunction(L, l_lv_obj_set_style_text_color);
+    lua_setglobal(L, "lv_obj_set_style_text_color");
+
+    lua_pushcfunction(L, l_lv_obj_set_style_radius);
+    lua_setglobal(L, "lv_obj_set_style_radius");
+
+    lua_pushcfunction(L, l_lv_obj_set_style_pad_all);
+    lua_setglobal(L, "lv_obj_set_style_pad_all");
+
+    lua_pushcfunction(L, l_lv_obj_set_style_border_width);
+    lua_setglobal(L, "lv_obj_set_style_border_width");
+
+    lua_pushcfunction(L, l_lv_obj_set_style_border_color);
+    lua_setglobal(L, "lv_obj_set_style_border_color");
 
     lua_pushcfunction(L, l_lv_label_set_text);
     lua_setglobal(L, "lv_label_set_text");
@@ -123,4 +282,13 @@ void vb_lua_lvgl_register(lua_State *L)
 
     lua_pushinteger(L, LV_ALIGN_CENTER);
     lua_setglobal(L, "LV_ALIGN_CENTER");
+
+    lua_pushinteger(L, LV_ALIGN_TOP_LEFT);
+    lua_setglobal(L, "LV_ALIGN_TOP_LEFT");
+
+    lua_pushinteger(L, LV_ALIGN_TOP_MID);
+    lua_setglobal(L, "LV_ALIGN_TOP_MID");
+
+    lua_pushinteger(L, LV_ALIGN_BOTTOM_LEFT);
+    lua_setglobal(L, "LV_ALIGN_BOTTOM_LEFT");
 }
