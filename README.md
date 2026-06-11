@@ -6,6 +6,8 @@ The goal is to flash a generic ESP-IDF runtime once, then iterate on Lua/LVGL ap
 
 ## Boundary
 
+Phase 1 does not build a complete ESP32 runtime firmware. It organizes the GPL runtime project, imports upstream source, validates app packages, and documents the deployment path.
+
 Normal app iteration:
 
 ```text
