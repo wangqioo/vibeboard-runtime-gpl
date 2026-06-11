@@ -696,6 +696,71 @@ Serial log still confirmed: Lua app start: smoke_ui, weather card ok, Lua app ok
 User confirmed the screen displayed after the fix.
 ```
 
+### Lua Interval Shanghai Weather Card Evidence
+
+Date: 2026-06-12
+
+Source commit:
+
+```text
+3ba369a feat: add Lua interval weather card
+```
+
+Implemented runtime API:
+
+```text
+set_interval(ms, callback)
+```
+
+SD card preparation:
+
+```text
+Copied package: /Users/wq/vibeboard-runtime-gpl/dist/apps/smoke_ui
+Device path on SD: /apps/smoke_ui
+Only enabled app.info left on SD: /apps/smoke_ui/app.info
+Confirmed SD app script contains Shanghai, Updated 00s, set_interval(1000, ...), and weather card dynamic ok.
+```
+
+Build and flash result:
+
+```text
+npm test passed.
+idf.py build completed.
+vibeboard_runtime.bin binary size 0xb0b50 bytes.
+Flashed bootloader, partition table, and vibeboard_runtime.bin to /dev/cu.usbmodem11301 before the final SD write.
+Flash hash verification passed.
+```
+
+Key boot lines:
+
+```text
+Project name:     vibeboard_runtime
+App version:      19b1861-dirty
+Name: SD64G
+Type: SDHC
+SSR: bus_width=1
+app_registry: found 1 apps
+Lua app start: smoke_ui
+weather card dynamic ok
+Lua interval loop start: 1 timers
+weather card tick 1
+weather card tick 2
+weather card tick 3
+Lua interval loop done
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+```
+
+Runtime result:
+
+```text
+FAT32 SD mount succeeded.
+The runtime executed the updated /sdcard/apps/smoke_ui/main.lua from SD.
+The card now shows Shanghai instead of Shenzhen.
+The Lua task remained alive long enough to call the interval callback repeatedly.
+The interval callback updated the "Updated 00s" label once per second and printed the first three ticks to serial.
+```
+
 ## Current Status
 
 Status as of 2026-06-12:
@@ -723,6 +788,7 @@ smoke_ui serial logs verified: Lua app start, lvgl smoke ok, Lua app ok.
 Weather-card LVGL Lua demo implemented and verified from SD card.
 Expanded LVGL Lua API now covers containers, size, background/text colors, border, radius, padding, and top/bottom alignment constants.
 Backlight inversion matched to the official 08-lcd_lvgl example and verified on the physical display.
+Lua interval callback runtime implemented and verified with the Shanghai dynamic weather card.
 Touch input still needs verification.
 Fonts, images, timers, events, networking, real weather data, and touch interaction still need implementation.
 ```
