@@ -290,7 +290,15 @@ npm run write:app-plan -- plan.json --package
 
 1. 选定目标设备
 
-   确认使用哪块 ESP32-S3 小屏设备，记录屏幕、触摸/按键、SD、音频、USB 串口能力。
+   当前用户手上的设备描述为 `立创 ESP32S3 开发板`。优先按 `立创·实战派ESP32-S3开发板` 调研，因为官方资料包含 2.0 寸 ST7789 屏、FT6336 触摸、TF 卡、音频、WiFi、LVGL 等路径；如果实物是普通裸开发板，则切换到 `立创·ESP32S3R8N8开发板` 资料线。
+
+   记录屏幕、触摸/按键、SD、音频、USB 串口能力。
+
+   设备 bring-up 文档：
+
+   ```text
+   docs/device-bringup.md
+   ```
 
 2. 决定 runtime 基线
 
@@ -318,7 +326,7 @@ npm run write:app-plan -- plan.json --package
 
 4. 写设备测试记录
 
-   新增：
+   持续更新：
 
    ```text
    docs/device-bringup.md
