@@ -222,11 +222,66 @@ This cannot be verified until the board has a runtime that scans `/sd/apps`.
 
 ## Open Questions
 
-- Exact physical board variant: `实战派ESP32-S3` or `ESP32S3R8N8`.
 - Whether the board already has an official firmware installed.
-- Whether the local machine sees the board as a serial device.
 - Whether the SD card is FAT32 and safe to use for testing.
-- Whether we should start with LCKFB examples or directly create a new ESP-IDF runtime skeleton.
+- Whether the flashed `08-lcd_lvgl` demo displays and accepts touch input on the physical screen.
+
+## Live Bring-Up Evidence
+
+### Serial and Chip Identity
+
+Date: 2026-06-12
+
+```text
+Serial port: /dev/cu.usbmodem11301
+Chip: ESP32-S3 QFN56 revision v0.2
+Features: WiFi, BLE, Embedded PSRAM 8MB
+Crystal: 40 MHz
+MAC: 10:51:db:80:e2:e8
+Flash: 16 MB
+Flash manufacturer: 0x46
+Flash device: 0x4018
+Flash mode in eFuse: quad
+Flash voltage: 3.3 V
+```
+
+### Local Build Evidence
+
+Date: 2026-06-12
+
+Project:
+
+```text
+/Users/wq/Downloads/szpi-s3-esp/08-lcd_lvgl
+```
+
+Command used:
+
+```bash
+export IDF_PATH=/Users/wq/esp-idf
+export IDF_PYTHON_ENV_PATH=/Users/wq/.espressif/python_env/idf5.5_py3.13_env
+export PATH=/Users/wq/.espressif/python_env/idf5.5_py3.13_env/bin:/Users/wq/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20260121/xtensa-esp-elf/bin:$PATH
+python /Users/wq/esp-idf/tools/idf.py build
+```
+
+Result:
+
+```text
+Project build complete.
+Generated build/bootloader/bootloader.bin
+Generated build/partition_table/partition-table.bin
+Generated build/lvgl.bin
+lvgl.bin binary size: 0x8c3e0
+Smallest app partition: 0x100000
+Free app partition space: 0x73c20
+```
+
+Observed environment issue:
+
+```text
+source /Users/wq/esp-idf/export.sh did not add xtensa-esp32s3-elf-gcc to PATH in this shell.
+Build succeeded after explicitly adding /Users/wq/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20260121/xtensa-esp-elf/bin.
+```
 
 ## Current Status
 
@@ -237,7 +292,8 @@ Official documentation found.
 Docs URLs returned HTTP 200 during planning.
 Local /Users/wq/Downloads/szpi-s3-esp source tree inspected.
 Source tree matches the 立创·实战派ESP32-S3 example set.
-Board variant still needs physical serial/chip verification.
-No firmware has been built or flashed in this repo for this board yet.
+Board identified over serial as ESP32-S3 with 8 MB PSRAM and 16 MB flash.
+Official 08-lcd_lvgl example built successfully.
+No firmware has been flashed in this repo for this board yet.
 No SD/LCD/LVGL serial logs have been collected yet.
 ```
