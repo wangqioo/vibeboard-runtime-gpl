@@ -658,6 +658,44 @@ Lua created a card container, styled background/text/border/radius, positioned m
 This proves a static card-style UI can now be changed from SD Lua without reflashing firmware, as long as it stays within the exposed LVGL API surface.
 ```
 
+### Backlight Inversion Fix Evidence
+
+Date: 2026-06-12
+
+Symptom:
+
+```text
+Serial logs showed SD mount, app scan, Lua app start, weather card ok, and Lua app ok.
+The physical display still appeared unlit.
+```
+
+Root cause:
+
+```text
+The official 08-lcd_lvgl example configures the GPIO42 LEDC backlight channel with .flags.output_invert = true.
+The runtime initially omitted that flag and set duty=1023, which keeps the inverted backlight output off.
+```
+
+Fix:
+
+```text
+Added .flags.output_invert = true to the backlight LEDC channel.
+Moved the 100% backlight duty call into a separate backlight_on() step after LVGL display init.
+Added a serial log: Setting LCD backlight: 100%.
+Added a static guard so the inverted backlight setting is not accidentally removed.
+```
+
+Verification:
+
+```text
+npm run test:firmware-static passed.
+idf.py build completed.
+Flashed the fixed firmware to /dev/cu.usbmodem11301.
+Serial log confirmed: board_lckfb: Setting LCD backlight: 100%.
+Serial log still confirmed: Lua app start: smoke_ui, weather card ok, Lua app ok.
+User confirmed the screen displayed after the fix.
+```
+
 ## Current Status
 
 Status as of 2026-06-12:
@@ -684,6 +722,7 @@ Minimal LVGL Lua binding implemented and verified with smoke_ui from SD card.
 smoke_ui serial logs verified: Lua app start, lvgl smoke ok, Lua app ok.
 Weather-card LVGL Lua demo implemented and verified from SD card.
 Expanded LVGL Lua API now covers containers, size, background/text colors, border, radius, padding, and top/bottom alignment constants.
+Backlight inversion matched to the official 08-lcd_lvgl example and verified on the physical display.
 Touch input still needs verification.
 Fonts, images, timers, events, networking, real weather data, and touch interaction still need implementation.
 ```

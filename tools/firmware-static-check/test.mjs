@@ -23,6 +23,7 @@ function readRequired(path) {
 describe("vibeboard runtime firmware static guardrails", () => {
   it("keeps documented LCKFB display pins", () => {
     const header = readRequired(boardHeaderPath);
+    const source = readRequired(boardSourcePath);
 
     assert.match(header, /VB_LCD_SPI_MOSI\s+GPIO_NUM_40/);
     assert.match(header, /VB_LCD_SPI_CLK\s+GPIO_NUM_41/);
@@ -30,6 +31,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /VB_LCD_BACKLIGHT\s+GPIO_NUM_42/);
     assert.match(header, /VB_LCD_H_RES\s+320/);
     assert.match(header, /VB_LCD_V_RES\s+240/);
+    assert.match(source, /\.flags\.output_invert\s*=\s*true/);
+    assert.match(source, /Setting LCD backlight: 100%%/);
   });
 
   it("keeps documented LCKFB SD pins", () => {

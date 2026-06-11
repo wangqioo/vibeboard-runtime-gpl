@@ -80,6 +80,7 @@ static esp_err_t backlight_init(void)
         .timer_sel = LEDC_TIMER_0,
         .duty = 0,
         .hpoint = 0,
+        .flags.output_invert = true,
     };
     const ledc_timer_config_t timer = {
         .speed_mode = LEDC_LOW_SPEED_MODE,
@@ -90,7 +91,12 @@ static esp_err_t backlight_init(void)
     };
 
     ESP_RETURN_ON_ERROR(ledc_timer_config(&timer), TAG, "backlight timer failed");
-    ESP_RETURN_ON_ERROR(ledc_channel_config(&channel), TAG, "backlight channel failed");
+    return ledc_channel_config(&channel);
+}
+
+static esp_err_t backlight_on(void)
+{
+    ESP_LOGI(TAG, "Setting LCD backlight: 100%%");
     ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023), TAG, "backlight duty failed");
     return ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
@@ -258,6 +264,7 @@ esp_err_t vb_board_start(vb_board_status_t *status)
     ESP_RETURN_ON_ERROR(pca9557_init(), TAG, "pca9557 init failed");
     ESP_RETURN_ON_ERROR(display_init(), TAG, "display init failed");
     ESP_RETURN_ON_ERROR(lvgl_init(status), TAG, "lvgl init failed");
+    ESP_RETURN_ON_ERROR(backlight_on(), TAG, "backlight on failed");
     vb_board_mount_sd(status);
     return ESP_OK;
 }
