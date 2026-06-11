@@ -5,3 +5,6 @@ tmp/
 *.log
 dist/
 generated/
+firmware/**/build/
+firmware/**/managed_components/
+firmware/**/sdkconfig

@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS
+        "app_registry.c"
+        "board_lckfb_szpi_s3.c"
+        "main.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        esp_driver_i2c
+        esp_driver_ledc
+        esp_driver_sdmmc
+        esp_driver_spi
+        esp_lcd
+        esp_psram
+        fatfs
+        sdmmc
+        vfs
+)
