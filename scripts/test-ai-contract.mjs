@@ -6,16 +6,49 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const doc = readFileSync(join(root, "docs/ai-generation-contract.md"), "utf8");
 
-function literalPattern(text) {
-  return new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-}
+const jsonFence = doc.match(/```json\s*([\s\S]*?)```/);
+assert.ok(jsonFence, "expected first fenced json block");
 
-for (const required of [
-  "\"app\"",
-  "\"files\"",
-  "capabilities",
-  "Prefer Lua/LVGL app generation",
-  "Runtime update required"
+const plan = JSON.parse(jsonFence[1]);
+
+assert.equal(typeof plan.app?.name, "string");
+assert.ok(plan.app.name.length > 0);
+assert.equal(typeof plan.app?.entry, "string");
+assert.ok(plan.app.entry.length > 0);
+assert.equal(typeof plan.app?.description, "string");
+assert.ok(plan.app.description.length > 0);
+assert.ok(Array.isArray(plan.app?.capabilities));
+assert.ok(plan.app.capabilities.length > 0);
+
+assert.ok(Array.isArray(plan.files));
+
+const appInfo = plan.files.find((file) => file.path === "app.info");
+const luaEntry = plan.files.find((file) => file.path === "main.lua");
+
+assert.ok(appInfo, "expected files[] to contain app.info");
+assert.ok(luaEntry, "expected files[] to contain main.lua");
+assert.equal(typeof appInfo.content, "string");
+assert.match(appInfo.content, /^name\s*=/m);
+assert.match(appInfo.content, /^entry\s*=/m);
+assert.match(appInfo.content, /^description\s*=/m);
+
+const capabilitiesLine = appInfo.content
+  .split("\n")
+  .find((line) => /^capabilities\s*=/.test(line));
+assert.ok(capabilitiesLine, "expected app.info capabilities line");
+
+const appInfoCapabilities = capabilitiesLine
+  .replace(/^capabilities\s*=\s*/, "")
+  .split(",")
+  .map((capability) => capability.trim())
+  .filter(Boolean);
+
+assert.deepEqual(appInfoCapabilities, plan.app.capabilities);
+
+for (const requiredBoundary of [
+  /JSON is an intermediate generation plan/i,
+  /on-disk package is app\.info \+ Lua\/assets directory/i,
+  /Runtime update required/
 ]) {
-  assert.match(doc, literalPattern(required));
+  assert.match(doc, requiredBoundary);
 }

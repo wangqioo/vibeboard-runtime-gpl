@@ -2,6 +2,10 @@
 
 The AI generator must output a package plan before files.
 
+JSON is an intermediate generation plan used by VibeBoard tooling, not the
+on-device package format. The on-disk package is app.info + Lua/assets directory,
+as documented in [App Package Format](app-package-format.md).
+
 ```json
 {
   "app": {
@@ -25,6 +29,13 @@ The AI generator must output a package plan before files.
 }
 ```
 
+The package plan maps to the on-disk app package as follows:
+
+- `app` metadata becomes `app.info` fields.
+- `files[]` becomes files written inside the app directory.
+- `app.entry` must name the Lua entry file written by `files[]`.
+- Generated asset paths must stay inside the app directory.
+
 Prefer Lua/LVGL app generation when the request is for:
 
 - small-screen UI;
@@ -34,7 +45,7 @@ Prefer Lua/LVGL app generation when the request is for:
 - AI widget;
 - network card using existing runtime APIs.
 
-Return `Runtime update required` when the request needs:
+Return or report `Runtime update required` when the request needs:
 
 - driver changes;
 - pin-map changes;
@@ -42,3 +53,7 @@ Return `Runtime update required` when the request needs:
 - partition or sdkconfig changes;
 - LVGL bindings not exposed by the runtime;
 - native module ABI changes.
+
+Requests that return `Runtime update required` must route to firmware/runtime
+work instead of pretending the app package can provide the missing driver,
+binding, partition, or ABI support.
