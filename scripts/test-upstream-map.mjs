@@ -20,6 +20,42 @@ for (const path of requiredPaths) {
 }
 
 const notice = readFileSync(join(root, "NOTICE.md"), "utf8");
+const upstreamMap = readFileSync(join(root, "docs/upstream-map.md"), "utf8");
+
+const expectedPairs = [
+  [
+    "upstream/holocubic-apps/",
+    "https://github.com/clocteck/holocubic-apps"
+  ],
+  [
+    "upstream/holocubic-nes-esp32/",
+    "https://github.com/clocteck/holocubic-nes-esp32"
+  ],
+  ["apps/weather/", "upstream/holocubic-apps/weather/"],
+  ["apps/voice_ai/", "upstream/holocubic-apps/voice_ai/"],
+  ["apps/nesgame/", "upstream/holocubic-apps/nesgame/"],
+  ["modules/nes/", "upstream/holocubic-nes-esp32/"]
+];
+
+function assertDocumentedPair(documentText, documentName, left, right) {
+  const rows = documentText.split("\n").filter((line) => line.trim().startsWith("|"));
+  const hasPair = rows.some((row) => {
+    const cells = row
+      .split("|")
+      .map((cell) => cell.trim().replaceAll("`", ""))
+      .filter(Boolean);
+
+    return cells.includes(left) && cells.includes(right);
+  });
+
+  assert.equal(hasPair, true, `${documentName} should map ${left} to ${right}`);
+}
+
+for (const [left, right] of expectedPairs) {
+  assertDocumentedPair(upstreamMap, "docs/upstream-map.md", left, right);
+  assertDocumentedPair(notice, "NOTICE.md", left, right);
+}
+
 assert.match(notice, /clocteck\/holocubic-apps/);
 assert.match(notice, /clocteck\/holocubic-nes-esp32/);
 assert.match(notice, /GPL-3\.0/);
