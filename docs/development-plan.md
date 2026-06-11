@@ -2,9 +2,9 @@
 
 ## 当前阶段
 
-当前项目处于 **Phase 1：GPL Runtime 项目底座完成**。
+当前项目处于 **Phase 2A：App 文件级打包工具可用**。
 
-这不是一个已经可以直接烧录到 ESP32-S3 的完整运行时固件。它现在的价值是把 HoloCubic/Cubic Lua 的 Lua/LVGL App 生态、NES 动态模块源码、VibeBoard 自己的 App 包规范和验证工具整理成一个独立 GPL 项目，为后续做真实设备运行时打底。
+这不是一个已经可以直接烧录到 ESP32-S3 的完整运行时固件。它现在的价值是把 HoloCubic/Cubic Lua 的 Lua/LVGL App 生态、NES 动态模块源码、VibeBoard 自己的 App 包规范、验证工具和文件级打包工具整理成一个独立 GPL 项目，为后续做真实设备运行时和上传闭环打底。
 
 项目路径：
 
@@ -140,7 +140,53 @@ npm run validate:apps
 - validator 测试；
 - upstream map 测试；
 - AI contract 测试；
+- packager 测试；
 - curated app 包验证。
+
+### 7. App 文件级打包器
+
+已实现：
+
+```text
+tools/app-packager/
+```
+
+当前能做：
+
+- 打包单个 app 目录；
+- 打包全部 curated demo；
+- 打包前复用 validator；
+- 拒绝 repo 外部 app 目录；
+- 跳过 symlink；
+- 输出 `manifest.json`；
+- 输出 `install-notes.txt`；
+- 把产物放入 `dist/apps/<app-id>/`。
+
+可用命令：
+
+```bash
+npm run package:app -- apps/weather
+npm run package:demos
+```
+
+产物示例：
+
+```text
+dist/apps/weather/
+  app.info
+  main.lua
+  assets/...
+  manifest.json
+  install-notes.txt
+```
+
+部署含义：
+
+```text
+dist/apps/weather/* -> /sd/apps/weather/
+```
+
+这一步仍然是文件级部署包，不会烧录固件。
 
 ## 当前能用什么
 
@@ -148,6 +194,7 @@ npm run validate:apps
 
 - 可以查看和继续整理上游 Lua/LVGL App；
 - 可以验证 app 包是否满足 VibeBoard Runtime 规范；
+- 可以把 curated app 打包成 `dist/apps/<app-id>/` 文件级部署包；
 - 可以基于 `apps/weather`、`apps/voice_ai`、`apps/nesgame` 研究 App 包结构；
 - 可以基于 `docs/ai-generation-contract.md` 让 AI 生成 app package plan；
 - 可以基于 `modules/nes` 继续研究 ESP-ELFLoader 动态模块方向。
@@ -183,6 +230,27 @@ npm run validate:apps
 ## Phase 2：真实设备闭环
 
 目标：证明至少一个 App 能在真实设备上跑起来。
+
+### Phase 2A：文件级打包
+
+状态：已完成基础版。
+
+已完成：
+
+- `package:app`；
+- `package:demos`；
+- package manifest；
+- install notes；
+- packager 测试接入 `npm test`。
+
+剩余增强：
+
+- 从 AI package plan 直接落盘生成 app 目录；
+- manifest schema 独立文档化；
+- 输出 zip/tar 包；
+- 对 assets 体积、文件数量、文件名规则做更细限制。
+
+### Phase 2B：真实设备手动部署
 
 建议任务：
 

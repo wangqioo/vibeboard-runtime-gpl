@@ -6,13 +6,14 @@ The goal is to flash a generic ESP-IDF runtime once, then iterate on Lua/LVGL ap
 
 ## Boundary
 
-Phase 1 does not build a complete ESP32 runtime firmware. It organizes the GPL runtime project, imports upstream source, validates app packages, and documents the deployment path.
+Phase 2A does not build a complete ESP32 runtime firmware. It organizes the GPL runtime project, imports upstream source, validates app packages, and can create file-level deployment packages under `dist/apps/`.
 
 Normal app iteration:
 
 ```text
 AI generates app.info + Lua + assets
   -> validator checks package
+  -> packager creates dist/apps/<app-id>
   -> user deploys files to device storage
   -> launcher runs the app
 ```
@@ -34,6 +35,7 @@ Still requires runtime firmware work:
 | `apps/` | Curated VibeBoard-facing app packages. |
 | `modules/` | Curated native module paths. |
 | `tools/app-validator/` | Package metadata parser and validator. |
+| `tools/app-packager/` | Validated app directory packager for device-storage deployment. |
 | `docs/` | Runtime, deployment, app package, and AI generation docs. |
 
 ## First Demo Apps
@@ -48,6 +50,33 @@ Still requires runtime firmware work:
 npm test
 npm run validate:apps
 ```
+
+## Package Apps
+
+Package one app:
+
+```bash
+npm run package:app -- apps/weather
+```
+
+Package all curated demos:
+
+```bash
+npm run package:demos
+```
+
+Outputs are written to:
+
+```text
+dist/apps/<app-id>/
+  app.info
+  main.lua
+  assets/...
+  manifest.json
+  install-notes.txt
+```
+
+Copy the contents of `dist/apps/<app-id>/` to `/sd/apps/<app-id>/` on the device storage. This package step does not flash firmware.
 
 ## AI App Generation
 
