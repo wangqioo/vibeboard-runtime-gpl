@@ -432,6 +432,43 @@ SD card mount did not succeed in this run: ESP_ERR_TIMEOUT.
 App scan did not run because SD was unavailable.
 ```
 
+### FAT32 SD App Scan Evidence
+
+Date: 2026-06-12
+
+SD card preparation on macOS:
+
+```text
+Original card format observed: ExFAT
+Formatted target: FAT32
+Formatted volume name: VIBESD
+Copied package: /Users/wq/vibeboard-runtime-gpl/dist/apps/weather
+Device path on SD: /apps/weather
+Required metadata: /apps/weather/app.info
+```
+
+Key boot lines after inserting the FAT32 card into the board:
+
+```text
+Name: SD64G
+Type: SDHC
+Speed: 20.00 MHz (limit: 20.00 MHz)
+Size: 60906MB
+CSD: ver=2, sector_size=512, capacity=124735488 read_bl_len=9
+SSR: bus_width=1
+app_registry: found 1 apps
+VibeBoard Runtime ready: sd=ok apps=1
+```
+
+Runtime result:
+
+```text
+FAT32 SD mount succeeded.
+The runtime scanned /sdcard/apps.
+The weather package at /apps/weather was counted as one app.
+Lua execution is not implemented yet; this only proves file-level app discovery.
+```
+
 ## Current Status
 
 Status as of 2026-06-12:
@@ -450,6 +487,8 @@ VibeBoard Runtime skeleton builds successfully.
 VibeBoard Runtime skeleton flashed successfully.
 Serial boot log confirms the committed runtime version 147fdfb starts and reaches Runtime ready.
 Runtime currently tolerates missing SD card and reports sd=missing apps=0.
+FAT32 SD card mount verified.
+Weather app package discovery verified: app_registry found 1 app and runtime reports sd=ok apps=1.
 Touch input still needs verification.
-SD card mount still needs verification.
+Lua app execution still needs implementation.
 ```
