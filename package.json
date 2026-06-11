@@ -9,6 +9,6 @@
     "test:validator": "node --test tools/app-validator/test.mjs",
     "test:upstream-map": "node scripts/test-upstream-map.mjs",
     "test:ai-contract": "node scripts/test-ai-contract.mjs",
-    "validate:apps": "node tools/app-validator/cli.mjs apps/weather apps/voice_ai apps/nesgame"
+    "validate:apps": "node tools/app-validator/validate-demo-apps.mjs"
   }
 }

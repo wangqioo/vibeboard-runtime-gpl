@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, relative } from "node:path";
 
 export function parseAppInfo(text) {
@@ -55,8 +55,19 @@ export function validateAppDirectory(appDir) {
       const entryPath = join(appDir, normalizedEntry);
       if (!existsSync(entryPath)) {
         errors.push(`Entry file does not exist: ${metadata.entry}`);
-      } else if (!statSync(entryPath).isFile()) {
-        errors.push(`Entry path is not a file: ${metadata.entry}`);
+      } else {
+        const resolvedAppDir = realpathSync(appDir);
+        const resolvedEntryPath = realpathSync(entryPath);
+        const resolvedRelativeEntry = relative(resolvedAppDir, resolvedEntryPath);
+        if (
+          resolvedRelativeEntry === ".." ||
+          resolvedRelativeEntry.startsWith("../") ||
+          isAbsolute(resolvedRelativeEntry)
+        ) {
+          errors.push("Entry path must stay inside the app directory");
+        } else if (!statSync(entryPath).isFile()) {
+          errors.push(`Entry path is not a file: ${metadata.entry}`);
+        }
       }
     }
   }
