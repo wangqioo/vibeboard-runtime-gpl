@@ -75,10 +75,9 @@ tmp/
   "type": "module",
   "license": "GPL-3.0-only",
   "scripts": {
-    "test": "npm run test:validator && npm run test:upstream-map && npm run test:ai-contract",
+    "test": "npm run test:validator && npm run test:upstream-map",
     "test:validator": "node --test tools/app-validator/test.mjs",
     "test:upstream-map": "node scripts/test-upstream-map.mjs",
-    "test:ai-contract": "node scripts/test-ai-contract.mjs",
     "validate:apps": "node tools/app-validator/cli.mjs apps/weather apps/voice_ai apps/nesgame"
   }
 }
@@ -743,6 +742,7 @@ git commit -m "feat: curate first runtime demo apps"
 **Files:**
 - Create: `docs/ai-generation-contract.md`
 - Create: `scripts/test-ai-contract.mjs`
+- Modify: `package.json`
 - Modify: `README.md`
 
 - [ ] **Step 1: Create `docs/ai-generation-contract.md`**
@@ -825,7 +825,20 @@ Add this under `Validate` in `README.md`:
 See [docs/ai-generation-contract.md](docs/ai-generation-contract.md) for the package-plan format and fallback rules.
 ```
 
-- [ ] **Step 4: Run contract test**
+- [ ] **Step 4: Add AI contract test script**
+
+Update `package.json` after `scripts/test-ai-contract.mjs` exists:
+
+```json
+{
+  "scripts": {
+    "test": "npm run test:validator && npm run test:upstream-map && npm run test:ai-contract",
+    "test:ai-contract": "node scripts/test-ai-contract.mjs"
+  }
+}
+```
+
+- [ ] **Step 5: Run contract test**
 
 Run:
 
@@ -835,7 +848,7 @@ npm run test:ai-contract
 
 Expected: exits 0.
 
-- [ ] **Step 5: Run full tests**
+- [ ] **Step 6: Run full tests**
 
 Run:
 
@@ -845,7 +858,7 @@ npm test
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add docs/ai-generation-contract.md scripts/test-ai-contract.mjs README.md package.json
