@@ -585,6 +585,79 @@ Lua called the firmware LVGL bridge without crashing.
 The app cleared the screen, created a label, set text to "Hello LVGL Lua", and centered it.
 ```
 
+### Weather Card LVGL Lua Evidence
+
+Date: 2026-06-12
+
+Source commit:
+
+```text
+ea1c44c feat: add weather card LVGL Lua demo
+```
+
+Implemented additional Lua API surface:
+
+```text
+lv_obj_create(parent)
+lv_obj_set_size(obj, width, height)
+lv_obj_set_width(obj, width)
+lv_obj_set_height(obj, height)
+lv_obj_set_style_bg_color(obj, hex_color)
+lv_obj_set_style_text_color(obj, hex_color)
+lv_obj_set_style_radius(obj, radius)
+lv_obj_set_style_pad_all(obj, pad)
+lv_obj_set_style_border_width(obj, width)
+lv_obj_set_style_border_color(obj, hex_color)
+LV_ALIGN_TOP_LEFT
+LV_ALIGN_TOP_MID
+LV_ALIGN_BOTTOM_LEFT
+```
+
+SD card preparation:
+
+```text
+Copied package: /Users/wq/vibeboard-runtime-gpl/dist/apps/smoke_ui
+Device path on SD: /apps/smoke_ui
+Only enabled app.info left on SD: /apps/smoke_ui/app.info
+Confirmed SD app script contains VibeBoard Weather, Shenzhen, 26C, Cloudy, Humidity 68%, and Wind 12 km/h.
+```
+
+Build and flash result:
+
+```text
+npm test passed.
+idf.py build completed.
+vibeboard_runtime.bin binary size 0xb0720 bytes.
+Flashed bootloader, partition table, and vibeboard_runtime.bin to /dev/cu.usbmodem11301.
+Flash hash verification passed.
+```
+
+Key boot lines:
+
+```text
+Project name:     vibeboard_runtime
+App version:      b411307-dirty
+Name: SD64G
+Type: SDHC
+SSR: bus_width=1
+app_registry: found 1 apps
+Lua app start: smoke_ui
+weather card ok
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+```
+
+Runtime result:
+
+```text
+FAT32 SD mount succeeded.
+The runtime scanned /sdcard/apps.
+The weather-card smoke_ui package was discovered as the only enabled app.
+The runtime executed /sdcard/apps/smoke_ui/main.lua.
+Lua created a card container, styled background/text/border/radius, positioned multiple labels, and returned successfully.
+This proves a static card-style UI can now be changed from SD Lua without reflashing firmware, as long as it stays within the exposed LVGL API surface.
+```
+
 ## Current Status
 
 Status as of 2026-06-12:
@@ -609,6 +682,8 @@ Lua smoke app execution verified from SD card.
 Lua print() bridge verified in serial logs.
 Minimal LVGL Lua binding implemented and verified with smoke_ui from SD card.
 smoke_ui serial logs verified: Lua app start, lvgl smoke ok, Lua app ok.
+Weather-card LVGL Lua demo implemented and verified from SD card.
+Expanded LVGL Lua API now covers containers, size, background/text colors, border, radius, padding, and top/bottom alignment constants.
 Touch input still needs verification.
-Broader LVGL API coverage, fonts, images, timers, events, and real weather UI still need implementation.
+Fonts, images, timers, events, networking, real weather data, and touch interaction still need implementation.
 ```
