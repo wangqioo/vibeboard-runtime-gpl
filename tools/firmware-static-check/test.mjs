@@ -82,6 +82,16 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(main, /vb_app_runner_run/);
   });
 
+  it("keeps Lua alive for interval callbacks", () => {
+    const runner = readRequired(runnerSourcePath);
+
+    assert.match(runner, /set_interval/);
+    assert.match(runner, /luaL_ref/);
+    assert.match(runner, /lua_rawgeti/);
+    assert.match(runner, /lua_pcall/);
+    assert.match(runner, /vTaskDelay/);
+  });
+
   it("registers a minimal LVGL Lua surface", () => {
     const header = readRequired(luaLvglHeaderPath);
     const source = readRequired(luaLvglSourcePath);
@@ -120,11 +130,14 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /lv_obj_create\(root\)/);
     assert.match(source, /lv_obj_set_size\(card,\s*288,\s*196\)/);
     assert.match(source, /lv_label_set_text\(title,\s*"VibeBoard Weather"\)/);
-    assert.match(source, /lv_label_set_text\(location,\s*"Shenzhen"\)/);
+    assert.match(source, /lv_label_set_text\(location,\s*"Shanghai"\)/);
     assert.match(source, /lv_label_set_text\(temp,\s*"26C"\)/);
     assert.match(source, /lv_label_set_text\(condition,\s*"Cloudy"\)/);
     assert.match(source, /Humidity 68%/);
     assert.match(source, /Wind 12 km\/h/);
-    assert.match(source, /weather card ok/);
+    assert.match(source, /Updated 00s/);
+    assert.match(source, /set_interval\(1000/);
+    assert.match(source, /weather card dynamic ok/);
+    assert.match(source, /weather card tick/);
   });
 });

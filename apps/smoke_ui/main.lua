@@ -19,7 +19,7 @@ lv_obj_set_width(title, 240)
 lv_obj_align(title, LV_ALIGN_TOP_LEFT, 16, 14)
 
 local location = lv_label_create(card)
-lv_label_set_text(location, "Shenzhen")
+lv_label_set_text(location, "Shanghai")
 lv_obj_set_style_text_color(location, 0x94a3b8)
 lv_obj_align(location, LV_ALIGN_TOP_LEFT, 16, 40)
 
@@ -43,4 +43,22 @@ lv_label_set_text(wind, "Wind 12 km/h")
 lv_obj_set_style_text_color(wind, 0xcbd5e1)
 lv_obj_align(wind, LV_ALIGN_BOTTOM_LEFT, 16, -20)
 
-print("weather card ok")
+local updated = lv_label_create(card)
+lv_label_set_text(updated, "Updated 00s")
+lv_obj_set_style_text_color(updated, 0x64748b)
+lv_obj_align(updated, LV_ALIGN_TOP_LEFT, 178, 40)
+
+local ticks = 0
+set_interval(1000, function()
+    ticks = ticks + 1
+    if ticks < 10 then
+        lv_label_set_text(updated, "Updated 0" .. ticks .. "s")
+    else
+        lv_label_set_text(updated, "Updated " .. ticks .. "s")
+    end
+    if ticks <= 3 then
+        print("weather card tick", ticks)
+    end
+end)
+
+print("weather card dynamic ok")
