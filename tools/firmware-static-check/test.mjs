@@ -67,6 +67,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const runner = readRequired(runnerSourcePath);
     const main = readRequired(mainSourcePath);
 
+    assert.match(runner, /VB_LUA_TASK_STACK_SIZE/);
+    assert.match(runner, /xTaskCreatePinnedToCore/);
     assert.match(runner, /luaL_newstate/);
     assert.match(runner, /luaL_openlibs/);
     assert.match(runner, /luaL_dofile/);

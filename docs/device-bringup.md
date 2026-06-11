@@ -469,6 +469,57 @@ The weather package at /apps/weather was counted as one app.
 Lua execution is not implemented yet; this only proves file-level app discovery.
 ```
 
+### Lua Smoke Runner Evidence
+
+Date: 2026-06-12
+
+Source commit:
+
+```text
+ee1ec34 feat: run smoke Lua app from SD
+```
+
+Important runtime finding:
+
+```text
+Running Lua directly on the ESP-IDF main task stack caused weather/main.lua to trigger a stack overflow.
+The runner was changed to execute Lua in a dedicated 32 KB FreeRTOS task.
+After that change, weather no longer rebooted the board; it printed "[weather.lua] ui api missing" and returned.
+```
+
+SD card preparation:
+
+```text
+Copied package: /Users/wq/vibeboard-runtime-gpl/dist/apps/smoke
+Device path on SD: /apps/smoke
+Temporarily disabled weather by renaming /apps/weather to /apps/weather.disabled and app.info to app.info.disabled.
+```
+
+Key boot lines:
+
+```text
+Project name:     vibeboard_runtime
+App version:      ee1ec34
+Name: SD64G
+Type: SDHC
+SSR: bus_width=1
+app_registry: found 1 apps
+Lua app start: smoke
+hello from vibeboard lua
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+```
+
+Runtime result:
+
+```text
+FAT32 SD mount succeeded.
+The runtime scanned /sdcard/apps.
+The smoke package was discovered.
+The runtime executed /sdcard/apps/smoke/main.lua.
+Lua print() output reached ESP-IDF serial logs.
+```
+
 ## Current Status
 
 Status as of 2026-06-12:
@@ -489,6 +540,8 @@ Serial boot log confirms the committed runtime version 147fdfb starts and reache
 Runtime currently tolerates missing SD card and reports sd=missing apps=0.
 FAT32 SD card mount verified.
 Weather app package discovery verified: app_registry found 1 app and runtime reports sd=ok apps=1.
+Lua smoke app execution verified from SD card.
+Lua print() bridge verified in serial logs.
 Touch input still needs verification.
-Lua app execution still needs implementation.
+LVGL Lua bindings still need implementation before visual apps can run.
 ```
