@@ -10,7 +10,7 @@ import {
   statSync,
   writeFileSync
 } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   basename,
   dirname,
@@ -124,6 +124,19 @@ function writeInstallNotes(outputDir, metadata, appId) {
   writeFileSync(join(outputDir, "install-notes.txt"), notes);
 }
 
+function movePackageIntoPlace(tmpPath, outputPath) {
+  rmSync(outputPath, { recursive: true, force: true });
+  mkdirSync(dirname(outputPath), { recursive: true });
+
+  try {
+    renameSync(tmpPath, outputPath);
+  } catch (error) {
+    if (!["EEXIST", "ENOTEMPTY"].includes(error.code)) throw error;
+    rmSync(outputPath, { recursive: true, force: true });
+    renameSync(tmpPath, outputPath);
+  }
+}
+
 export function packageApp({ repoRoot = process.cwd(), appDir }) {
   if (!appDir) throw new Error("appDir is required");
   if (!existsSync(appDir)) throw new Error(`App directory does not exist: ${appDir}`);
@@ -139,7 +152,7 @@ export function packageApp({ repoRoot = process.cwd(), appDir }) {
 
   const appId = slugifyAppId(basename(absoluteAppDir));
   const outputPath = join(absoluteRepoRoot, "dist/apps", appId);
-  const tmpPath = join(absoluteRepoRoot, "dist/.tmp", `${appId}-${Date.now()}`);
+  const tmpPath = join(absoluteRepoRoot, "dist/.tmp", `${appId}-${randomUUID()}`);
 
   rmSync(tmpPath, { recursive: true, force: true });
   mkdirSync(dirname(tmpPath), { recursive: true });
@@ -163,9 +176,7 @@ export function packageApp({ repoRoot = process.cwd(), appDir }) {
   };
 
   writeFileSync(join(tmpPath, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  rmSync(outputPath, { recursive: true, force: true });
-  mkdirSync(dirname(outputPath), { recursive: true });
-  renameSync(tmpPath, outputPath);
+  movePackageIntoPlace(tmpPath, outputPath);
 
   return { appId, outputPath, manifest };
 }
