@@ -1,0 +1,4 @@
+name = smoke_file
+entry = main.lua
+description = SD sandboxed Lua file module smoke test
+capabilities = file

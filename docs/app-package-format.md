@@ -25,8 +25,94 @@ Optional fields:
 Apps must declare special capabilities before using restricted runtime APIs in their entry Lua file:
 
 - `network`: required for `http.`, `net.`, `mqtt.`, `websocket`, or `wifi.` usage.
+- `timer`: required for `tmr.` or `set_interval(...)` usage.
 - `audio`: required for `i2s.` usage.
 - `file`: required for `file.` usage.
 - `module`: required for `require(` usage.
 
 Package validation rejects missing metadata, missing entry files, entry paths outside the app directory, and restricted API usage without the matching capability declaration.
+
+## File Paths
+
+Apps that declare `capabilities = file` can use the runtime `file` module.
+
+Current path rules:
+
+- relative paths resolve inside the current app directory;
+- `.` resolves to the current app directory;
+- `/sd/...` resolves to `/sdcard/...` for read/list operations;
+- paths containing `..` are rejected;
+- write operations are currently limited to app-local relative paths.
+
+Supported build-verified APIs:
+
+```lua
+file.exists(path)
+file.read(path)
+file.getcontents(path)
+file.write(path, data)
+file.list(path)
+file.listdir(path)
+file.open(path, mode)
+```
+
+## LVGL Asset Paths
+
+Build-verified LVGL asset helpers:
+
+```lua
+local path = lv_resolve_asset_path("assets/icon.bmp")
+local ok = lv_asset_exists(path)
+local image = lv_img_create(root)
+lv_img_set_src(image, path)
+```
+
+Path conversion:
+
+- `assets/icon.bmp` from `apps/weather` becomes `S:/apps/weather/assets/icon.bmp`;
+- `/sd/apps/weather/assets/icon.bmp` also becomes `S:/apps/weather/assets/icon.bmp`;
+- `S:/...` is passed through unchanged.
+
+The `S:` LVGL filesystem drive is registered by the runtime and maps to `/sdcard`.
+BMP decoding is build-verified with `CONFIG_LV_USE_BMP=y` and `apps/smoke_visual`. Board display smoke for the BMP decoder is still pending. PNG/SJPG and LVGL binary image decoding are not enabled yet.
+
+## Network App Config
+
+Apps that declare `capabilities = network,file,timer` can keep local network smoke config in the app directory. The current `apps/smoke_network` convention is:
+
+```text
+apps/smoke_network/
+  app.info
+  main.lua
+  wifi.example.json
+  wifi.json          # local only, not committed with real credentials
+```
+
+Example `wifi.json`:
+
+```json
+{
+  "ssid": "YOUR_WIFI_SSID",
+  "password": "YOUR_WIFI_PASSWORD",
+  "url": "http://worldtimeapi.org/api/timezone/Asia/Shanghai"
+}
+```
+
+Build-verified network APIs:
+
+```lua
+wifi.mode("sta")
+wifi.start()
+wifi.sta.config({ ssid = config.ssid, password = config.password })
+wifi.sta.connect()
+local ip = wifi.sta.getip()
+
+local response = http.get(config.url)
+local data = sjson.decode(response.body)
+
+time.settimezone("CST-8")
+time.initntp("pool.ntp.org")
+local now = time.get()
+```
+
+Without `wifi.json`, `apps/smoke_network` still runs its JSON/time smoke path and prints a clear missing-credentials message. Real WiFi and HTTP behavior remains board-smoke pending until credentials are deployed on SD.

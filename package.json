@@ -5,16 +5,19 @@
   "type": "module",
   "license": "GPL-3.0-only",
   "scripts": {
-    "test": "npm run test:validator && npm run test:upstream-map && npm run test:ai-contract && npm run test:packager && npm run test:plan-writer && npm run test:firmware-static",
+    "test": "npm run test:validator && npm run test:upstream-map && npm run test:ai-contract && npm run test:packager && npm run test:uploader && npm run test:plan-writer && npm run test:firmware-static",
     "test:validator": "node --test tools/app-validator/test.mjs",
     "test:upstream-map": "node scripts/test-upstream-map.mjs",
     "test:ai-contract": "node scripts/test-ai-contract.mjs",
     "test:packager": "node --test tools/app-packager/test.mjs",
+    "test:uploader": "node --test tools/app-uploader/test.mjs",
     "test:plan-writer": "node --test tools/app-plan-writer/test.mjs",
     "test:firmware-static": "node --test tools/firmware-static-check/test.mjs",
     "validate:apps": "node tools/app-validator/validate-demo-apps.mjs",
     "package:app": "node tools/app-packager/cli.mjs",
     "package:demos": "node tools/app-packager/package-demos.mjs",
-    "write:app-plan": "node tools/app-plan-writer/cli.mjs"
+    "write:app-plan": "node tools/app-plan-writer/cli.mjs",
+    "upload:app": "node tools/app-uploader/cli.mjs",
+    "launch:app": "node tools/app-uploader/launch.mjs"
   }
 }

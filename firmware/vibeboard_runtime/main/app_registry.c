@@ -115,24 +115,39 @@ esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result)
             continue;
         }
 
+        char app_name[VB_APP_NAME_MAX] = {0};
+        char app_entry[VB_APP_NAME_MAX] = {0};
+        bool has_name = read_app_info(info_path, app_name, sizeof(app_name), app_entry, sizeof(app_entry));
+        if (!has_name) {
+            strlcpy(app_name, entry->d_name, sizeof(app_name));
+        }
+        if (app_entry[0] == '\0') {
+            strcpy(app_entry, "main.lua");
+        }
+
+        char app_path[VB_APP_PATH_MAX] = {0};
+        if (!build_path(app_path, sizeof(app_path), app_dir, app_entry)) {
+            ESP_LOGW(TAG, "app entry path is too long: %s", entry->d_name);
+            continue;
+        }
+
         result->app_count++;
+        if (result->stored_app_count < VB_APP_REGISTRY_MAX_APPS) {
+            vb_app_registry_entry_t *app = &result->apps[result->stored_app_count++];
+            strlcpy(app->id, entry->d_name, sizeof(app->id));
+            strlcpy(app->name, app_name, sizeof(app->name));
+            strlcpy(app->entry, app_entry, sizeof(app->entry));
+            strlcpy(app->dir, app_dir, sizeof(app->dir));
+            strlcpy(app->path, app_path, sizeof(app->path));
+        }
+
         if (result->app_count == 1) {
-            if (!read_app_info(info_path,
-                               result->first_app_name,
-                               sizeof(result->first_app_name),
-                               result->first_app_entry,
-                               sizeof(result->first_app_entry))) {
-                strlcpy(result->first_app_name, entry->d_name, sizeof(result->first_app_name));
-            }
+            strlcpy(result->first_app_name, app_name, sizeof(result->first_app_name));
+            strlcpy(result->first_app_entry, app_entry, sizeof(result->first_app_entry));
+            strlcpy(result->first_app_dir, app_dir, sizeof(result->first_app_dir));
+            strlcpy(result->first_app_path, app_path, sizeof(result->first_app_path));
             if (result->first_app_entry[0] == '\0') {
                 strcpy(result->first_app_entry, "main.lua");
-            }
-            if (!build_path(result->first_app_path,
-                            sizeof(result->first_app_path),
-                            app_dir,
-                            result->first_app_entry)) {
-                result->first_app_path[0] = '\0';
-                ESP_LOGW(TAG, "first app entry path is too long: %s", entry->d_name);
             }
         }
     }

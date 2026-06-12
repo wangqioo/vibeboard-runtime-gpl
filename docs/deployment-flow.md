@@ -43,9 +43,22 @@ Device storage target:
 
 `manifest.json` records the package schema, source path, install path, declared capabilities, and SHA-256 hashes for packaged files. It is for tooling and audit; the first runtime can ignore it if the launcher only needs `app.info` and the entry Lua file.
 
-Future transport options:
+Transport options:
 
-- WiFi HTTP upload exposed by the runtime.
+- WiFi HTTP upload exposed by the runtime:
+
+```bash
+npm run upload:app -- http://<board-ip>:8080 dist/apps/<app-id> <app-id>
+```
+
+The current firmware endpoint is intentionally small:
+
+```text
+POST /install?app=<id>&path=<relative>
+```
+
+It writes one file under `/sdcard/apps/<id>/<relative>`, rejects absolute paths and `..`, and creates parent directories as needed. It does not yet rescan or launch the uploaded app at runtime; reboot or a future launcher/rescan phase is still needed.
+
 - Browser upload through a VibeBoard Runtime web console.
 - SD-card copy for recovery and offline installation.
 

@@ -49,7 +49,8 @@ lv_obj_set_style_text_color(updated, 0x64748b)
 lv_obj_align(updated, LV_ALIGN_TOP_LEFT, 178, 40)
 
 local ticks = 0
-set_interval(1000, function()
+local refresh_timer = tmr.create()
+refresh_timer:alarm(1000, tmr.ALARM_AUTO, function()
     ticks = ticks + 1
     if ticks < 10 then
         lv_label_set_text(updated, "Updated 0" .. ticks .. "s")
@@ -58,6 +59,9 @@ set_interval(1000, function()
     end
     if ticks <= 3 then
         print("weather card tick", ticks)
+    end
+    if ticks >= 8 then
+        refresh_timer:unregister()
     end
 end)
 

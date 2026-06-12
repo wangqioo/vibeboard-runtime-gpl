@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, relative } from "node:path";
 
 const CAPABILITY_USAGE_PATTERNS = [
+  { capability: "timer", pattern: /\btmr\s*\.|\bset_interval\s*\(/ },
   { capability: "network", pattern: /\b(?:http|net|mqtt|wifi)\s*\.|\bwebsocket\b/ },
   { capability: "audio", pattern: /\bi2s\s*\./ },
   { capability: "file", pattern: /\bfile\s*\./ },

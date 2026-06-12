@@ -3,7 +3,16 @@ idf_component_register(
         "app_runner.c"
         "app_registry.c"
         "board_lckfb_szpi_s3.c"
+        "install_service.c"
+        "lua_file.c"
+        "lua_http.c"
         "lua_lvgl.c"
+        "lua_lvgl_fs.c"
+        "lua_lvgl_widgets.c"
+        "lua_sjson.c"
+        "lua_time.c"
+        "lua_tmr.c"
+        "lua_wifi.c"
         "main.c"
     INCLUDE_DIRS "."
     REQUIRES
@@ -11,12 +20,20 @@ idf_component_register(
         esp_driver_ledc
         esp_driver_sdmmc
         esp_driver_spi
+        esp_event
+        esp_http_client
+        esp_http_server
         esp_lcd
+        esp_netif
         espressif__esp_lvgl_port
         esp_psram
+        esp_wifi
         fatfs
         georgik__lua
+        json
         lvgl__lvgl
+        mbedtls
+        nvs_flash
         sdmmc
         vfs
 )

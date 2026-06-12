@@ -42,6 +42,28 @@ describe("validateAppDirectory", () => {
     assert.deepEqual(result.capabilities, ["network"]);
   });
 
+  it("requires timer capability for tmr usage", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-timer-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = Timer",
+        "entry = main.lua",
+        "description = Timer app",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), "local timer = tmr.create()\n");
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, ["Missing capability declaration: timer"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a package with a missing entry file", () => {
     const result = validateAppDirectory(join(here, "fixtures/missing-entry"));
     assert.equal(result.ok, false);

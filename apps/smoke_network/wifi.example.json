@@ -1,0 +1,5 @@
+{
+  "ssid": "YOUR_WIFI_SSID",
+  "password": "YOUR_WIFI_PASSWORD",
+  "url": "http://worldtimeapi.org/api/timezone/Asia/Shanghai"
+}

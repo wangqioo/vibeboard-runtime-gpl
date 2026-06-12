@@ -1,0 +1,4 @@
+name = smoke_network
+entry = main.lua
+description = Network smoke app for WiFi, HTTP, JSON, and NTP
+capabilities = network,file,timer

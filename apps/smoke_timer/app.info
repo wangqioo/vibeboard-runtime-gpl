@@ -1,0 +1,4 @@
+name = smoke_timer
+entry = main.lua
+description = NodeMCU-style tmr smoke test
+capabilities = timer

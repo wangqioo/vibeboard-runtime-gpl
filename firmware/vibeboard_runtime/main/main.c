@@ -1,13 +1,17 @@
 #include <stdio.h>
+#include <string.h>
 
 #include "app_registry.h"
 #include "app_runner.h"
 #include "board_lckfb_szpi_s3.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
+#include "install_service.h"
 #include "lvgl.h"
 
 static const char *TAG = "vibeboard_runtime";
+static vb_app_registry_result_t s_apps;
+static vb_install_service_context_t s_install_context;
 
 static void set_label(lv_obj_t *parent, const char *text, int y)
 {
@@ -73,22 +77,31 @@ void app_main(void)
     vb_board_status_t board = {0};
     ESP_ERROR_CHECK(vb_board_start(&board));
 
-    vb_app_registry_result_t apps = {0};
-    esp_err_t scan_err = board.sd_ok ? vb_app_registry_scan(&apps) : board.sd_error;
+    memset(&s_apps, 0, sizeof(s_apps));
+    esp_err_t scan_err = board.sd_ok ? vb_app_registry_scan(&s_apps) : board.sd_error;
     if (scan_err != ESP_OK) {
         ESP_LOGW(TAG, "app scan unavailable: %s", esp_err_to_name(scan_err));
     }
 
-    show_boot_screen(&board, &apps, scan_err, NULL, ESP_ERR_INVALID_STATE);
+    show_boot_screen(&board, &s_apps, scan_err, NULL, ESP_ERR_INVALID_STATE);
+    if (board.sd_ok) {
+        s_install_context.sd_ok = board.sd_ok;
+        s_install_context.sd_error = board.sd_error;
+        s_install_context.registry = &s_apps;
+        esp_err_t install_err = vb_install_service_start(&s_install_context);
+        if (install_err != ESP_OK) {
+            ESP_LOGW(TAG, "install service unavailable: %s", esp_err_to_name(install_err));
+        }
+    }
 
     vb_app_runner_result_t run = {0};
-    esp_err_t run_err = (scan_err == ESP_OK && apps.app_count > 0) ? vb_app_runner_run(&apps, &run) : scan_err;
+    esp_err_t run_err = (scan_err == ESP_OK && s_apps.app_count > 0) ? vb_app_runner_run(&s_apps, &run) : scan_err;
     if (run_err != ESP_OK) {
-        show_boot_screen(&board, &apps, scan_err, &run, run_err);
+        show_boot_screen(&board, &s_apps, scan_err, &run, run_err);
     }
     ESP_LOGI(TAG,
              "VibeBoard Runtime ready: sd=%s apps=%d lua=%s",
              board.sd_ok ? "ok" : "missing",
-             apps.app_count,
+             s_apps.app_count,
              run_err == ESP_OK ? "ok" : "skip");
 }

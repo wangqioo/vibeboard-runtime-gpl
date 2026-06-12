@@ -1,0 +1,4 @@
+name = smoke_assets
+entry = main.lua
+description = App-local asset path smoke test
+capabilities = lvgl,file

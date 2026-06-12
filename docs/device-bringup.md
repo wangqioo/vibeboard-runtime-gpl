@@ -789,6 +789,564 @@ Weather-card LVGL Lua demo implemented and verified from SD card.
 Expanded LVGL Lua API now covers containers, size, background/text colors, border, radius, padding, and top/bottom alignment constants.
 Backlight inversion matched to the official 08-lcd_lvgl example and verified on the physical display.
 Lua interval callback runtime implemented and verified with the Shanghai dynamic weather card.
+NodeMCU-style `tmr` core implemented and verified on hardware with `apps/smoke_timer`.
+Sandboxed Lua `file` module implemented and verified on hardware with `apps/smoke_file`.
+LVGL asset path, `S:` filesystem, image object, positioning, flag, and label long-mode bindings verified on hardware with `apps/smoke_assets`.
 Touch input still needs verification.
-Fonts, images, timers, events, networking, real weather data, and touch interaction still need implementation.
+Fonts, images, events, networking, real weather data, touch interaction, and full App lifecycle still need implementation.
 ```
+
+### NodeMCU-style tmr Firmware Smoke Evidence
+
+Date: 2026-06-12
+
+Build, flash, and first firmware smoke result:
+
+```text
+npm test passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0xb1130 bytes.
+Flashed bootloader, partition table, and vibeboard_runtime.bin to /dev/cu.usbmodem11301.
+Flash hash verification passed for all written regions.
+```
+
+Key boot lines:
+
+```text
+Project name:     vibeboard_runtime
+App version:      71bac0e-dirty
+Compile time:     Jun 12 2026 03:30:17
+Name: SD64G
+Type: SDHC
+SSR: bus_width=1
+app_registry: found 1 apps
+Lua app start: smoke_ui
+weather card dynamic ok
+lua_tmr: Lua tmr loop start
+weather card tick 1
+weather card tick 2
+weather card tick 3
+```
+
+Runtime result:
+
+```text
+The new firmware boots on the board.
+The SD card mounts.
+The existing SD /apps/smoke_ui package still runs.
+The existing SD app still uses set_interval, but set_interval is now implemented through the new tmr module.
+The log line "lua_tmr: Lua tmr loop start" confirms the new timer loop is active on hardware.
+The first three weather-card timer callbacks fired on hardware.
+```
+
+Dedicated `apps/smoke_timer` SD smoke result:
+
+```text
+Name: SD64G
+Type: SDHC
+SSR: bus_width=1
+app_registry: found 1 apps
+Lua app start: smoke_timer
+smoke timer start
+lua_tmr: Lua tmr loop start
+smoke timer tick 1
+smoke timer tick 2
+smoke timer single 2 2730000
+smoke timer tick 3
+smoke timer tick 4
+smoke timer tick 5
+smoke timer state true 2
+lua_tmr: Lua tmr loop idle
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+main_task: Returned from app_main()
+```
+
+Result:
+
+```text
+SD card package discovery still works.
+tmr.create(), timer:alarm(), ALARM_AUTO, ALARM_SINGLE, timer:state(), timer:unregister(), and tmr.now() ran on the board.
+The timer loop exits when the last timer is unregistered.
+The Lua runner returns `Lua app ok`.
+```
+
+### LVGL Asset Path and Image Binding Smoke Evidence
+
+Date: 2026-06-13
+
+Build and flash result:
+
+```text
+npm test passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0xb2510 bytes.
+Flashed bootloader, partition table, and vibeboard_runtime.bin to /dev/cu.usbmodem111301.
+Flash hash verification passed for all written regions.
+```
+
+Dedicated `apps/smoke_assets` SD smoke result:
+
+```text
+Name: SD64G
+Type: SDHC
+SSR: bus_width=1
+app_registry: found 1 apps
+Lua app start: smoke_assets
+lua_file: file module app dir: /sdcard/apps/smoke_assets
+smoke assets start
+asset path S:/apps/smoke_assets/assets/icon.bin
+asset fs ok S:/apps/smoke_assets/assets/icon.bin
+smoke assets ok S:/apps/smoke_assets/assets/icon.bin
+lua_tmr: Lua tmr loop start
+lua_tmr: Lua tmr loop idle
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+main_task: Returned from app_main()
+```
+
+Result:
+
+```text
+Relative asset paths, /sd/... paths, and S:/... paths resolve to the same LVGL asset path.
+LVGL S: filesystem driver opens the app-local asset from SD.
+lv_img_create(), lv_img_set_src(), lv_obj_set_pos(), lv_obj_set_x(), lv_obj_set_y(), lv_obj_add_flag(), lv_obj_clear_flag(), and lv_label_set_long_mode() ran on the board.
+The Lua runner returns `Lua app ok`.
+Real image decoding remains pending because PNG/BMP/SJPG/LVGL-bin decoder work is separate from path and object binding.
+```
+
+### Sandboxed file Module Smoke Evidence
+
+Date: 2026-06-12
+
+Build and flash result:
+
+```text
+npm test passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0xb1b30 bytes.
+Flashed bootloader, partition table, and vibeboard_runtime.bin to /dev/cu.usbmodem11301.
+Flash hash verification passed for all written regions.
+```
+
+Dedicated `apps/smoke_file` SD smoke result:
+
+```text
+Name: SD64G
+Type: SDHC
+SSR: bus_width=1
+app_registry: found 1 apps
+Lua app start: smoke_file
+lua_file: file module app dir: /sdcard/apps/smoke_file
+smoke file start
+smoke file config 46
+smoke file ok 6
+lua_tmr: Lua tmr loop start
+lua_tmr: Lua tmr loop idle
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+main_task: Returned from app_main()
+```
+
+Result:
+
+```text
+SD card package discovery still works.
+file.exists(), file.read(), file.open(), file handle read/close, file.list(), and file.write() ran on the board.
+Relative paths resolve to the current app directory.
+The Lua runner returns `Lua app ok`.
+```
+## 2026-06-13 smoke_visual BMP/widget smoke
+
+Firmware flashed to `/dev/cu.usbmodem111301` and `apps/smoke_visual` was installed on `VIBESD`.
+
+Flash evidence:
+
+```text
+vibeboard_runtime.bin binary size 0xb27c0 bytes. Smallest app partition is 0x100000 bytes. 0x4d840 bytes (30%) free.
+Serial port /dev/cu.usbmodem111301
+Chip is ESP32-S3 (QFN56) (revision v0.2)
+Hash of data verified.
+Hash of data verified.
+Hash of data verified.
+Done
+```
+
+Runtime evidence:
+
+```text
+Name: SD64G
+Type: SDHC
+SSR: bus_width=1
+app_registry: found 1 apps
+Lua app start: smoke_visual
+lua_file: file module app dir: /sdcard/apps/smoke_visual
+smoke visual start
+smoke visual ok S:/apps/smoke_visual/assets/icon.bmp
+lua_tmr: Lua tmr loop start
+smoke visual progress 23
+smoke visual progress 34
+smoke visual progress 45
+smoke visual progress 56
+smoke visual progress 67
+smoke visual progress 78
+smoke visual progress 89
+smoke visual progress 100
+smoke visual progress 0
+```
+
+Result: SD app discovery, Lua execution, BMP asset path resolution, button/bar binding use, and timer-driven bar updates are board-verified by serial evidence. Visual correctness of the BMP image still needs human screen confirmation.
+
+## 2026-06-13 network-runtime flash-back verification
+
+Context: the connected board was temporarily running another ESP32-S3 project. It was erased and flashed back to `vibeboard_runtime` before collecting runtime evidence.
+
+Local verification before flashing:
+
+```text
+npm test passed.
+npm run validate:apps passed.
+npm run package:app -- apps/smoke_network passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x16bb40 bytes.
+Smallest app partition is 0x400000 bytes. 0x2944c0 bytes (64%) free.
+```
+
+Flash-back evidence:
+
+```text
+Chip erase completed successfully.
+Wrote bootloader/bootloader.bin at 0x0. Hash of data verified.
+Wrote build/partition_table/partition-table.bin at 0x8000. Hash of data verified.
+Wrote build/vibeboard_runtime.bin at 0x10000. Hash of data verified.
+```
+
+Readback evidence:
+
+```text
+Readback partition table:
+0 nvs      offset 0x9000  size 0x6000
+1 phy_init offset 0xf000  size 0x1000
+2 factory  offset 0x10000 size 0x400000
+
+Readback app header contains:
+vibeboard_runtime
+```
+
+Runtime evidence after reset:
+
+```text
+Project name:     vibeboard_runtime
+Partition Table:
+  0 nvs              WiFi data        01 02 00009000 00006000
+  1 phy_init         RF data          01 01 0000f000 00001000
+  2 factory          factory app      00 00 00010000 00400000
+Loaded app from partition at offset 0x10000
+VibeBoard Runtime start
+VibeBoard Runtime board start
+Setting LCD backlight: 100%
+Name: SD64G
+Type: SDHC
+app_registry: found 1 apps
+Lua app start: smoke_visual
+lua_wifi: wifi module registered
+smoke visual ok S:/apps/smoke_visual/assets/icon.bmp
+lua_tmr: Lua tmr loop start
+smoke visual progress 23
+smoke visual progress 34
+```
+
+Result: the board is back on VibeBoard Runtime with the custom 4 MB app partition. The network-enabled firmware boots and still runs the existing `smoke_visual` SD app. `apps/smoke_network` is packaged but still needs SD deployment with a real `wifi.json` before WiFi/HTTP can be marked board-verified.
+
+## 2026-06-13 smoke_network no-credentials crash fix
+
+Initial `apps/smoke_network` SD smoke exposed a runtime bug:
+
+```text
+Lua app start: smoke_network
+wifi.json missing; copy wifi.example.json to wifi.json and set credentials
+json encode ok {"app":"smoke_network","city":"Shanghai"}
+assert failed: tcpip_callback /IDF/components/lwip/lwip/src/api/tcpip.c:318 (Invalid mbox)
+```
+
+Root cause: `time.initntp()` called SNTP before lwIP/`esp_netif` initialization when no WiFi path had initialized networking yet.
+
+Fix: `lua_time.c` now initializes `esp_netif` and the default event loop before `esp_sntp_init()`, accepting `ESP_ERR_INVALID_STATE` for already-initialized shared runtime state.
+
+Verification:
+
+```text
+npm run test:firmware-static passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x16bbe0 bytes.
+Flash hash verification passed.
+
+Lua app start: smoke_network
+wifi.json missing; copy wifi.example.json to wifi.json and set credentials
+json encode ok {"city":"Shanghai","app":"smoke_network"}
+time now 23
+smoke network ready without wifi credentials
+smoke network ready
+lua_tmr: Lua tmr loop start
+lua_tmr: Lua tmr loop idle
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+```
+
+Result: `apps/smoke_network` is board-verified for the no-credentials path: SD app discovery, `file.exists`, `sjson.encode`, `time.settimezone`, `time.initntp`, `time.get`, timer loop idle, and clean Lua exit. WiFi association and HTTP request still require a real `wifi.json`.
+
+## 2026-06-13 smoke_network WiFi and HTTP smoke
+
+SD config:
+
+```json
+{
+  "ssid": "1-306",
+  "password": "szyt1008",
+  "url": "http://httpbin.org/get"
+}
+```
+
+Intermediate finding: the first URL, `http://worldtimeapi.org/api/timezone/Asia/Shanghai`, returned an empty HTTP response from the Mac and produced `ESP_ERR_HTTP_FETCH_HEADER` on the board. The HTTP smoke URL was changed to `http://httpbin.org/get`.
+
+Runtime fixes added during this smoke:
+
+- `lua_wifi.c` logs `WIFI_EVENT_STA_DISCONNECTED` reason codes and `IP_EVENT_STA_GOT_IP`.
+- `lua_wifi.c` reconnects from station start and disconnected events with a finite retry count.
+
+Verification:
+
+```text
+npm run test:firmware-static passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x16be00 bytes.
+Flash hash verification passed.
+
+Lua app start: smoke_network
+json encode ok {"app":"smoke_network","city":"Shanghai"}
+time now 580
+wifi:mode : sta (10:51:db:80:e2:e8)
+lua_wifi: sta disconnected reason=2
+lua_wifi: sta reconnect attempt 1/8
+lua_wifi: sta disconnected reason=205
+lua_wifi: sta reconnect attempt 2/8
+wifi:connected with 1-306, aid = 3, channel 7, BW20, bssid = 24:b8:da:f4:62:c0
+lua_wifi: sta got ip 192.168.1.32
+wifi poll 4 ip 192.168.1.32
+http status 200
+http body bytes 243
+lua_tmr: Lua tmr loop idle
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+```
+
+Result: `apps/smoke_network` is board-verified for WiFi association, DHCP IP acquisition, HTTP GET, response body capture, JSON encode, time/NTP initialization, timer loop exit, and clean Lua app completion.
+
+## 2026-06-13 install service crash fix and first SD upload
+
+Symptom:
+
+```text
+Screen flickered after flashing the first install-service firmware.
+Serial showed a reboot loop:
+assert failed: tcpip_send_msg_wait_sem ... (Invalid mbox)
+```
+
+Root cause: `install_service` called `httpd_start()` before lwIP/`esp_netif` and the default event loop were initialized. This matched the earlier `time.initntp()` `Invalid mbox` class of bug.
+
+Fixes:
+
+- `install_service.c` now calls `esp_netif_init()` and `esp_event_loop_create_default()` before `httpd_start()`, treating `ESP_ERR_INVALID_STATE` as already-initialized.
+- `lua_wifi.c` sets `esp_wifi_set_ps(WIFI_PS_NONE)` after WiFi init so the board is more reliable as a LAN HTTP server.
+- Static firmware guardrails now check both install-service netif initialization and WiFi power-save disable.
+- `tools/app-uploader` now defaults to Node native HTTP instead of `fetch`, and prints lower-level connection errors.
+
+Verification:
+
+```text
+npm run test:firmware-static passed.
+npm run test:uploader passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x171330 bytes.
+Flash hash verification passed.
+
+install_service: install service listening on port 8080
+wifi:Set ps type: 0, coexist: 0
+wifi:pm start, type: 0
+lua_wifi: sta got ip 192.168.1.32
+http status 200
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+```
+
+Raw HTTP upload smoke from the Mac:
+
+```text
+POST /install?app=raw_upload&path=app.info HTTP/1.1
+...
+HTTP/1.1 200 OK
+Content-Type: text/plain
+Content-Length: 3
+
+ok
+```
+
+Next boot evidence:
+
+```text
+app_registry: found 2 apps
+install_service: install service listening on port 8080
+VibeBoard Runtime ready: sd=ok apps=2 lua=ok
+```
+
+Result: the screen flicker/reboot loop is fixed. The first board-side HTTP install slice is board-verified for writing a file into `/sdcard/apps/<app>/`. The polished `npm run upload:app` path is still network-stability pending on this Mac/router path because Node/curl sometimes return `EHOSTUNREACH` to `192.168.1.32:8080`, even though `ping`, `nc`, and raw HTTP POST can reach the board.
+
+## 2026-06-13 install service status, apps, and rescan endpoints
+
+Added first management endpoints:
+
+```text
+GET  /status
+GET  /apps
+POST /rescan
+```
+
+Implementation notes:
+
+- `app_registry` now stores up to `VB_APP_REGISTRY_MAX_APPS` entries while preserving `first_app_*` for the current runner.
+- `main.c` stores the registry and install-service context in static storage so HTTP handlers do not keep pointers to expired `app_main()` stack variables.
+- `/rescan` calls `vb_app_registry_scan()` against the live registry. It updates the registry but does not launch or switch apps yet.
+
+Verification:
+
+```text
+npm test passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x171780 bytes.
+Flash hash verification passed.
+
+app_registry: found 2 apps
+install_service: install service listening on port 8080
+lua_wifi: sta got ip 192.168.1.32
+http status 200
+VibeBoard Runtime ready: sd=ok apps=2 lua=ok
+```
+
+Raw HTTP endpoint checks:
+
+```text
+GET /status -> 200 OK
+{"sd":true,"app_count":2,"first_app":"smoke_network","install":"ok"}
+
+GET /apps -> 200 OK
+{"apps":[{"id":"smoke_network","name":"smoke_network","entry":"main.lua"},{"id":"raw_upload","name":"smoke_visual","entry":"main.lua"}]}
+
+POST /rescan -> 200 OK
+{"ok":true,"app_count":2}
+```
+
+Result: the device can now report status, list installed SD apps, and rescan apps without reboot.
+
+## 2026-06-13 uploader rescan and confirmation loop
+
+The Mac-side uploader now:
+
+```text
+uploads every file through /install
+  -> POST /rescan
+  -> GET /apps
+  -> fails if the target app id is missing
+```
+
+It still keeps the Node native HTTP implementation for tests and generic use, but the CLI uses an `nc` transport on this Mac because Node/curl can return `EHOSTUNREACH` while raw `nc` reaches the board reliably.
+
+Verification:
+
+```text
+npm test passed.
+npm run test:uploader passed.
+npm run package:app -- apps/smoke_visual passed.
+
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote
+uploaded smoke_visual_remote/app.info 144 bytes
+uploaded smoke_visual_remote/assets/icon.bmp 30122 bytes
+uploaded smoke_visual_remote/install-notes.txt 205 bytes
+uploaded smoke_visual_remote/main.lua 1798 bytes
+uploaded smoke_visual_remote/manifest.json 1105 bytes
+uploaded 5 files
+rescan ok; confirmed smoke_visual_remote in /apps
+```
+
+Independent `/apps` check:
+
+```text
+GET /apps -> 200 OK
+{"apps":[{"id":"smoke_network","name":"smoke_network","entry":"main.lua"},{"id":"raw_upload","name":"smoke_visual","entry":"main.lua"},{"id":"smoke_visual_remote","name":"smoke_visual","entry":"main.lua"}]}
+```
+
+Result: the no-SD-pull app deployment loop is now board-verified through upload, rescan, and confirmation. The remaining work is app launch/switch support so newly uploaded apps can run without rebooting or manually changing the first app.
+
+## 2026-06-13 remote launch endpoint
+
+The board now exposes a first app launch slice:
+
+```text
+POST /launch?app=<id>
+```
+
+Implementation notes:
+
+- `/launch` validates the `app` query, rescans `/sdcard/apps`, finds the requested app id in the live registry, then calls `vb_app_runner_launch_async()`.
+- The async runner copies the registry entry into a heap-owned context before starting the Lua task, so HTTP request handling does not block while the app keeps running.
+- A single-runner guard returns `ESP_ERR_INVALID_STATE` as `app already running` instead of starting multiple Lua/LVGL apps concurrently.
+- `npm run launch:app -- http://<ip>:8080 <app-id>` wraps the same endpoint using the existing `nc` transport.
+
+Verification:
+
+```text
+npm run test:uploader passed.
+npm run test:firmware-static passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x171b90 bytes.
+idf.py -p /dev/cu.usbmodem112301 flash passed.
+```
+
+Boot evidence after flash:
+
+```text
+Name: SD64G
+I app_registry: found 3 apps
+I install_service: install service listening on port 8080
+I lua_wifi: sta got ip 192.168.1.32
+I vibeboard_runtime: VibeBoard Runtime ready: sd=ok apps=3 lua=ok
+```
+
+Raw HTTP launch:
+
+```text
+POST /launch?app=smoke_visual_remote -> 200 OK
+{"ok":true,"launched":"smoke_visual_remote"}
+```
+
+Serial evidence:
+
+```text
+I app_registry: found 3 apps
+I app_runner: Lua async launch: smoke_visual
+I app_runner: Lua app start: smoke_visual
+I lua_file: file module app dir: /sdcard/apps/smoke_visual_remote
+I app_runner: smoke visual start
+I app_runner: smoke visual ok S:/apps/smoke_visual_remote/assets/icon.bmp
+I lua_tmr: Lua tmr loop start
+I app_runner: smoke visual progress 23
+I app_runner: smoke visual progress 34
+```
+
+CLI launch guard check while the visual app was already running:
+
+```text
+npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote
+Launch smoke_visual_remote failed after 3 attempts: 500 app already running
+```
+
+Result: the no-SD-pull loop is now board-verified through package upload, rescan, confirmation, and direct remote launch. The remaining launcher work is product UX: list/select/switch apps from the device screen and define a controlled stop/restart model for long-running Lua apps.

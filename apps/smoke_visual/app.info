@@ -1,0 +1,4 @@
+name = smoke_visual
+entry = main.lua
+description = Visual smoke app for BMP assets, widgets, and timer-driven UI
+capabilities = lvgl,file,timer

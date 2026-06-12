@@ -16,7 +16,25 @@ Validated on real hardware:
 - Lua `print()` routed to ESP-IDF serial logs.
 - Minimal Lua-to-LVGL bridge for labels, containers, sizing, colors, borders, radius, padding, and alignment.
 - Lua `set_interval(ms, callback)` for simple dynamic UI refresh.
-- `apps/smoke_ui` weather-card demo running from SD card, showing `Shanghai` and an updating `Updated 00s` label.
+- `apps/smoke_ui` weather-card demo ran from SD card with the previous `set_interval` loop, showing `Shanghai` and an updating `Updated 00s` label.
+- NodeMCU-style Lua `tmr` module with `tmr.create()`, `timer:alarm(...)`, `timer:stop()`, `timer:unregister()`, `timer:state()`, `timer:interval(...)`, `tmr.now()`, and `tmr.time()`.
+- `apps/smoke_timer` ran from SD card and verified auto timers, single timers, state, unregister, timer-loop idle, and `Lua app ok` on real hardware.
+- Lua `file` module, LVGL `S:` SD filesystem asset path, positioning, flags, and label long modes have board smoke evidence through `apps/smoke_file` and `apps/smoke_assets`.
+
+Still build-verified but not yet display-smoke-verified:
+
+- Current `apps/smoke_ui` has been migrated from direct `set_interval` usage to `tmr`; the earlier display demo was verified before that migration.
+- BMP image decoding is enabled with `CONFIG_LV_USE_BMP=y`; `apps/smoke_visual` packages a real BMP asset and uses `lv_img_create`, `lv_img_set_src`, `lv_btn_create`, `lv_bar_create`, `lv_bar_set_range`, and `lv_bar_set_value`.
+- LVGL binding code has been split into core registration, SD/asset filesystem, and widget bindings to keep new API work maintainable.
+- The firmware now uses a custom 4 MB app partition because the network-enabled runtime no longer fits in ESP-IDF's default 1 MB factory app partition.
+
+Board-verified networking and install-service work:
+
+- WiFi, HTTP, JSON, and NTP/time Lua modules are board-verified through `apps/smoke_network` with local `wifi.json`; the board connected to `1-306`, got `192.168.1.32`, and completed an HTTP 200 smoke request.
+- The runtime starts a minimal HTTP install service on port `8080`: `POST /install?app=<id>&path=<relative>` writes files under `/sdcard/apps/<id>/`.
+- The uploader command now writes a package, calls `/rescan`, and confirms the app through `/apps`: `npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` uploaded 5 files and confirmed `smoke_visual_remote`.
+- The runtime can launch an installed SD app without rebooting: `POST /launch?app=smoke_visual_remote` returned `200 OK`, and serial logs showed `smoke visual ok S:/apps/smoke_visual_remote/assets/icon.bmp` plus timer-driven progress updates.
+- The local helper command is `npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote`; if an app is already running, the board returns `app already running` instead of starting two Lua/LVGL apps at once.
 
 ## Boundary
 
@@ -33,8 +51,9 @@ Normal app iteration:
 AI generates app.info + Lua + assets
   -> validator checks package
   -> packager creates dist/apps/<app-id>
-  -> user copies files to SD card /apps/<app-id>
+  -> user copies files to SD card /apps/<app-id> or uploads through the install service
   -> runtime scans /sdcard/apps
+  -> user launches the app through /launch or the runtime executes the boot app
   -> Lua runner executes main.lua
 ```
 
@@ -60,7 +79,7 @@ ESP32 runtime boots
   -> finds an app directory with app.info
   -> reads entry = main.lua
   -> creates a Lua state
-  -> registers runtime APIs such as lv_label_create and set_interval
+  -> registers runtime APIs such as lv_label_create, tmr, and set_interval
   -> runs /sdcard/apps/<app-id>/main.lua
 ```
 
@@ -146,7 +165,12 @@ The product idea is not just "ESP32 can run Lua." The useful idea is turning ESP
 
 ## First Demo Apps
 
-- `apps/smoke_ui`: validated runtime smoke app. Currently shows the Shanghai weather-card demo and updates a label through `set_interval`.
+- `apps/smoke_ui`: validated runtime smoke app. Currently shows the Shanghai weather-card demo and updates a label through `tmr`.
+- `apps/smoke_timer`: timer smoke app for `tmr.create()`, auto timers, single timers, state, and unregister behavior.
+- `apps/smoke_file`: file module smoke app for app-local config reads, directory listing, file handles, and app-local writes.
+- `apps/smoke_assets`: asset-path smoke app for app-local resource path resolution and `lv_img_*` binding checks.
+- `apps/smoke_visual`: visual smoke app for BMP assets, image objects, buttons, bars, and timer-driven widget updates.
+- `apps/smoke_network`: network smoke app for app-local WiFi config, JSON encode/decode, NTP/time, WiFi STA connection, and HTTP GET.
 - `apps/weather`: pure Lua/LVGL network/UI app.
 - `apps/voice_ai`: device voice app plus desktop AI bridge.
 - `apps/nesgame`: Lua app backed by native NES module.

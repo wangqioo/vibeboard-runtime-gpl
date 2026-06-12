@@ -1,10 +1,209 @@
 # VibeBoard Runtime GPL 开发计划
 
-## 当前阶段
+更新时间：2026-06-13
 
-当前项目处于 **Phase 2A：App 文件级打包和 AI plan 落盘工具可用**。
+## 一句话目标
 
-这不是一个已经可以直接烧录到 ESP32-S3 的完整运行时固件。它现在的价值是把 HoloCubic/Cubic Lua 的 Lua/LVGL App 生态、NES 动态模块源码、VibeBoard 自己的 App 包规范、验证工具、AI package plan 落盘工具和文件级打包工具整理成一个独立 GPL 项目，为后续做真实设备运行时和上传闭环打底。
+把 ESP32-S3 小屏开发从“每个应用都要写固件、编译、烧录”改成：
+
+```text
+一次烧录稳定 Runtime 固件
+  -> AI 生成 Lua/LVGL App 包
+  -> 工具验证和打包
+  -> 复制或上传到 SD 卡
+  -> Runtime 扫描并执行 App
+```
+
+普通 App 迭代不重新烧录；底层驱动、Lua 模块、LVGL 绑定、上传服务、Native ABI 变化仍然需要固件开发和重新烧录。
+
+## 当前真实阶段
+
+当前项目已经进入 **真机最小 Runtime 闭环已跑通** 阶段。
+
+已经不是单纯的文件整理项目。当前已经在立创 ESP32-S3 小屏设备上验证：
+
+- ESP32-S3 启动、PSRAM、LCD、背光、LVGL、SD 卡挂载；
+- 从 `/sdcard/apps` 扫描 App；
+- 读取 `app.info`；
+- 执行 SD 卡上的 `main.lua`；
+- Lua `print()` 输出到 ESP-IDF 串口日志；
+- Lua 调用最小 LVGL 绑定画 UI；
+- `set_interval(ms, callback)` 驱动简单动态刷新；
+- `apps/smoke_ui` 天气卡片已用旧版 `set_interval` loop 真机显示，城市为 `Shanghai`，`Updated 00s` 标签能刷新。
+- NodeMCU 风格 `tmr` 已实现，并通过 `apps/smoke_timer` 在真机串口验证自动定时器、单次定时器、状态读取、注销、timer loop idle 和 `Lua app ok`。
+- `file` 模块、LVGL `S:` 资源路径、定位、flags、label long mode 已通过 `apps/smoke_file` 和 `apps/smoke_assets` 真机串口验证。
+- BMP 解码、按钮、进度条和动画值更新已通过 `apps/smoke_visual` 上板串口验证；BMP 文件路径解析成功，进度值持续刷新。BMP 视觉显示是否正确仍需肉眼确认屏幕。
+- WiFi、HTTP、JSON、NTP/time 最小 Lua 模块已实现并完成真机 smoke；`apps/smoke_network` 已读取 SD 卡 `wifi.json`，连接 `1-306`，拿到 `192.168.1.32`，并完成 HTTP 200。
+- 最小 HTTP 安装服务已实现并上板验证：`POST /install?app=<id>&path=<relative>` 可以把文件写入 `/sdcard/apps/<id>/`；`GET /status`、`GET /apps`、`POST /rescan` 已验证。
+- 免拔 SD 的上传和远程启动闭环已跑通：`npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` 上传并确认 App，`POST /launch?app=smoke_visual_remote` 返回 `200 OK`，串口确认从 `/sdcard/apps/smoke_visual_remote` 启动并持续刷新进度。
+- 网络运行时让固件超过默认 1MB app 分区，当前已切换到自定义 4MB factory app 分区。
+
+当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **25% 到 35%**：核心方向、文件/资源、基础控件、定时器和网络 API 已经进入可验证阶段，应用生态、Launcher、输入和 Native 模块还需要补齐。
+
+## 当前完成清单与后续路线
+
+### 已经做完并真机验证
+
+底层板级 Runtime：
+
+- 立创 ESP32-S3 板可以启动 ESP-IDF Runtime；
+- PSRAM、ST7789 LCD、背光、LVGL task 已跑通；
+- SD 卡挂载到 `/sdcard`，并且不会在挂载失败时自动格式化；
+- Runtime 固件已切到 4MB app 分区，能容纳网络、Lua、LVGL 和安装服务。
+
+SD App 执行链路：
+
+- Runtime 扫描 `/sdcard/apps`；
+- 读取每个 App 的 `app.info`；
+- 根据 `entry = main.lua` 找到入口脚本；
+- 创建 Lua VM，注册 Runtime API，然后执行 SD 卡上的 Lua App；
+- 串口日志可看到 Lua `print()` 输出；
+- `smoke_ui`、`smoke_timer`、`smoke_file`、`smoke_assets`、`smoke_visual`、`smoke_network` 都已经作为不同能力的 smoke app 使用。
+
+Lua/NodeMCU 兼容能力：
+
+- `tmr` 核心 API 已实现：`tmr.create`、`timer:alarm`、`timer:start`、`timer:stop`、`timer:unregister`、`timer:state`、`timer:interval`、`tmr.now`、`tmr.time`；
+- `file` 最小 API 已实现：读取 app-local 配置、列目录、文件句柄读写、app-local 写入；
+- `wifi`、`http`、`sjson`、`time` 最小 API 已真机验证；
+- `set_interval` 作为早期兼容层保留，但主要方向已经转向 `tmr`。
+
+LVGL 能力：
+
+- 基础对象、label、container、尺寸、定位、颜色、边框、圆角、padding、对齐已可用；
+- `S:` SD 文件系统、app-local 资源路径解析、`lv_img_*` 最小图片 API 已可用；
+- BMP 解码已启用；
+- button、bar、进度值更新等常用 widget 已通过 `smoke_visual` 验证。
+
+免拔 SD 的部署链路：
+
+- 板端 HTTP 服务监听 `8080`；
+- `POST /install?app=<id>&path=<relative>` 可写入 `/sdcard/apps/<id>/...`；
+- `GET /status` 可查看 SD、App 数量和服务状态；
+- `GET /apps` 可列出已安装 App；
+- `POST /rescan` 可重新扫描 SD App；
+- `POST /launch?app=<id>` 可远程启动指定 App；
+- Mac 工具已支持：
+
+```bash
+npm run package:app -- apps/smoke_visual
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote
+npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote
+```
+
+验证和文档：
+
+- `npm test` 已覆盖 validator、packager、AI contract、uploader、plan writer、firmware static check；
+- `idf.py build` 已通过；
+- `/dev/cu.usbmodem112301` 已刷入当前 Runtime；
+- `docs/device-bringup.md` 记录了每次真机证据；
+- `docs/runtime-capabilities.md` 维护 Runtime API 的实现/验证状态。
+
+### 现在能用到什么程度
+
+当前已经可以做这类事情：
+
+```text
+AI 生成一个受限 Lua/LVGL App
+  -> 工具校验和打包
+  -> Wi-Fi 上传到板子 SD 卡
+  -> Runtime 重扫 App
+  -> HTTP 远程启动
+  -> 屏幕运行这个 Lua/LVGL App
+```
+
+这已经达到了“Runtime 一次烧录，App 快速迭代不用每次烧录固件”的核心验证目标。
+
+但当前还不是面向普通用户的完整产品：
+
+- 没有屏幕端 Launcher；
+- 没有触摸选择 App；
+- 没有 App 停止、退出、重启和切换模型；
+- 还不能直接运行完整上游 HoloCubic App；
+- LVGL 绑定覆盖还不够广；
+- 没有 Native `.so` 模块加载；
+- 没有浏览器端 App 管理 UI；
+- 没有 Runtime/API/App schema 版本兼容检查。
+
+### 下一阶段必须补的核心能力
+
+第一优先级：App 生命周期和 Launcher。
+
+- 定义一个 App 运行状态机：`idle`、`starting`、`running`、`stopping`、`failed`；
+- 给 Lua runtime 增加停止信号；
+- 让 `tmr` loop、文件句柄、LVGL 对象和事件 handler 能被清理；
+- 把当前 `/launch` 从“只能在没有 App 跑时启动”升级为“可以受控切换”；
+- 做一个最小屏幕 Launcher，显示 `/sdcard/apps` 列表；
+- 触摸或按键选择 App 后启动；
+- 当前 App 出错时回到 Launcher，而不是卡死或重启。
+
+第二优先级：输入事件。
+
+- 暴露 FT6336 touch 给 Lua；
+- 增加 `touch.on(...)` 或统一事件 API；
+- 给按钮、列表、Launcher 选择提供真实交互；
+- 做 `apps/smoke_touch`，显示触摸坐标和点击状态；
+- 验证快速点击不会导致 Lua/LVGL 崩溃。
+
+第三优先级：扩展 LVGL/API 覆盖。
+
+- 补常用控件：list、arc、switch、dropdown、textarea、roller、slider；
+- 补常用样式：font、opacity、shadow、line、flex/grid 基础；
+- 补图片/字体资源加载的稳定路径；
+- 建立 “AI 可以生成的 UI API 白名单”；
+- 让工具在 App 使用未支持 API 时提前报 `Runtime update required`。
+
+第四优先级：设备端 App 管理。
+
+- HTTP 删除 App；
+- upload staging + commit，避免半包被启动；
+- App 包 manifest/hash 校验；
+- 浏览器或桌面端 App 管理页；
+- Runtime 版本、API 版本、App schema 版本查询；
+- 不兼容 App 拒绝启动并给出原因。
+
+第五优先级：上游兼容和高级能力。
+
+- 按能力逐个迁移完整 `weather`；
+- 再做 `voice_ai` 的音频路径；
+- 最后做 NES/native module ABI；
+- 不要在 Launcher 和生命周期稳定前追 NES 或完整语音。
+
+### 推荐最近三个开发切片
+
+1. **受控停止和重启当前 App**
+
+   目标是让长运行 Lua App 能被停止，`/launch` 可以切到另一个 App。
+
+   验收：
+
+   - 启动 `smoke_visual_remote`；
+   - 再 launch `smoke_network`；
+   - 旧 App timer 停止，新 App 正常启动；
+   - 串口没有 Lua panic、LVGL assert 或内存明显泄漏。
+
+2. **最小屏幕 Launcher**
+
+   目标是在设备屏幕上看到 App 列表，并能选择启动。
+
+   验收：
+
+   - Launcher 显示 `smoke_network`、`raw_upload`、`smoke_visual_remote`；
+   - 点击或按键选择能启动对应 App；
+   - App 失败后能回到 Launcher；
+   - HTTP `/apps` 和屏幕列表来自同一份 registry。
+
+3. **触摸事件 smoke**
+
+   目标是把 FT6336 输入暴露给 Runtime/Lua。
+
+   验收：
+
+   - `apps/smoke_touch` 显示当前触摸坐标；
+   - 点击 Launcher 条目能触发选择；
+   - 快速点击不崩；
+   - 事件 handler 在 App 切换时被清理。
+
+## 项目边界
 
 项目路径：
 
@@ -17,12 +216,54 @@
 - 本项目是 GPL-3.0-only。
 - 本项目直接吸收 `clocteck/holocubic-apps` 和 `clocteck/holocubic-nes-esp32`。
 - 原 `/Users/wq/VibeBoard` 仍保持独立 MIT 项目，不混入 GPL 源码。
+- 如需互通，只通过文档链接、网络 API、进程边界或构建产物，不复制 GPL 源码到 MIT 仓库。
+
+硬件边界：
+
+- 当前目标板：立创 ESP32-S3 小屏板，320x240 ST7789，FT6336 触摸，SD 卡槽。
+- 当前串口：`/dev/cu.usbmodem112301`。
+- 官方示例源码参考：`/Users/wq/Downloads/szpi-s3-esp`。
+
+## 上游参考结论
+
+上游也是同一类架构：
+
+```text
+Runtime 固件
+  -> 注册 Lua VM、NodeMCU 风格模块、LVGL 绑定、App 管理器
+  -> SD 卡放 /sd/apps/<app>/app.info + main.lua + assets
+  -> Lua App 调 Runtime API
+  -> 必要时从 /sd/modules 加载 Native .so 模块
+```
+
+我们已经吸收：
+
+```text
+upstream/holocubic-apps/
+upstream/holocubic-nes-esp32/
+```
+
+上游能力重点：
+
+- App 包结构：`app.info + main.lua`；
+- 文件路径：`/sd/...`；
+- 全局 Lua 模块：`tmr`、`wifi`、`http`、`file`、`app`、`key`、`nes` 等；
+- Lua UI：全局 `lv_*` 函数和 LVGL 常量；
+- NES：Lua App 调用 `/sd/modules/nes.so` 动态模块。
+
+我们的策略不是盲目复制上游，而是在立创 ESP32-S3 板上重做一版 VibeBoard Runtime，优先保证：
+
+- 真机可控；
+- AI 生成成功率高；
+- App API 面小而稳定；
+- 缺能力时明确返回 `Runtime update required`；
+- 每个阶段都有测试和真机日志证据。
 
 ## 已完成
 
-### 1. 新项目骨架
+### 1. 仓库和授权边界
 
-已建立独立仓库：
+已建立独立 GPL 仓库：
 
 ```text
 vibeboard-runtime-gpl/
@@ -34,42 +275,26 @@ vibeboard-runtime-gpl/
   apps/
   modules/
   tools/
-  web-console/
+  firmware/
 ```
 
-已写清楚：
+已写明：
 
-- 项目目标；
-- GPL 许可来源；
-- 与原 VibeBoard Micro 的边界；
-- Phase 1 不包含完整 ESP32 runtime firmware；
-- 普通 App 迭代和 runtime 固件开发的区别。
+- GPL 来源；
+- 与原 MIT VibeBoard 的边界；
+- 上游导入路径；
+- App 层和 Runtime 层的区别。
 
 ### 2. 上游源码吸收
 
-已导入完整上游快照：
+已导入：
 
 ```text
 upstream/holocubic-apps/
 upstream/holocubic-nes-esp32/
 ```
 
-相关说明：
-
-- [upstream-map.md](upstream-map.md)
-- [NOTICE.md](../NOTICE.md)
-
-并提供了上游导入脚本：
-
-```text
-tools/import-upstream.sh
-```
-
-脚本已经做过加固：新快照下载和解压成功后才替换现有目录，避免网络失败时破坏已有上游快照。
-
-### 3. 首批 curated demo
-
-已从上游整理出第一批 VibeBoard-facing demo：
+已整理首批 VibeBoard-facing App：
 
 ```text
 apps/weather/
@@ -78,388 +303,868 @@ apps/nesgame/
 modules/nes/
 ```
 
-这三类 demo 分别代表：
+这些 App 目前主要作为能力目标和兼容性样本，不能默认认为已经在我们 Runtime 上可运行。
 
-- `weather`：普通 Lua/LVGL 网络 UI App；
-- `voice_ai`：设备端 App + 桌面 AI bridge；
-- `nesgame`：Lua App 调用原生 NES 模块的方向。
-
-### 4. App 包验证器
+### 3. App 包工具链
 
 已实现：
 
 ```text
 tools/app-validator/
+tools/app-packager/
+tools/app-plan-writer/
 ```
 
-当前能验证：
+当前能力：
 
-- `app.info` 是否存在；
-- `name`、`entry`、`description` 是否存在；
-- entry 文件是否存在；
-- entry 路径是否逃逸 app 目录；
-- 绝对路径、`../`、symlink 逃逸是否被拒绝；
-- 使用 network/audio/file/module 能力时是否声明对应 `capabilities`。
+- 校验 `app.info`；
+- 校验 `name`、`entry`、`description`；
+- 拒绝 entry 路径逃逸；
+- 检查 restricted API 和 `capabilities` 声明；
+- 打包 App 到 `dist/apps/<app-id>/`；
+- 从 AI package plan JSON 写入 `generated/apps/<app-id>/`；
+- 可选继续打包生成部署目录。
 
-已补充 curated app capability：
-
-```ini
-apps/weather/app.info    -> capabilities = network
-apps/voice_ai/app.info   -> capabilities = network,audio,file
-apps/nesgame/app.info    -> capabilities = file
-```
-
-### 5. AI 生成契约
-
-已建立：
-
-```text
-docs/ai-generation-contract.md
-scripts/test-ai-contract.mjs
-```
-
-已明确：
-
-- JSON 是 VibeBoard 工具链使用的中间生成计划；
-- 真实落盘包仍然是 `app.info + Lua/assets directory`；
-- `app` 元数据映射为 `app.info`；
-- `files[]` 映射为 app 目录内文件；
-- 需要驱动、pin map、BLE service、partition、sdkconfig、LVGL binding、native ABI 时，必须返回或报告 `Runtime update required`，不能伪装成普通 Lua App 能解决。
-
-### 6. 当前验证命令
-
-当前可用命令：
+当前命令：
 
 ```bash
 npm test
 npm run validate:apps
-```
-
-当前状态下两条命令已通过：
-
-- validator 测试；
-- upstream map 测试；
-- AI contract 测试；
-- packager 测试；
-- AI plan writer 测试；
-- curated app 包验证。
-
-### 7. App 文件级打包器
-
-已实现：
-
-```text
-tools/app-packager/
-```
-
-当前能做：
-
-- 打包单个 app 目录；
-- 打包全部 curated demo；
-- 打包前复用 validator；
-- 拒绝 repo 外部 app 目录；
-- 跳过 symlink；
-- 输出 `manifest.json`；
-- 输出 `install-notes.txt`；
-- 把产物放入 `dist/apps/<app-id>/`。
-
-可用命令：
-
-```bash
 npm run package:app -- apps/weather
 npm run package:demos
-```
-
-产物示例：
-
-```text
-dist/apps/weather/
-  app.info
-  main.lua
-  assets/...
-  manifest.json
-  install-notes.txt
-```
-
-部署含义：
-
-```text
-dist/apps/weather/* -> /sd/apps/weather/
-```
-
-这一步仍然是文件级部署包，不会烧录固件。
-
-### 8. AI package plan 落盘工具
-
-已实现：
-
-```text
-tools/app-plan-writer/
-```
-
-当前能做：
-
-- 读取 `docs/ai-generation-contract.md` 定义的 JSON package plan；
-- 生成 `generated/apps/<app-id>/`；
-- 从 `app` 元数据生成权威 `app.info`；
-- 安全写入 plan 内的文本文件；
-- 拒绝绝对路径和 `..` 路径逃逸；
-- 写入后复用 validator；
-- 可选调用 packager 输出 `dist/apps/<app-id>/`。
-
-可用命令：
-
-```bash
 npm run write:app-plan -- plan.json
 npm run write:app-plan -- plan.json --package
 ```
 
-这一步不调用 AI 模型，只接收 AI 已经生成好的 JSON 文件。
+### 4. 真机 Runtime 最小闭环
 
-## 当前能用什么
-
-现在能用的是 **项目底座和文件级开发能力**：
-
-- 可以查看和继续整理上游 Lua/LVGL App；
-- 可以验证 app 包是否满足 VibeBoard Runtime 规范；
-- 可以把 curated app 打包成 `dist/apps/<app-id>/` 文件级部署包；
-- 可以把 AI package plan JSON 落盘为 `generated/apps/<app-id>/`；
-- 可以用 `--package` 把生成的 app 继续打成 `dist/apps/<app-id>/`；
-- 可以基于 `apps/weather`、`apps/voice_ai`、`apps/nesgame` 研究 App 包结构；
-- 可以基于 `docs/ai-generation-contract.md` 让 AI 生成 app package plan；
-- 可以基于 `modules/nes` 继续研究 ESP-ELFLoader 动态模块方向。
-
-如果手头已经有兼容 Clocteck/Cubic Lua runtime 的设备，这些 app 目录可以作为手动 SD 卡部署的参考起点。
-
-## 当前还不能用什么
-
-现在还不能直接完成这些事情：
-
-- 不能直接生成一个可烧录的 VibeBoard Runtime 固件；
-- 不能直接调用大模型生成 JSON plan；
-- 不能直接把 App 从浏览器上传到 ESP32 设备；
-- 不能在 VibeBoard 自己的设备 launcher 中运行这些 App；
-- 不能证明 `apps/weather` 已在目标设备上真实跑通；
-- 不能证明 `modules/nes/nes.so` 已在目标设备上编译、部署、加载；
-- 不能替代原 `/Users/wq/VibeBoard` 的 ESP-IDF 编译/烧录流程。
-
-## 总体路线
-
-目标路线仍然是：
+已实现 ESP-IDF Runtime：
 
 ```text
-一次性烧录 VibeBoard Runtime
-  -> AI 生成 Lua/LVGL App 包
-  -> validator 检查
-  -> 浏览器/网络/SD 部署到设备
-  -> launcher 加载 App
-  -> 必要时加载 native .so 模块
+firmware/vibeboard_runtime/
 ```
 
-普通 App 迭代不重新烧录；runtime、驱动、绑定、ABI 变化仍然需要固件开发和烧录。
-
-## Phase 2：真实设备闭环
-
-目标：证明至少一个 App 能在真实设备上跑起来。
-
-### Phase 2A：文件级打包
-
-状态：已完成基础版。
-
-已完成：
-
-- `package:app`；
-- `package:demos`；
-- `write:app-plan`；
-- package manifest；
-- install notes；
-- generated app writer；
-- packager 测试接入 `npm test`。
-- plan writer 测试接入 `npm test`。
-
-剩余增强：
-
-- manifest schema 独立文档化；
-- 输出 zip/tar 包；
-- 对 assets 体积、文件数量、文件名规则做更细限制。
-- 支持 base64 二进制资产写入。
-
-### Phase 2B：真实设备手动部署
-
-建议任务：
-
-1. 选定目标设备
-
-   当前用户手上的设备描述为 `立创 ESP32S3 开发板`。优先按 `立创·实战派ESP32-S3开发板` 调研，因为官方资料包含 2.0 寸 ST7789 屏、FT6336 触摸、TF 卡、音频、WiFi、LVGL 等路径；如果实物是普通裸开发板，则切换到 `立创·ESP32S3R8N8开发板` 资料线。
-
-   记录屏幕、触摸/按键、SD、音频、USB 串口能力。
-
-   设备 bring-up 文档：
-
-   ```text
-   docs/device-bringup.md
-   ```
-
-   本地立创示例源码映射：
-
-   ```text
-   docs/lckfb-szpi-s3-source-map.md
-   ```
-
-2. 决定 runtime 基线
-
-   两个选择：
-
-   - 先使用 Clocteck/Cubic Lua 固件验证 app 目录；
-   - 或者开始建立 VibeBoard 自己的 ESP-IDF runtime 工程。
-
-3. 手动部署 `apps/weather`
-
-   目标路径：
-
-   ```text
-   /sd/apps/weather/app.info
-   /sd/apps/weather/main.lua
-   /sd/apps/weather/assets/...
-   ```
-
-   验证标准：
-
-   - 设备 launcher 能看到 weather；
-   - App 能启动；
-   - 网络请求失败时有可理解的错误状态；
-   - 串口日志可收集。
-
-4. 写设备测试记录
-
-   持续更新：
-
-   ```text
-   docs/device-bringup.md
-   ```
-
-   记录设备型号、固件版本、SD 目录结构、串口日志、成功/失败截图或描述。
-
-## Phase 3：VibeBoard Runtime 固件
-
-目标：开始做自己的 ESP32-S3 runtime，而不是只依赖上游固件。
-
-建议模块：
-
-- ESP-IDF 工程骨架；
-- LVGL 初始化；
-- 屏幕/输入/SD/WiFi 驱动；
-- Lua VM 集成；
-- NodeMCU 风格模块适配；
-- LVGL Lua binding；
-- app scanner；
-- launcher；
-- app lifecycle；
-- 日志/错误上报。
-
-第一版不追求完整复制上游能力，优先跑通：
+核心文件：
 
 ```text
-/sd/apps/<app>/app.info
-/sd/apps/<app>/main.lua
+main/board_lckfb_szpi_s3.c
+main/app_registry.c
+main/app_runner.c
+main/lua_lvgl.c
+main/lua_lvgl_fs.c
+main/lua_lvgl_widgets.c
+main/main.c
 ```
 
-## Phase 4：部署工具和 Web Console
+当前 Runtime 能力：
 
-目标：让“AI 写 App -> 验证 -> 上传设备”变成可用闭环。
+- 初始化 I2C、PCA9557、ST7789、LVGL、FT6336 touch、SD 卡；
+- 正确处理立创板反相背光；
+- 挂载 SD 到 `/sdcard`；
+- 扫描 `/sdcard/apps`；
+- 找到第一个包含 `app.info` 的 App；
+- 读取 `name` 和 `entry`；
+- 创建 Lua VM；
+- 注册 `print()`；
+- 注册 `tmr` 和兼容层 `set_interval(ms, callback)`；
+- 注册拆分后的 LVGL 绑定；
+- 注册 LVGL `S:` SD 文件系统；
+- 启用 BMP 解码器；
+- 执行 `/sdcard/apps/<app>/main.lua`。
 
-建议任务：
-
-- `web-console/` 做最小浏览器 UI；
-- 展示 app package plan；
-- 调用 validator；
-- 打包 app 目录；
-- 通过 runtime HTTP endpoint 上传；
-- 展示上传结果和设备日志；
-- 支持回滚或删除 App。
-
-第一版可以只支持局域网 HTTP 上传，不需要同时做 USB、BLE、远程隧道。
-
-## Phase 5：AI 生成 App 包
-
-目标：把 VibeBoard 的 AI 生成能力接到 Runtime App 包。
-
-建议任务：
-
-- 让 AI 先输出 `docs/ai-generation-contract.md` 定义的 package plan；
-- 由工具把 package plan 写成目录；
-- 运行 validator；
-- 展示错误并让 AI 修复；
-- 通过 Phase 4 的上传工具部署；
-- 收集设备日志后进入修复循环。
-
-生成策略：
-
-- 屏幕 UI、卡片、小工具、小动画、小游戏优先走 Lua/LVGL App；
-- 驱动、底层协议、BLE service、分区、sdkconfig、LVGL binding、native ABI 变化走 runtime/ESP-IDF 工作流。
-
-## Phase 6：Native Module 路线
-
-目标：验证 `.so` 动态模块作为高性能能力扩展。
-
-建议先从 NES 模块开始：
+已真机验证的 App：
 
 ```text
-modules/nes/
+apps/smoke_ui/
 ```
 
-验证顺序：
+旧版 `set_interval` 真机验证日志关键线：
 
-1. 确认 ESP-IDF 和 ESP-ELFLoader 版本；
-2. 编译 `nes.so`；
-3. 放入设备：
+```text
+app_registry: found 1 apps
+Lua app start: smoke_ui
+weather card dynamic ok
+Lua interval loop start: 1 timers
+weather card tick 1
+weather card tick 2
+weather card tick 3
+Lua interval loop done
+Lua app ok
+VibeBoard Runtime ready: sd=ok apps=1 lua=ok
+```
 
-   ```text
-   /sd/modules/nes.so
-   ```
+## 当前不能假装已经完成的部分
 
-4. 部署 `apps/nesgame`；
-5. 验证 Lua `require("/sd/modules/nes.so")`；
-6. 验证 ABI mismatch 时错误提示可理解。
+这些能力还没有完成：
 
-## 风险和注意事项
+- 不能运行完整上游 `weather`；
+- 不能运行完整 `voice_ai`；
+- 不能运行 `nesgame`；
+- `wifi`、`http`、`sjson`、`time` 已真机验证最小路径；
+- 没有 Lua 可用的触摸/按键事件；
+- 没有屏幕端 App launcher、触摸选择和受控 App 切换；
+- HTTP 上传、列表、重扫、远程启动已完成最小版；还没有浏览器上传、卸载、commit/staging 和受控停止/重启；
+- 没有图片、字体、canvas、动画等完整 LVGL 绑定；
+- 没有 Native `.so` 动态模块加载 ABI；
+- `tmr` 事件循环已经从固定 8 秒 smoke loop 改为 timer-driven loop，但完整 App 生命周期停止信号要等 Launcher 阶段补齐。
 
-### GPL 边界
+## 与上游差距表
 
-本项目是 GPL-3.0-only。后续不要把本项目源码复制进原 MIT VibeBoard 仓库。
+| 能力 | 上游状态 | 我们当前状态 | 优先级 |
+| --- | --- | --- | --- |
+| SD App 包结构 | 成熟 | 已跑通最小版 | 已完成基础 |
+| Lua VM | 成熟 | 已集成 | 已完成基础 |
+| LVGL 绑定 | 覆盖较广 | 最小控件/样式/图片/按钮/进度条已跑通，覆盖仍远小于上游 | P1 |
+| 定时器 | `tmr` | 核心 API 已真机 smoke，生命周期还需 Launcher 补齐 | P0 |
+| 文件模块 | `file` | 最小 API 已真机 smoke；App-local 读写和资源路径已可用 | P0 |
+| 网络 | `wifi/http/net/mqtt` | `wifi`/`http` 最小 API 已 board-verified，`net`/`mqtt` 未做 | P1 |
+| JSON | `sjson` | `decode`/`encode` 已 board-verified | P1 |
+| 时间/NTP | `time` | `get`/`settimezone`/`initntp` 已 board-verified | P1 |
+| App 管理 | `app` 模块 | HTTP `/launch` 已可启动指定 SD App；Lua `app.*` 模块、屏幕 Launcher 和受控切换未做 | P1 |
+| 输入 | `key`/事件 | touch 初始化但未暴露给 Lua | P1 |
+| 资源 | 图片/字体/资产路径 | App-local 路径和 `lv_img_*` 绑定已编译通过，真机与解码待补 | P1 |
+| Web 安装卸载 | 有路线 | 无 | P2 |
+| Native 模块 | NES `.so` | 源码吸收，未运行 | P3 |
 
-如果需要在原 VibeBoard 中引用本项目，只做：
+## 总体开发原则
 
-- 文档链接；
-- 进程边界调用；
-- 网络 API 调用；
-- 构建产物下载链接。
-
-### Runtime 能力边界
-
-Lua/LVGL App 不能修改底层驱动。遇到缺失能力时，应报告：
+1. 先补 Runtime API，再追 App 数量。
+2. 每补一个 Runtime 能力，都必须有：
+   - 静态测试；
+   - 最小 Lua smoke App；
+   - 真机构建；
+   - 真机串口日志；
+   - 必要时屏幕确认。
+3. 上游 App 不能直接全量搬上来就算完成，必须按能力拆解。
+4. AI 生成 App 只能使用已声明的 Runtime API。
+5. 遇到缺失底层能力，工具和文档都应明确提示：
 
 ```text
 Runtime update required
 ```
 
-### Preview 边界
+## Phase 0：状态校准和质量护栏
 
-浏览器预览只能作为语义/视觉参考，不能当成真实 LVGL 硬件验证。
+目标：让文档、测试、构建脚本和真实状态一致。
 
-真实通过标准必须包括：
+任务：
 
-- app package validator 通过；
-- 设备运行通过；
-- 串口/日志证据；
-- 必要时截图或录屏。
+- 更新 README 和 `docs/development-plan.md`，把项目状态从“文件级打包”改为“真机最小 Runtime 已跑通”。
+- 增加 Runtime capability matrix 文档，列出每个 Lua API 是否已实现、是否真机验证。
+- 把真机验证命令收敛成固定脚本或文档块。
+- 确保 `npm test` 覆盖：
+  - app validator；
+  - upstream map；
+  - AI contract；
+  - packager；
+  - plan writer；
+  - firmware static check。
+- 对 `firmware/vibeboard_runtime` 增加静态检查，防止背光反相、SD 路径、Lua 栈大小等关键点回退。
 
-## 建议的下一步
+验收标准：
 
-下一步最小闭环建议只做一件事：
+- `npm test` 通过；
+- `idf.py build` 通过；
+- 文档不再出现“不能生成可烧录 Runtime 固件”这类过期表述；
+- `docs/device-bringup.md` 记录当前 smoke_ui 真机证据。
+
+## Phase 1：生产级 Lua 事件循环和 `tmr`
+
+目标：把当前 smoke 用的 `set_interval` 升级为更接近上游的事件模型，并提供 NodeMCU 风格 `tmr`。
+
+状态：核心代码已完成，`npm test`、`idf.py build`、真机刷写和 `apps/smoke_timer` SD smoke 已通过；完整 App 生命周期停止信号仍需在 Launcher 阶段补齐。
+
+状态：最小 `file` API 已实现，`apps/smoke_file` 已新增，`npm run package:app -- apps/smoke_file`、`idf.py build`、刷机和真机 SD smoke 已通过。`apps/smoke_assets`、`lv_resolve_asset_path()`、`lv_asset_exists()`、`lv_img_create()`、`lv_img_set_src()`、高频位置/flag/label long mode 绑定和 LVGL `S:` 文件系统驱动已真机 smoke；真实图片/字体解码仍待补齐。
+
+已新增或修改：
 
 ```text
-选一块真实 ESP32-S3 小屏设备，手动部署 apps/weather 并记录 bring-up 结果。
+firmware/vibeboard_runtime/main/app_runner.c
+firmware/vibeboard_runtime/main/lua_tmr.c
+firmware/vibeboard_runtime/main/lua_tmr.h
+firmware/vibeboard_runtime/main/CMakeLists.txt
+apps/smoke_timer/
+tools/firmware-static-check/test.mjs
+docs/runtime-capabilities.md
 ```
 
-成功后再做浏览器上传和 AI 生成。这样风险最低，也能最快证明“免重新烧录 App 迭代”这条路线是否成立。
+任务：
+
+1. 抽出 Lua runtime context，避免 `app_runner.c` 继续膨胀。
+2. 实现 `tmr.create()`。
+3. 实现 `timer:alarm(interval_ms, mode, callback)`。
+4. 实现常量：
+
+```lua
+tmr.ALARM_SINGLE
+tmr.ALARM_AUTO
+tmr.ALARM_SEMI
+```
+
+5. 实现：
+
+```lua
+tmr.now()
+tmr.time()
+timer:stop()
+timer:unregister()
+timer:state()
+timer:interval(ms)
+```
+
+6. 把 `set_interval` 改成兼容层，内部调用 `tmr`，或者标记为 VibeBoard 扩展 API。
+7. 事件循环不能固定 8 秒退出；需要支持 App 生命周期停止信号。
+8. 增加 `apps/smoke_timer`，验证单次定时器和循环定时器。
+
+验收标准：
+
+- `apps/smoke_ui` 仍能显示并刷新；
+- `apps/smoke_timer` 能打印至少 5 次 tick；
+- 串口能看到 `tmr` 自动定时器持续运行；
+- App 出错时 Lua VM 能退出并释放定时器；
+- `npm test` 和 `idf.py build` 通过。
+
+## Phase 2：文件和资源系统
+
+目标：让 Lua App 能稳定读取 SD 卡上的配置、图片、字体和本地资源。
+
+需要新增或修改：
+
+```text
+firmware/vibeboard_runtime/main/lua_file.c
+firmware/vibeboard_runtime/main/lua_file.h
+firmware/vibeboard_runtime/main/lua_lvgl.c
+apps/smoke_file/
+apps/smoke_assets/
+docs/app-package-format.md
+docs/runtime-capabilities.md
+tools/app-validator/
+```
+
+任务：
+
+1. 实现 `file` 模块最小集合：
+
+```lua
+file.exists(path)
+file.open(path, mode)
+file.read(path)
+file.write(path, data)
+file.list(path)
+```
+
+2. 路径统一规则：
+
+```text
+/sd/...       -> /sdcard/...
+S:/...        -> LVGL drive path
+relative path -> 当前 App 目录内路径
+```
+
+3. 加入 App sandbox：默认禁止 Lua 逃逸到 App 目录外，`/sd/...` 目前只开放只读解析，写入先限制在当前 App 目录内。
+4. 扩展 validator：使用 `file.` 必须声明 `capabilities = file`。
+5. 增加 `apps/smoke_file`，验证读写小配置文件。
+6. 增加 `apps/smoke_assets`，验证读取 App-local asset。
+7. 给 LVGL 增加最小图片/字体加载路线，优先支持上游 App 常用路径转换。
+
+验收标准：
+
+- [x] Lua 能读取 `/sd/apps/smoke_file/config.json`；
+- [x] Lua 能列出当前 App 目录；
+- [x] 未声明 `file` capability 的 App 被 validator 拒绝；
+- [x] 真机 SD 文件读写不破坏 App 包；
+- [ ] 错误路径有明确日志；
+- [x] App-local 资源路径解析和 LVGL `S:` 文件系统驱动真机 smoke；
+- [x] 高频 LVGL 位置、flag、label long mode 绑定真机 smoke；
+- [x] `apps/smoke_assets` 真机 smoke；
+- [ ] PNG/BMP/SJPG 或 LVGL bin 图片解码；
+- [ ] App-local 字体资源加载路线。
+
+## Phase 3：LVGL 绑定扩展
+
+目标：从“能画天气卡片”提升到“能支撑上游普通 UI App”。
+
+需要新增或修改：
+
+```text
+firmware/vibeboard_runtime/main/lua_lvgl.c
+firmware/vibeboard_runtime/main/lua_lvgl.h
+apps/smoke_lvgl_widgets/
+apps/smoke_lvgl_style/
+docs/runtime-capabilities.md
+```
+
+优先实现：
+
+- `lv_img_create`
+- `lv_img_set_src`
+- `lv_obj_set_pos`
+- `lv_obj_set_x`
+- `lv_obj_set_y`
+- `lv_obj_add_flag`
+- `lv_obj_clear_flag`
+- `lv_obj_set_style_opa`
+- `lv_obj_set_style_text_font`
+- `lv_label_set_long_mode`
+- `lv_label_set_recolor`
+- `lv_bar_create`
+- `lv_bar_set_value`
+- `lv_btn_create`
+- `lv_canvas_create` 可后置
+
+常量补齐：
+
+- 常用 `LV_ALIGN_*`
+- 常用 `LV_PART_*`
+- 常用 `LV_STATE_*`
+- 常用 `LV_LABEL_LONG_*`
+- 常用颜色、透明度、flag 常量
+
+工程要求：
+
+- 不能只堆一个巨大 `lua_lvgl.c`；
+- 当绑定继续增长时，拆成：
+
+```text
+lua_lvgl_core.c
+lua_lvgl_label.c
+lua_lvgl_obj.c
+lua_lvgl_img.c
+lua_lvgl_style.c
+```
+
+验收标准：
+
+- `apps/smoke_lvgl_widgets` 能显示 label、button、bar、image；
+- `apps/weather` 的 UI 部分能至少进入首屏，不因缺基础控件直接失败；
+- LVGL 对象表支持足够数量对象，且对象清理后不会引用悬空指针；
+- 每个新增绑定都记录在 `docs/runtime-capabilities.md`。
+
+## Phase 4：WiFi、HTTP、JSON、时间
+
+目标：让天气和 AI bridge 这类联网 App 有运行基础。
+
+当前状态：首批 `wifi`、`http`、`sjson`、`time` 模块已实现并完成真机联网 smoke；能力状态是 board-verified。设备已通过 SD 卡 `wifi.json` 连接 `1-306`，拿到 `192.168.1.32`，并对 `http://httpbin.org/get` 完成 HTTP 200。
+
+已完成：
+
+- `wifi.mode("sta")`、`wifi.start()`、`wifi.sta.config({ ssid = ..., password = ... })`、`wifi.sta.connect()`、`wifi.sta.getip()`；
+- WiFi 初始化前自动初始化 NVS，必要时处理 NVS 页/版本错误；
+- `http.get(url)`、`http.post(url, opts_or_body, body)` 同步 HTTP client；
+- `sjson.decode(text)`、`sjson.encode(table)`；
+- `time.settimezone(...)`、`time.initntp(...)`、`time.get()`；
+- `apps/smoke_network` 读取 app-local `wifi.json`，无配置时只做 JSON/time smoke 并打印清晰提示；
+- 自定义 4MB factory app 分区，避免网络固件超过 ESP-IDF 默认 1MB 分区。
+- 修复 `time.initntp()` 和安装服务在 `esp_netif` 未初始化时触发 `Invalid mbox` 的启动崩溃。
+- WiFi STA 关闭省电模式 `WIFI_PS_NONE`，让板子作为局域网 HTTP 服务端时更稳定。
+
+需要新增或修改：
+
+```text
+firmware/vibeboard_runtime/main/lua_wifi.c
+firmware/vibeboard_runtime/main/lua_http.c
+firmware/vibeboard_runtime/main/lua_sjson.c
+firmware/vibeboard_runtime/main/lua_time.c
+apps/smoke_network/
+apps/smoke_http_json/
+docs/runtime-capabilities.md
+docs/device-bringup.md
+```
+
+任务：
+
+1. `wifi` 最小能力：
+
+```lua
+wifi.mode("sta")
+wifi.start()
+wifi.sta.config({ ssid = "...", password = "..." })
+wifi.sta.connect()
+wifi.sta.getip()
+```
+
+后续待补：`wifi.sta.on("got_ip", callback)`。
+
+2. WiFi 配置来源先用 SD 卡 App 本地配置：
+
+```text
+/sdcard/apps/smoke_network/wifi.json
+```
+
+3. `http` 最小能力：
+
+```lua
+http.get(url)
+http.post(url, opts_or_body, body)
+```
+
+4. `sjson` 最小能力：
+
+```lua
+sjson.decode(text)
+sjson.encode(table)
+```
+
+5. `time` 最小能力：
+
+```lua
+time.get()
+time.settimezone("CST-8")
+time.initntp("pool.ntp.org")
+```
+
+6. 增加网络 smoke App：
+
+```text
+apps/smoke_network/
+```
+
+后续可再拆 `apps/smoke_http_json/` 做纯 HTTP/JSON 回归样本。
+
+验收标准：
+
+- 设备能从 SD App 目录读取 WiFi 配置并联网；
+- 串口打印 IP；
+- `http.get` 能请求一个固定测试接口；
+- `sjson.decode` 能解析响应；
+- `apps/weather` 能走到真实请求或明确网络错误状态；
+- 无 WiFi 配置时，屏幕和串口都有可理解错误，不崩溃。
+
+## Phase 5：App 生命周期和 Launcher
+
+目标：从“开机跑第一个 App”升级为“可列出、启动、退出、切换 App”。
+
+需要新增或修改：
+
+```text
+firmware/vibeboard_runtime/main/app_registry.c
+firmware/vibeboard_runtime/main/app_runner.c
+firmware/vibeboard_runtime/main/lua_app.c
+firmware/vibeboard_runtime/main/launcher.c
+firmware/vibeboard_runtime/main/launcher.h
+apps/launcher/
+docs/runtime-capabilities.md
+```
+
+任务：
+
+1. Registry 支持多个 App，不只记录第一个。
+2. 增加 App metadata：
+
+```text
+id
+name
+entry
+description
+capabilities
+path
+```
+
+3. 实现 `app` 模块最小集合：
+
+```lua
+app.list()
+app.current()
+app.launch(id)
+app.rescan()
+app.exiting()
+app.on(event, callback)
+```
+
+4. 实现 App 生命周期：
+
+```text
+start
+running
+exit requested
+cleanup
+stopped
+```
+
+5. 做最小 Launcher UI：
+
+- 显示 App 列表；
+- 点击或按键启动 App；
+- 返回 Launcher；
+- App 失败时显示错误。
+
+验收标准：
+
+- SD 卡放多个 App 时，Launcher 能列出；
+- 能从 Launcher 启动 `smoke_ui`；
+- 能退出 App 回到 Launcher；
+- `app.rescan()` 能识别新复制的 App；
+- App 崩溃不会导致整个 Runtime 崩溃。
+
+## Phase 6：触摸、按键和输入事件
+
+目标：把硬件输入暴露给 Lua，让 App 可以交互。
+
+需要新增或修改：
+
+```text
+firmware/vibeboard_runtime/main/lua_key.c
+firmware/vibeboard_runtime/main/lua_touch.c
+firmware/vibeboard_runtime/main/board_lckfb_szpi_s3.c
+apps/smoke_touch/
+apps/smoke_input/
+```
+
+任务：
+
+1. 把 FT6336 touch 事件接到 Lua。
+2. 实现：
+
+```lua
+touch.on("down", callback)
+touch.on("move", callback)
+touch.on("up", callback)
+```
+
+3. 如果板子有可用按键，增加 `key` 模块：
+
+```lua
+key.on("short", callback)
+key.on("long", callback)
+```
+
+4. 事件回调必须在 Lua runtime 线程安全执行，不能直接从中断或 LVGL 回调乱入 Lua VM。
+
+验收标准：
+
+- `apps/smoke_touch` 能显示当前触摸坐标；
+- 点击 Launcher 列表能启动 App；
+- 快速点击不会导致 Lua panic；
+- App 退出时事件 handler 被解绑。
+
+## Phase 7：设备端安装、卸载和免拔 SD 部署
+
+目标：减少反复拔插 SD 卡，让 App 可以通过网络或 USB 辅助工具安装。
+
+当前状态：第一版最小 HTTP 安装服务和远程启动已完成并真机验证。它不是最终完整 API，但已经证明 Runtime 可以在板端接收文件、写入 SD、重扫 App、并按 app id 启动已安装 App。
+
+已完成：
+
+- 固件启动 `install_service`，监听 `8080`；
+- `POST /install?app=<id>&path=<relative>` 写入 `/sdcard/apps/<id>/<relative>`；
+- `GET /status` 返回 SD、App 数量、第一个 App 和安装服务状态；
+- `GET /apps` 返回当前 registry 里保存的 App 列表；
+- `POST /rescan` 重新扫描 `/sdcard/apps` 并返回最新 App 数量；
+- `POST /launch?app=<id>` 重新扫描 registry，并异步启动指定 App；
+- 拒绝空路径、绝对路径和 `..` 路径逃逸；
+- 自动创建父目录；
+- `tools/app-uploader` 默认使用 Node 原生 HTTP，并有本地测试；CLI 在当前 Mac 网络路径使用 `nc` transport；
+- `npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` 已上传并确认 `smoke_visual_remote`；
+- `npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote` 已连到板端；当 App 已在运行时返回 `app already running`；
+- 原始 HTTP POST 从 Mac 写入 `raw_upload/app.info` 后，下一次启动日志显示 `app_registry: found 2 apps`。
+- 真机 raw HTTP 验证：`/status`、`/apps`、`/rescan`、`/launch` 均返回预期结果。
+
+当前限制：
+
+- 还没有 commit/staging、删除、浏览器 UI 或 Launcher 切换；
+- `/launch` 是远程启动，不是完整生命周期管理；当前只做单 runner guard，没有受控停止当前 App 后切换到另一个 App；
+- 当前 Mac 到板子 `192.168.1.32:8080` 的 Node/curl 连接曾偶发 `EHOSTUNREACH`，CLI 已先用 `nc` 绕过；后续仍需要收敛网络工具稳定性。
+
+需要新增或修改：
+
+```text
+firmware/vibeboard_runtime/main/install_service.c
+firmware/vibeboard_runtime/main/lua_httpd.c
+web-console/
+tools/device-deployer/
+docs/deployment-flow.md
+```
+
+第一版只做局域网 HTTP，不同时做 BLE/USB/远程隧道。
+
+任务：
+
+1. Runtime 暴露安装接口：
+
+```text
+GET  /status       # first slice done
+GET  /apps         # first slice done
+POST /rescan       # first slice done
+POST /api/apps/<id>/files
+POST /api/apps/<id>/commit
+DELETE /api/apps/<id>
+```
+
+2. 安装采用临时目录：
+
+```text
+/sd/.staging/<app-id>/
+```
+
+3. commit 成功后原子替换：
+
+```text
+/sd/apps/<app-id>/
+```
+
+4. 失败时保留旧 App。
+5. Web Console 支持：
+
+- 选择本地 App 包；
+- 上传；
+- 查看安装结果；
+- 删除 App；
+- 触发 rescan；
+- 查看设备日志摘要。
+
+验收标准：
+
+- 不拔 SD 卡也能安装 `smoke_ui`；
+- 上传中断不会破坏旧版本；
+- 上传后 Launcher 能 rescan 出新 App；
+- 安装失败有明确错误；
+- 工具链仍保留手动 SD 复制路径作为 fallback。
+
+## Phase 8：AI 生成闭环
+
+目标：让 AI 生成的 App 从 JSON plan 到设备运行形成闭环。
+
+需要新增或修改：
+
+```text
+docs/ai-generation-contract.md
+tools/app-plan-writer/
+tools/app-validator/
+tools/app-packager/
+web-console/
+generated/apps/
+```
+
+任务：
+
+1. 明确 AI 只生成 package plan，不直接写设备。
+2. plan writer 落盘为：
+
+```text
+generated/apps/<app-id>/
+```
+
+3. validator 检查：
+
+- metadata；
+- capabilities；
+- forbidden API；
+- 文件路径；
+- 资产大小；
+- 是否需要 Runtime update。
+
+4. packager 输出：
+
+```text
+dist/apps/<app-id>/
+```
+
+5. Web Console 调设备安装接口。
+6. 设备日志返回给 AI 修复循环。
+
+验收标准：
+
+- 给 AI 一个“做倒计时/天气卡片/番茄钟”的需求，能生成 App 包；
+- 生成包能通过 validator；
+- 能上传到设备；
+- 能在 Launcher 中启动；
+- 若 AI 使用未支持 API，工具能拒绝并提示具体缺失能力。
+
+## Phase 9：上游 App 兼容路线
+
+目标：逐个让上游 App 在 VibeBoard Runtime 上真实跑通。
+
+优先顺序：
+
+1. `clock` 或最简单静态 UI；
+2. `weather`；
+3. `voice_ai`；
+4. `2048` 或交互小游戏；
+5. `nesgame`。
+
+每个 App 的迁移流程：
+
+```text
+读取上游 main.lua
+  -> 列出使用的 Lua 模块和 lv_* API
+  -> 对照 runtime-capabilities
+  -> 缺什么补什么
+  -> 写 smoke/compat 测试
+  -> 真机运行
+  -> 记录日志和截图/描述
+```
+
+验收标准：
+
+- 每个 App 都有独立 bring-up 记录；
+- 每个 App 都明确哪些地方保持上游兼容，哪些地方做了 VibeBoard 适配；
+- 不把“能打包”误写成“能运行”。
+
+## Phase 10：Native Module 和 NES
+
+目标：验证 `.so` 动态模块作为高性能能力扩展。
+
+需要新增或修改：
+
+```text
+modules/nes/
+firmware/vibeboard_runtime/main/lua_module.c
+firmware/vibeboard_runtime/main/native_module_abi.c
+apps/nesgame/
+docs/native-module-abi.md
+```
+
+任务：
+
+1. 确定 ESP-IDF、ESP-ELFLoader、工具链版本。
+2. 定义 VibeBoard Native Module ABI。
+3. 编译 `nes.so`。
+4. 部署：
+
+```text
+/sd/modules/nes.so
+/sd/apps/nesgame/
+```
+
+5. Lua 支持：
+
+```lua
+require("/sd/modules/nes.so")
+```
+
+6. 实现 ABI 版本检查。
+7. 实现错误提示：
+
+```text
+Native module ABI mismatch
+Native module load failed
+```
+
+验收标准：
+
+- `nes.so` 能被加载；
+- ABI 不匹配时错误清楚；
+- `nesgame` 至少能显示 ROM 选择或模块状态；
+- 性能问题单独记录，不和加载能力混在一起。
+
+## Phase 11：音频和 Voice AI
+
+目标：让 `voice_ai` 从 UI 样本变成可用设备 App。
+
+需要新增或修改：
+
+```text
+firmware/vibeboard_runtime/main/lua_audio.c
+firmware/vibeboard_runtime/main/lua_i2s.c
+apps/voice_ai/
+desktop-bridge/ 或 web-console bridge
+docs/voice-ai-flow.md
+```
+
+任务：
+
+1. 根据立创官方例程确认 ES7210/ES8311/功放/麦克风路径。
+2. 实现最小录音 API。
+3. 实现音频文件或流式上传。
+4. `voice_ai` 调桌面 bridge。
+5. bridge 返回中文回复和可选 LVGL UI snippet。
+
+验收标准：
+
+- 设备能录音；
+- 能把音频发到桌面 bridge；
+- bridge 能返回文本；
+- 屏幕能显示用户识别文本和 AI 回复；
+- 无网络/无 bridge 时有明确错误状态。
+
+## Phase 12：稳定化和发布
+
+目标：把实验 Runtime 变成可重复烧录、可回归测试、可发布的版本。
+
+任务：
+
+1. 固定 sdkconfig 和 partition。
+2. 生成 release 包：
+
+```text
+bootloader.bin
+partition-table.bin
+vibeboard_runtime.bin
+flash_args
+```
+
+3. 写清楚刷机说明。
+4. 增加版本号：
+
+```text
+Runtime version
+API version
+App package schema version
+Native module ABI version
+```
+
+5. 增加兼容性检查：
+
+- App 要求的 Runtime API 版本；
+- Runtime 实际支持的 API；
+- 不兼容时拒绝启动并给出原因。
+
+验收标准：
+
+- 新机器按文档可重复刷机；
+- SD 卡放 `smoke_ui` 可直接运行；
+- 版本信息能在串口和屏幕状态页看到；
+- release 文档不会依赖当前聊天上下文。
+
+## 推荐近期执行顺序
+
+短期不要直接追 NES 或完整 AI 语音。前面几条基础能力已经跑通，接下来建议按这个顺序：
+
+```text
+1. Phase 5A: 受控停止、重启和 App 切换
+2. Phase 5B: 屏幕端 Launcher
+3. Phase 6: touch/key 输入事件
+4. Phase 3B: 继续扩展 LVGL 绑定和 AI API 白名单
+5. Phase 7B: 删除、staging/commit、浏览器管理页
+6. Phase 8: Runtime/API/App schema 版本兼容
+7. Phase 9+: NES、音频、AI 语音和 Native 模块
+```
+
+这样最符合当前风险：
+
+- 当前上传和远程启动已经可用，最大缺口是“怎么停止当前长运行 App，并切到另一个 App”；
+- Launcher 是生命周期、输入事件和用户操作的共同入口；
+- LVGL/API 扩展要跟着真实 App 需求走，不要盲目一次性补完整上游；
+- 删除、staging、版本兼容属于产品化能力，应在基本切换模型稳定后做；
+- NES、音频、AI 语音依赖更多底层能力，应该放到 Runtime 骨架稳定后。
+
+## 下一步具体建议
+
+下一步开发建议开一个“受控 App 生命周期 + 屏幕 Launcher”的组合切片：
+
+```text
+1. 定义当前 App 如何退出或被停止；
+2. 给 Lua runtime 加退出信号和清理路径；
+3. 做最小屏幕 Launcher，读取 registry 并显示 App 列表；
+4. 点击或按键选择 App 后调用同一套 launch/switch 路径；
+5. 保留 HTTP `/launch` 作为桌面部署工具的远程入口。
+```
+
+原因：
+
+- `tmr`、`file`、资源路径、基础 LVGL、网络模块和免拔 SD 远程启动都已经完成到可验证阶段；
+- 当前最大的结构性缺口不是上传，而是“长运行 App 怎么停止、怎么切到另一个 App”；
+- Launcher 会给 App 生命周期、退出、切换和后续输入事件一个稳定入口；
+- HTTP `/launch` 已经证明底层启动能力，屏幕 Launcher 应复用这条能力，而不是另起一套机制。
+
+完成后，项目阶段可从：
+
+```text
+兼容上游普通 Lua App 的 Runtime 基础层
+```
+
+推进到：
+
+```text
+可安装、可切换、可联网的 VibeBoard Runtime 雏形
+```
