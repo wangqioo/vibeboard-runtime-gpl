@@ -74,7 +74,7 @@ Path conversion:
 - `S:/...` is passed through unchanged.
 
 The `S:` LVGL filesystem drive is registered by the runtime and maps to `/sdcard`.
-BMP decoding is build-verified with `CONFIG_LV_USE_BMP=y` and `apps/smoke_visual`. Board display smoke for the BMP decoder is still pending. PNG/SJPG and LVGL binary image decoding are not enabled yet.
+BMP decoding is enabled with `CONFIG_LV_USE_BMP=y` and `apps/smoke_visual`. The app is board-verified through serial/runtime progress logs and successful asset path resolution; BMP visual correctness still needs human screen confirmation. PNG/SJPG and LVGL binary image decoding are not enabled yet.
 
 ## Network App Config
 
@@ -115,4 +115,4 @@ time.initntp("pool.ntp.org")
 local now = time.get()
 ```
 
-Without `wifi.json`, `apps/smoke_network` still runs its JSON/time smoke path and prints a clear missing-credentials message. Real WiFi and HTTP behavior remains board-smoke pending until credentials are deployed on SD.
+Without `wifi.json`, `apps/smoke_network` still runs its JSON/time smoke path and prints a clear missing-credentials message. With local credentials deployed on SD, WiFi, HTTP, JSON, and time/NTP are board-verified.

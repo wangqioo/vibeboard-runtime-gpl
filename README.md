@@ -38,6 +38,26 @@ Board-verified networking and install-service work:
 - Controlled stop/switch is board-verified: launching a different app stops the current Lua app before starting the next one.
 - The device now boots into the native `VibeBoard Apps` launcher instead of auto-running the first SD app. Touch tap-to-launch works on the device screen; BOOT short press selects, and BOOT long press launches.
 
+## Current Phase
+
+Phase 5A is closed: the native launcher MVP and basic app lifecycle loop are board-verified.
+
+The runtime can now:
+
+```text
+boot -> scan SD apps -> show native launcher -> launch by touch/BOOT/HTTP -> stop/switch apps
+```
+
+Phase 5B is the next productization slice:
+
+- return to launcher after an app is running;
+- stop the current app from the device screen;
+- refresh the app list from the device screen;
+- show launch failures on screen;
+- expose clearer lifecycle state through `/status`.
+
+Lua `app.list()` / `app.launch()` / `app.current()` are intentionally deferred until a Lua-side workflow needs them.
+
 ## Boundary
 
 This repo is not trying to make every app a separately flashed firmware image.

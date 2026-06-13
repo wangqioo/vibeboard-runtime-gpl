@@ -6,9 +6,9 @@ Phase 2A defines the file contract, validates apps, and creates deployable file 
 AI produces app package
   -> app validator passes
   -> app packager writes dist/apps/<app-id>
-  -> copy package contents to device storage
-  -> launcher refreshes app list
-  -> app starts
+  -> upload package contents to the runtime or copy them to SD
+  -> runtime rescans /sdcard/apps
+  -> user launches from the native screen launcher or HTTP /launch
 ```
 
 Create a package for one app:
@@ -41,7 +41,7 @@ Device storage target:
 /sd/apps/<app-id>/assets/...
 ```
 
-`manifest.json` records the package schema, source path, install path, declared capabilities, and SHA-256 hashes for packaged files. It is for tooling and audit; the first runtime can ignore it if the launcher only needs `app.info` and the entry Lua file.
+`manifest.json` records the package schema, source path, install path, declared capabilities, and SHA-256 hashes for packaged files. It is for tooling and audit; the current runtime launcher only needs `app.info` and the entry Lua file.
 
 Transport options:
 
@@ -55,11 +55,22 @@ The current firmware endpoint is intentionally small:
 
 ```text
 POST /install?app=<id>&path=<relative>
+POST /rescan
+POST /launch?app=<id>
 ```
 
-It writes one file under `/sdcard/apps/<id>/<relative>`, rejects absolute paths and `..`, and creates parent directories as needed. It does not yet rescan or launch the uploaded app at runtime; reboot or a future launcher/rescan phase is still needed.
+`POST /install` writes one file under `/sdcard/apps/<id>/<relative>`, rejects absolute paths and `..`, and creates parent directories as needed. The uploader calls `/rescan` after upload and confirms the app through `/apps`. Apps can then be launched from the native `VibeBoard Apps` screen or through `/launch`.
 
-- Browser upload through a VibeBoard Runtime web console.
+Current limitations:
+
+- no staging/commit step yet, so a half-uploaded package can exist on SD;
+- no delete endpoint yet;
+- no browser management UI yet;
+- compatibility checks still rely on the app validator and documented runtime capabilities.
+
+Other transport options:
+
+- Browser upload through a future VibeBoard Runtime web console.
 - SD-card copy for recovery and offline installation.
 
 USB flashing is for runtime installation and recovery, not the normal app-edit loop.

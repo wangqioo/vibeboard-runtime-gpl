@@ -413,11 +413,11 @@ VibeBoard Runtime ready: sd=ok apps=1 lua=ok
 - 不能运行 `nesgame`；
 - `wifi`、`http`、`sjson`、`time` 已真机验证最小路径；
 - 没有 Lua 可用的触摸/按键事件；
-- 没有屏幕端 App launcher、触摸选择和受控 App 切换；
-- HTTP 上传、列表、重扫、远程启动已完成最小版；还没有浏览器上传、卸载、commit/staging 和受控停止/重启；
+- 原生屏幕 Launcher、触摸选择、BOOT 备用选择和受控 App 切换已经完成 Phase 5A；但还没有返回 Launcher、屏幕停止/刷新和屏幕错误恢复；
+- HTTP 上传、列表、重扫、远程启动、受控停止/切换已完成最小版；还没有浏览器上传、卸载、commit/staging；
 - 没有图片、字体、canvas、动画等完整 LVGL 绑定；
 - 没有 Native `.so` 动态模块加载 ABI；
-- `tmr` 事件循环已经从固定 8 秒 smoke loop 改为 timer-driven loop，但完整 App 生命周期停止信号要等 Launcher 阶段补齐。
+- `tmr` 事件循环已经从固定 8 秒 smoke loop 改为 timer-driven loop，并支持 stop/switch 停止请求；完整生命周期状态机要等 Phase 5B 补齐。
 
 ## 与上游差距表
 
@@ -1139,50 +1139,50 @@ Native module ABI version
 短期不要直接追 NES 或完整 AI 语音。前面几条基础能力已经跑通，接下来建议按这个顺序：
 
 ```text
-1. Phase 5A: 受控停止、重启和 App 切换
-2. Phase 5B: 屏幕端 Launcher
-3. Phase 6: touch/key 输入事件
-4. Phase 3B: 继续扩展 LVGL 绑定和 AI API 白名单
-5. Phase 7B: 删除、staging/commit、浏览器管理页
-6. Phase 8: Runtime/API/App schema 版本兼容
-7. Phase 9+: NES、音频、AI 语音和 Native 模块
+1. Phase 5B: Launcher 收尾交互和 App 生命周期状态化
+2. Phase 6: touch/key 输入事件
+3. Phase 3B: 继续扩展 LVGL 绑定和 AI API 白名单
+4. Phase 7B: 删除、staging/commit、浏览器管理页
+5. Phase 8: Runtime/API/App schema 版本兼容
+6. Phase 9+: NES、音频、AI 语音和 Native 模块
 ```
 
 这样最符合当前风险：
 
-- 当前上传和远程启动已经可用，最大缺口是“怎么停止当前长运行 App，并切到另一个 App”；
-- Launcher 是生命周期、输入事件和用户操作的共同入口；
+- 当前上传、远程启动、原生 Launcher、触摸启动和基础 stop/switch 已经可用；
+- 最大缺口是“运行后如何回到 Launcher、屏幕上如何停止/刷新、失败时如何恢复”；
+- Launcher 已是生命周期、输入事件和用户操作的共同入口；
 - LVGL/API 扩展要跟着真实 App 需求走，不要盲目一次性补完整上游；
 - 删除、staging、版本兼容属于产品化能力，应在基本切换模型稳定后做；
 - NES、音频、AI 语音依赖更多底层能力，应该放到 Runtime 骨架稳定后。
 
 ## 下一步具体建议
 
-下一步开发建议开一个“受控 App 生命周期 + 屏幕 Launcher”的组合切片：
+下一步开发建议开一个“Phase 5B Launcher 收尾”的切片：
 
 ```text
-1. 定义当前 App 如何退出或被停止；
-2. 给 Lua runtime 加退出信号和清理路径；
-3. 做最小屏幕 Launcher，读取 registry 并显示 App 列表；
-4. 点击或按键选择 App 后调用同一套 launch/switch 路径；
-5. 保留 HTTP `/launch` 作为桌面部署工具的远程入口。
+1. 运行 App 后提供返回 Launcher 的路径；
+2. 在屏幕上提供停止当前 App 的控制；
+3. 在屏幕上提供刷新 App 列表的控制；
+4. `/status` 报告 `idle`、`starting`、`running`、`stopping`、`failed`；
+5. 启动失败时在屏幕上显示可理解错误，并保持 Launcher 可用。
 ```
 
 原因：
 
 - `tmr`、`file`、资源路径、基础 LVGL、网络模块和免拔 SD 远程启动都已经完成到可验证阶段；
-- 当前最大的结构性缺口不是上传，而是“长运行 App 怎么停止、怎么切到另一个 App”；
-- Launcher 会给 App 生命周期、退出、切换和后续输入事件一个稳定入口；
-- HTTP `/launch` 已经证明底层启动能力，屏幕 Launcher 应复用这条能力，而不是另起一套机制。
+- 当前最大的结构性缺口不是上传或启动，而是“运行后怎么收回控制权、失败后怎么恢复”；
+- 原生 Launcher 已证明底层启动能力，Phase 5B 应在同一套 runner 生命周期上补产品交互；
+- Lua `app.*` API 只有在出现 Lua 桌面、App 内跳转或 App-to-App handoff 时再引入。
 
 完成后，项目阶段可从：
 
 ```text
-兼容上游普通 Lua App 的 Runtime 基础层
+已可安装、可启动、可切换、可联网的 Runtime 雏形
 ```
 
 推进到：
 
 ```text
-可安装、可切换、可联网的 VibeBoard Runtime 雏形
+可恢复、可停止、可刷新、可解释错误的最小产品化 Runtime
 ```
