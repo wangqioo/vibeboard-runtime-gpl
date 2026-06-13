@@ -37,6 +37,8 @@ Board-verified networking and install-service work:
 - The local helper command is `npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote`.
 - Controlled stop/switch is board-verified: launching a different app stops the current Lua app before starting the next one.
 - The device now boots into the native `VibeBoard Apps` launcher instead of auto-running the first SD app. Touch tap-to-launch works on the device screen; BOOT short press selects, and BOOT long press launches.
+- `/status.state` is board-verified for `idle`, `running`, controlled stop back to `idle`, `failed`, and recovery from failure. `apps/smoke_fail` intentionally fails for this lifecycle smoke path.
+- A BOOT-after-launch crash was fixed and board-verified: once a Lua app owns the screen, launcher BOOT controls are ignored instead of touching stale LVGL objects.
 
 ## Current Phase
 
@@ -54,7 +56,7 @@ Phase 5B is the next productization slice:
 - stop the current app from the device screen;
 - refresh the app list from the device screen;
 - show launch failures on screen;
-- expose clearer lifecycle state through `/status`.
+- harden the uploader path where the Mac/router `nc` fallback can still fail even though raw HTTP upload works.
 
 Lua `app.list()` / `app.launch()` / `app.current()` are intentionally deferred until a Lua-side workflow needs them.
 

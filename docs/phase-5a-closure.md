@@ -61,8 +61,8 @@ I app_runner: Lua async finished: smoke_network status=ESP_OK message=ok
 - Stop current app from the device screen.
 - Refresh/rescan app list from the device screen.
 - Show launch failure details on the device screen.
-- Board-verify the build-verified `/status` lifecycle state: `idle`, `starting`, `running`, `stopping`, `failed`.
-- Add failure-sample verification proving a bad app does not break the runtime or launcher.
+- Make the already board-verified failure state visible on the device screen, not only through `/status` and serial logs.
+- Harden the uploader path where raw HTTP upload works but the Mac/router `nc` fallback can still fail.
 - Expose Lua app manager APIs:
 
 ```lua

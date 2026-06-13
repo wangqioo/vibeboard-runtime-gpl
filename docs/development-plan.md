@@ -38,6 +38,9 @@
 - 免拔 SD 的上传和远程启动闭环已跑通：`npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` 上传并确认 App，`POST /launch?app=smoke_visual_remote` 返回 `200 OK`，串口确认从 `/sdcard/apps/smoke_visual_remote` 启动并持续刷新进度。
 - 原生设备 Launcher 已真机验证：开机进入 `VibeBoard Apps` 列表，不再自动运行第一个 App；触摸点击可启动 App，BOOT 短按可切换选中项，BOOT 长按可启动选中 App。
 - 受控 App stop/switch 已真机验证：远程 `/launch` 和设备 Launcher 都复用同一条 runner 生命周期，切换时会请求旧 App 停止并等待退出。
+- `/status.state` 生命周期状态已真机验证：`idle`、`running`、受控 stop 回到 `idle`、故意失败后的 `failed`、以及失败后重新启动 `smoke_network` 恢复到 `idle`。
+- `apps/smoke_fail` 已加入仓库并上板验证，可稳定触发 Lua error，用于失败状态和错误恢复测试。
+- App 启动后再按 BOOT 造成 stale LVGL pointer 的崩溃已修复并真机验证；Launcher 交出屏幕后会忽略 BOOT 短按/长按，不再触碰旧控件。
 - App registry 会过滤缺少入口文件的 App；例如 `raw_upload/main.lua` 不存在时不会进入可启动列表。
 - 网络运行时让固件超过默认 1MB app 分区，当前已切换到自定义 4MB factory app 分区。
 
@@ -141,7 +144,7 @@ AI 生成一个受限 Lua/LVGL App
 第一优先级：Phase 5 收尾，而不是重新做 Launcher。
 
 - 给原生 Launcher 增加停止当前 App、返回列表、刷新列表和启动失败详情；
-- 把当前实用 stop/switch 路径整理成更明确的状态：`idle`、`starting`、`running`、`stopping`、`failed`；
+- `/status` 生命周期状态已经完成第一轮真机验证，后续重点是把状态和错误反馈显示到屏幕端；
 - 确认 `tmr` loop、文件句柄、LVGL 对象和事件 handler 在切换时有清晰清理边界；
 - 当前 App 出错时回到 Launcher，而不是只依赖串口或 HTTP 状态。
 
@@ -192,16 +195,16 @@ AI 生成一个受限 Lua/LVGL App
    - App 启动失败时屏幕显示可理解错误；
    - HTTP `/apps` 和屏幕列表来自同一份 registry。
 
-2. **App 生命周期状态化**
+2. **Launcher 失败恢复 UI**
 
-   目标是把当前 stop/switch 的实用路径整理成明确状态机。
+   目标是把已经 board-verified 的 lifecycle 状态变成设备屏幕上可理解、可恢复的体验。
 
    验收：
 
-   - `/status` 能报告 `idle`、`starting`、`running`、`stopping`、`failed`；
-   - 启动 `smoke_visual_remote` 后切到 `smoke_network`，旧 App timer 停止，新 App 正常启动；
-   - 串口没有 Lua panic、LVGL assert 或内存明显泄漏；
-   - 失败 App 不影响 Launcher 继续可用。
+   - 启动 `smoke_fail` 后屏幕显示可理解错误；
+   - 用户能从失败状态回到 Launcher；
+   - 失败后仍能启动 `smoke_network` 或 `smoke_visual_remote`；
+   - `/status`、串口和屏幕状态一致。
 
 3. **触摸事件 smoke**
 
@@ -748,7 +751,7 @@ apps/smoke_network/
 Phase 5 现在拆成两段：
 
 - **Phase 5A 已验收：原生 Launcher MVP 和基础 stop/switch。**
-- **Phase 5B 待收尾：返回 Launcher、屏幕停止/刷新/错误提示、状态机、Lua 侧 App manager API。**
+- **Phase 5B 待收尾：返回 Launcher、屏幕停止/刷新/错误提示、上传可靠性、Lua 侧 App manager API。**
 
 需要新增或修改：
 
@@ -789,7 +792,7 @@ app.exiting()
 app.on(event, callback)
 ```
 
-4. 实现 App 生命周期。**当前已有 stop/switch 实用路径，完整状态机后移到 Phase 5B。**
+4. 实现 App 生命周期。**HTTP `/status.state` 已完成第一轮真机验证；屏幕端状态反馈仍待 Phase 5B。**
 
 ```text
 start
@@ -812,7 +815,7 @@ stopped
 - 能从 Launcher 启动 App；**已验收，触摸点击和 BOOT 长按均可启动。**
 - 能退出 App 回到 Launcher；**待 Phase 5B。**
 - `app.rescan()` 能识别新复制的 App；**HTTP `/rescan` 已验收，Lua `app.rescan()` 待 Phase 5B。**
-- App 崩溃不会导致整个 Runtime 崩溃。**待 Phase 5B 做失败样本验证。**
+- App 崩溃不会导致整个 Runtime 崩溃。**已通过 `apps/smoke_fail` 真机验证；屏幕错误恢复体验待 Phase 5B。**
 
 ## Phase 6：触摸、按键和输入事件
 
@@ -880,8 +883,8 @@ key.on("long", callback)
 当前限制：
 
 - 还没有 commit/staging、删除或浏览器 UI；
-- `/launch` 已支持受控切换，但还不是完整生命周期状态机；失败状态和屏幕端错误恢复仍需 Phase 5B 收尾；
-- 当前 Mac 到板子 `192.168.1.32:8080` 的 Node/curl 连接曾偶发 `EHOSTUNREACH`，CLI 已先用 `nc` 绕过；后续仍需要收敛网络工具稳定性。
+- `/launch` 已支持受控切换，`/status.state` 已完成 idle/running/failed/stop/recovery 真机验证；屏幕端错误恢复仍需 Phase 5B 收尾；
+- 当前 Mac 到板子 `192.168.1.32:8080` 的上传路径仍需收敛：raw HTTP/curl 可成功上传，`npm run upload:app` 的 `nc` fallback 曾在同一路径失败。
 
 需要新增或修改：
 
@@ -1139,7 +1142,7 @@ Native module ABI version
 短期不要直接追 NES 或完整 AI 语音。前面几条基础能力已经跑通，接下来建议按这个顺序：
 
 ```text
-1. Phase 5B: Launcher 收尾交互和 App 生命周期状态化
+1. Phase 5B: Launcher 收尾交互、失败 UI 和上传可靠性
 2. Phase 6: touch/key 输入事件
 3. Phase 3B: 继续扩展 LVGL 绑定和 AI API 白名单
 4. Phase 7B: 删除、staging/commit、浏览器管理页
@@ -1150,7 +1153,7 @@ Native module ABI version
 这样最符合当前风险：
 
 - 当前上传、远程启动、原生 Launcher、触摸启动和基础 stop/switch 已经可用；
-- 最大缺口是“运行后如何回到 Launcher、屏幕上如何停止/刷新、失败时如何恢复”；
+- 最大缺口是“运行后如何回到 Launcher、屏幕上如何停止/刷新、失败时如何可见并恢复”；
 - Launcher 已是生命周期、输入事件和用户操作的共同入口；
 - LVGL/API 扩展要跟着真实 App 需求走，不要盲目一次性补完整上游；
 - 删除、staging、版本兼容属于产品化能力，应在基本切换模型稳定后做；
@@ -1164,14 +1167,14 @@ Native module ABI version
 1. 运行 App 后提供返回 Launcher 的路径；
 2. 在屏幕上提供停止当前 App 的控制；
 3. 在屏幕上提供刷新 App 列表的控制；
-4. `/status` 报告 `idle`、`starting`、`running`、`stopping`、`failed`；
+4. 把 `/status.state` 和 failure detail 显示到屏幕端；
 5. 启动失败时在屏幕上显示可理解错误，并保持 Launcher 可用。
 ```
 
 原因：
 
 - `tmr`、`file`、资源路径、基础 LVGL、网络模块和免拔 SD 远程启动都已经完成到可验证阶段；
-- 当前最大的结构性缺口不是上传或启动，而是“运行后怎么收回控制权、失败后怎么恢复”；
+- 当前最大的结构性缺口不是上传或启动，而是“运行后怎么收回控制权、失败后怎么在屏幕上恢复”；
 - 原生 Launcher 已证明底层启动能力，Phase 5B 应在同一套 runner 生命周期上补产品交互；
 - Lua `app.*` API 只有在出现 Lua 桌面、App 内跳转或 App-to-App handoff 时再引入。
 
