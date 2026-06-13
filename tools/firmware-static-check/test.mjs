@@ -170,11 +170,29 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const runner = readRequired(runnerSourcePath);
     const main = readRequired(mainSourcePath);
 
+    assert.match(header, /vb_app_runner_lifecycle_state_t/);
+    assert.match(header, /VB_APP_RUNNER_STATE_IDLE/);
+    assert.match(header, /VB_APP_RUNNER_STATE_STARTING/);
+    assert.match(header, /VB_APP_RUNNER_STATE_RUNNING/);
+    assert.match(header, /VB_APP_RUNNER_STATE_STOPPING/);
+    assert.match(header, /VB_APP_RUNNER_STATE_FAILED/);
+    assert.match(header, /vb_app_runner_state_name/);
+    assert.match(header, /vb_app_runner_current_state_name/);
     assert.match(header, /vb_app_runner_run_entry/);
     assert.match(header, /vb_app_runner_launch_async/);
     assert.match(header, /vb_app_runner_stop/);
     assert.match(header, /vb_app_runner_wait_stopped/);
     assert.match(header, /vb_app_runner_current_id/);
+    assert.match(runner, /case\s+VB_APP_RUNNER_STATE_IDLE:\s*return\s+"idle"/);
+    assert.match(runner, /case\s+VB_APP_RUNNER_STATE_STARTING:\s*return\s+"starting"/);
+    assert.match(runner, /case\s+VB_APP_RUNNER_STATE_RUNNING:\s*return\s+"running"/);
+    assert.match(runner, /case\s+VB_APP_RUNNER_STATE_STOPPING:\s*return\s+"stopping"/);
+    assert.match(runner, /case\s+VB_APP_RUNNER_STATE_FAILED:\s*return\s+"failed"/);
+    assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_STARTING\)/);
+    assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_RUNNING\)/);
+    assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_STOPPING\)/);
+    assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_FAILED\)/);
+    assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_IDLE\)/);
     assert.match(runner, /VB_LUA_TASK_STACK_SIZE/);
     assert.match(runner, /xTaskCreatePinnedToCore/);
     assert.match(runner, /vb_app_registry_entry_t/);
@@ -188,6 +206,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /Lua app ok/);
     assert.doesNotMatch(main, /vb_app_runner_run\(&s_apps,\s*&run\)/);
     assert.match(main, /vb_launcher_ui_show\(&s_apps,\s*scan_err\)/);
+  });
+
+  it("exposes app runner lifecycle state through HTTP status", () => {
+    const source = readRequired(installServiceSourcePath);
+
+    assert.match(source, /vb_app_runner_current_state_name\(\)/);
+    assert.match(source, /\\"state\\":\\"%s\\"/);
+    assert.match(source, /\\"running\\":%s/);
+    assert.match(source, /\\"current_app\\":\\"%s\\"/);
   });
 
   it("boots into a native touch launcher", () => {

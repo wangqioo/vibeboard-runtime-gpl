@@ -167,13 +167,15 @@ static esp_err_t status_handler(httpd_req_t *req)
     int app_count = registry ? registry->app_count : 0;
     const char *first_app = (registry && registry->first_app_name[0] != '\0') ? registry->first_app_name : "-";
     bool running = vb_app_runner_is_running();
+    const char *state = vb_app_runner_current_state_name();
     const char *current_app = running ? vb_app_runner_current_id() : "";
     snprintf(body,
              sizeof(body),
-             "{\"sd\":%s,\"app_count\":%d,\"first_app\":\"%s\",\"install\":\"ok\",\"running\":%s,\"current_app\":\"%s\"}\n",
+             "{\"sd\":%s,\"app_count\":%d,\"first_app\":\"%s\",\"install\":\"ok\",\"state\":\"%s\",\"running\":%s,\"current_app\":\"%s\"}\n",
              (s_context && s_context->sd_ok) ? "true" : "false",
              app_count,
              first_app,
+             state,
              running ? "true" : "false",
              current_app);
     send_json(req, body);
