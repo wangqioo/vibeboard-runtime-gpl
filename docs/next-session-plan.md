@@ -2,13 +2,13 @@
 
 Date: 2026-06-13
 
-## Current Head
+## Current Baseline
 
 ```text
-353267d feat: expose app runner lifecycle state
+eafbf7b docs: add next session plan
 ```
 
-The working tree was clean after this commit.
+The local work after this baseline fixes a launcher BOOT-after-launch crash found during board verification.
 
 ## What Is Done
 
@@ -22,6 +22,11 @@ The working tree was clean after this commit.
   - `/status` includes `state`.
   - states are `idle`, `starting`, `running`, `stopping`, `failed`.
   - compatibility fields `running` and `current_app` remain.
+- A real launcher/Lua screen ownership crash was reproduced and fixed:
+  - launching `smoke_visual_remote`, then short-pressing BOOT used stale launcher LVGL pointers;
+  - `launcher_ui.c` now deactivates launcher controls after handing the screen to a Lua app;
+  - static tests and firmware build pass;
+  - fixed firmware was flashed to the board.
 
 ## Last Verified Commands
 
@@ -29,13 +34,34 @@ The working tree was clean after this commit.
 npm run test:firmware-static
 npm test
 git diff --check
+idf.py build
+esptool write_flash
 ```
 
-The lifecycle-state worker reported all three passed after commit `353267d`.
+The BOOT-after-launch crash fix passed local verification and was flashed. Manual board re-test still needs one final trigger.
 
 ## Immediate Next Work
 
-### 1. Board-verify lifecycle `state`
+### 1. Finish BOOT-after-launch crash re-test
+
+On the flashed board:
+
+```text
+tap or launch smoke_visual_remote
+short-press BOOT once
+```
+
+Expected serial evidence:
+
+```text
+I launcher_ui: launcher inactive; BOOT short press ignored
+```
+
+There must be no `CORRUPT HEAP`, `Guru Meditation`, or reboot.
+
+After this is observed, promote the crash fix from build/flashed to board-verified in `docs/device-bringup.md`.
+
+### 2. Board-verify lifecycle `state`
 
 Flash and monitor the board, then verify:
 
@@ -48,7 +74,7 @@ bad app launch -> state=failed
 
 Record evidence in `docs/device-bringup.md`, then promote the lifecycle status row in `docs/runtime-capabilities.md` from `build-verified` to `board-verified`.
 
-### 2. Launcher UI controls
+### 3. Launcher UI controls
 
 Add device-screen controls to the native launcher:
 
@@ -69,7 +95,7 @@ docs/runtime-capabilities.md
 
 Avoid changing `app_runner.c` unless lifecycle state integration requires a small accessor.
 
-### 3. Failure-sample app
+### 4. Failure-sample app
 
 Add a tiny app that fails intentionally, then use it to prove:
 

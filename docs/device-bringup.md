@@ -1563,3 +1563,63 @@ I app_runner: Lua async finished: smoke_network status=ESP_OK message=ok
 ```
 
 Result: device launcher is board-verified for boot-to-list, missing-entry filtering, touch tap-to-launch, BOOT short-select, and BOOT long-launch.
+
+## 2026-06-13 launcher BOOT-after-launch crash fix
+
+While preparing the Phase 5B lifecycle-state board check, a launcher/runtime interaction bug was reproduced on the board:
+
+```text
+I launcher_ui: launcher selected app: smoke_visual_remote
+I app_runner: Lua app start: smoke_visual
+I app_runner: smoke visual ok S:/apps/smoke_visual_remote/assets/icon.bmp
+I launcher_ui: launcher BOOT short press: next
+CORRUPT HEAP: multi_heap.c:123 detected at 0x3fcafacc
+
+Backtrace:
+lv_mem_realloc
+get_local_style
+lv_obj_set_style_border_width
+update_selection_unlocked at launcher_ui.c:142
+select_next_from_task at launcher_ui.c:163
+boot_key_task at launcher_ui.c:202
+```
+
+Root cause:
+
+- The BOOT key task remains alive after the launcher starts a Lua app.
+- The Lua app can clear and take over the LVGL screen.
+- The launcher still kept `s_app_buttons[]` and `s_status_label` pointers from the old launcher screen.
+- A later BOOT short press tried to style a freed launcher button, corrupting LVGL heap state.
+
+Fix:
+
+- Added `s_launcher_active` to `launcher_ui.c`.
+- After `vb_app_runner_launch_async()` succeeds, the launcher deactivates itself and clears `s_status_label` plus every `s_app_buttons[]` pointer.
+- Later BOOT short/long presses are ignored while the launcher is inactive instead of touching stale LVGL objects.
+- Added a static regression guard: `disables launcher controls after handing the screen to a Lua app`.
+
+Verification:
+
+```text
+npm run test:firmware-static passed: 22/22
+npm test passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x1725e0 bytes.
+esptool write_flash wrote bootloader, partition table, and app to:
+  0x0
+  0x8000
+  0x10000
+```
+
+New boot evidence after flashing the fix:
+
+```text
+I app_init: Project name:     vibeboard_runtime
+I app_init: ELF file SHA256:  585e7118b...
+I boot:  2 factory          factory app      00 00 00010000 00400000
+I app_registry: found 2 apps
+I install_service: install service listening on port 8080
+I vibeboard_runtime: VibeBoard Runtime ready: sd=ok apps=2 launcher=ok
+```
+
+Result: the crash fix is build-verified and flashed to the board. The original manual repro still needs one final hand check: launch `smoke_visual_remote`, short-press BOOT, and confirm the serial log reports `launcher inactive; BOOT short press ignored` with no reboot.

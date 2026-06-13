@@ -245,6 +245,17 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(main, /vb_app_runner_run\(&s_apps,\s*&run\)/);
   });
 
+  it("disables launcher controls after handing the screen to a Lua app", () => {
+    const source = readRequired(launcherSourcePath);
+
+    assert.match(source, /s_launcher_active/);
+    assert.match(source, /deactivate_launcher_unlocked/);
+    assert.match(source, /deactivate_launcher_from_task/);
+    assert.match(source, /s_app_buttons\[i\]\s*=\s*NULL/);
+    assert.match(source, /if\s*\(!s_launcher_active\)\s*\{/);
+    assert.match(source, /vb_app_runner_launch_async\(app\)[\s\S]*deactivate_launcher/);
+  });
+
   it("keeps Lua alive for interval callbacks", () => {
     const runner = readRequired(runnerSourcePath);
 

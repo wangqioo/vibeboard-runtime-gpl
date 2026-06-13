@@ -23,6 +23,23 @@ static const vb_app_registry_result_t *s_apps;
 static int s_selected_index;
 static lv_obj_t *s_app_buttons[VB_APP_REGISTRY_MAX_APPS];
 static bool s_boot_key_task_started;
+static bool s_launcher_active;
+
+static void deactivate_launcher_unlocked(void)
+{
+    s_launcher_active = false;
+    s_status_label = NULL;
+    for (int i = 0; i < VB_APP_REGISTRY_MAX_APPS; i++) {
+        s_app_buttons[i] = NULL;
+    }
+}
+
+static void deactivate_launcher_from_task(void)
+{
+    lvgl_port_lock(0);
+    deactivate_launcher_unlocked();
+    lvgl_port_unlock();
+}
 
 static void set_status_unlocked(const char *text)
 {
@@ -101,9 +118,9 @@ static void launch_app(const vb_app_registry_entry_t *app, bool from_task)
     esp_err_t err = vb_app_runner_launch_async(app);
     if (err == ESP_OK) {
         if (from_task) {
-            update_status_from_task("Launched", app->id);
+            deactivate_launcher_from_task();
         } else {
-            update_status_unlocked("Launched", app->id);
+            deactivate_launcher_unlocked();
         }
     } else {
         if (from_task) {
@@ -154,11 +171,16 @@ static void update_selection_unlocked(void)
 
 static void select_next_from_task(void)
 {
-    if (s_apps == NULL || s_apps->stored_app_count <= 0) {
+    lvgl_port_lock(0);
+    if (!s_launcher_active) {
+        lvgl_port_unlock();
+        ESP_LOGI(TAG, "launcher inactive; BOOT short press ignored");
         return;
     }
-
-    lvgl_port_lock(0);
+    if (s_apps == NULL || s_apps->stored_app_count <= 0) {
+        lvgl_port_unlock();
+        return;
+    }
     s_selected_index = (s_selected_index + 1) % s_apps->stored_app_count;
     update_selection_unlocked();
     lvgl_port_unlock();
@@ -167,6 +189,10 @@ static void select_next_from_task(void)
 
 static void launch_selected_from_task(void)
 {
+    if (!s_launcher_active) {
+        ESP_LOGI(TAG, "launcher inactive; BOOT long press ignored");
+        return;
+    }
     if (s_apps == NULL || s_apps->stored_app_count <= 0) {
         return;
     }
@@ -242,6 +268,7 @@ void vb_launcher_ui_show(const vb_app_registry_result_t *apps, esp_err_t scan_er
     s_apps = apps;
     s_selected_index = 0;
     memset(s_app_buttons, 0, sizeof(s_app_buttons));
+    s_launcher_active = true;
 
     lvgl_port_lock(0);
 
