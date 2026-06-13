@@ -58,7 +58,7 @@ This document separates implemented API, build verification, and board verificat
 | Mac launch tool | `npm run launch:app -- http://<ip>:8080 <app-id>` | `board-verified` | CLI reached the board; after `smoke_visual_remote` was already running, the board returned `500 app already running`, proving the launch endpoint and single-runner guard path. |
 | App stop | `POST /stop`, `vb_app_runner_stop`, `vb_app_runner_wait_stopped` | `board-verified` | Switching away from `smoke_visual_remote` logged `Lua stop requested`, `Lua tmr loop stop requested`, and `message=stopped`; idle `POST /stop` returned `{"ok":true,"stopped":false}`. |
 | App switch | `POST /launch?app=<new-id>` while another app is running | `board-verified` | `POST /launch?app=smoke_network` while `smoke_visual_remote` was running returned `200 OK`; serial logs showed visual stopped, then `smoke_network` launched and completed with `ESP_OK`. |
-| Device Launcher | native LVGL app list, tap-to-launch, BOOT short-select/long-launch via `vb_launcher_ui_show` | `board-verified` | Board booted `vibeboard_runtime` from `factory 0x10000`, skipped missing `raw_upload/main.lua`, reported `VibeBoard Runtime ready: sd=ok apps=2 launcher=ok`, and BOOT short presses logged `launcher BOOT short press: next` with selected index changes. |
+| Device Launcher | native LVGL app list, tap-to-launch, BOOT short-select/long-launch via `vb_launcher_ui_show` | `board-verified` | Board booted `vibeboard_runtime` from `factory 0x10000`, skipped missing `raw_upload/main.lua`, reported `VibeBoard Runtime ready: sd=ok apps=2 launcher=ok`; touch tap-to-launch works on the device screen, and BOOT short/long press provides a hardware fallback. |
 
 ## Planned Runtime Modules
 

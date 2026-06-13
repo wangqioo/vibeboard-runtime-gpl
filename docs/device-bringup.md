@@ -1538,7 +1538,7 @@ Touch check:
 FT5x06 regs=ESP_OK points=0x00 fw=0x01 state=0x00 err=0x0f
 ```
 
-The touch controller answers on I2C, but it did not report touch points in this board session, including while the panel was being pressed. Touch remains a hardware/config follow-up, not a launcher lifecycle blocker.
+The touch controller answers on I2C. The launcher touch tap path was later confirmed on the physical device screen: tapping a list item starts the selected app. BOOT remains a hardware fallback for selection and launch.
 
 BOOT fallback verification:
 
@@ -1562,4 +1562,4 @@ I app_runner: Lua app ok
 I app_runner: Lua async finished: smoke_network status=ESP_OK message=ok
 ```
 
-Result: device launcher is board-verified for boot-to-list, missing-entry filtering, BOOT short-select, and BOOT long-launch. Touch tap-to-launch is implemented in LVGL but remains blocked by the current board touch controller not reporting points.
+Result: device launcher is board-verified for boot-to-list, missing-entry filtering, touch tap-to-launch, BOOT short-select, and BOOT long-launch.
