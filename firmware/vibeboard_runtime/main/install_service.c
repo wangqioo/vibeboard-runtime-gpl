@@ -162,16 +162,20 @@ static const vb_app_registry_entry_t *find_app_by_id(const vb_app_registry_resul
 
 static esp_err_t status_handler(httpd_req_t *req)
 {
-    char body[256];
+    char body[384];
     const vb_app_registry_result_t *registry = s_context ? s_context->registry : NULL;
     int app_count = registry ? registry->app_count : 0;
     const char *first_app = (registry && registry->first_app_name[0] != '\0') ? registry->first_app_name : "-";
+    bool running = vb_app_runner_is_running();
+    const char *current_app = running ? vb_app_runner_current_id() : "";
     snprintf(body,
              sizeof(body),
-             "{\"sd\":%s,\"app_count\":%d,\"first_app\":\"%s\",\"install\":\"ok\"}\n",
+             "{\"sd\":%s,\"app_count\":%d,\"first_app\":\"%s\",\"install\":\"ok\",\"running\":%s,\"current_app\":\"%s\"}\n",
              (s_context && s_context->sd_ok) ? "true" : "false",
              app_count,
-             first_app);
+             first_app,
+             running ? "true" : "false",
+             current_app);
     send_json(req, body);
     return ESP_OK;
 }
@@ -246,11 +250,26 @@ static esp_err_t launch_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    err = vb_app_runner_launch_async(app);
-    if (err == ESP_ERR_INVALID_STATE) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "app already running");
-        return ESP_FAIL;
+    if (vb_app_runner_is_running()) {
+        const char *current_id = vb_app_runner_current_id();
+        if (strcmp(current_id, app->id) == 0) {
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "app already running");
+            return ESP_FAIL;
+        }
+        ESP_LOGI(TAG, "switch app %s -> %s", current_id, app->id);
+        err = vb_app_runner_stop();
+        if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+            return ESP_FAIL;
+        }
+        err = vb_app_runner_wait_stopped(1500);
+        if (err != ESP_OK) {
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "app stop timeout");
+            return ESP_FAIL;
+        }
     }
+
+    err = vb_app_runner_launch_async(app);
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
         return ESP_FAIL;
@@ -259,6 +278,28 @@ static esp_err_t launch_handler(httpd_req_t *req)
     char body[128];
     snprintf(body, sizeof(body), "{\"ok\":true,\"launched\":\"%s\"}\n", app->id);
     send_json(req, body);
+    return ESP_OK;
+}
+
+static esp_err_t stop_handler(httpd_req_t *req)
+{
+    if (!vb_app_runner_is_running()) {
+        send_json(req, "{\"ok\":true,\"stopped\":false}\n");
+        return ESP_OK;
+    }
+
+    esp_err_t err = vb_app_runner_stop();
+    if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+    err = vb_app_runner_wait_stopped(1500);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "app stop timeout");
+        return ESP_FAIL;
+    }
+
+    send_json(req, "{\"ok\":true,\"stopped\":true}\n");
     return ESP_OK;
 }
 
@@ -317,6 +358,10 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
         return err;
     }
     err = register_handler("/launch", HTTP_POST, launch_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/stop", HTTP_POST, stop_handler);
     if (err != ESP_OK) {
         return err;
     }

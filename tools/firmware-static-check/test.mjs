@@ -12,6 +12,8 @@ const registryHeaderPath = join(firmwareRoot, "main/app_registry.h");
 const runnerSourcePath = join(firmwareRoot, "main/app_runner.c");
 const installServiceSourcePath = join(firmwareRoot, "main/install_service.c");
 const installServiceHeaderPath = join(firmwareRoot, "main/install_service.h");
+const launcherHeaderPath = join(firmwareRoot, "main/launcher_ui.h");
+const launcherSourcePath = join(firmwareRoot, "main/launcher_ui.c");
 const mainSourcePath = join(firmwareRoot, "main/main.c");
 const luaLvglSourcePath = join(firmwareRoot, "main/lua_lvgl.c");
 const luaLvglHeaderPath = join(firmwareRoot, "main/lua_lvgl.h");
@@ -138,11 +140,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /apps_handler/);
     assert.match(source, /rescan_handler/);
     assert.match(source, /launch_handler/);
+    assert.match(source, /stop_handler/);
     assert.match(source, /\/status/);
     assert.match(source, /\/apps/);
     assert.match(source, /\/rescan/);
     assert.match(source, /\/launch/);
+    assert.match(source, /\/stop/);
     assert.match(source, /vb_app_runner_launch_async/);
+    assert.match(source, /vb_app_runner_stop/);
+    assert.match(source, /vb_app_runner_wait_stopped/);
     assert.match(source, /vb_app_registry_scan/);
     assert.match(source, /HTTP_POST/);
     assert.match(source, /\/install/);
@@ -157,33 +163,66 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(main, /vb_install_service_start\(&s_install_context\)/);
   });
 
-  it("runs the first app through a Lua runner", () => {
+  it("exposes Lua runner lifecycle for launcher and HTTP launch", () => {
     const header = readRequired(join(firmwareRoot, "main/app_runner.h"));
     const runner = readRequired(runnerSourcePath);
     const main = readRequired(mainSourcePath);
 
     assert.match(header, /vb_app_runner_run_entry/);
     assert.match(header, /vb_app_runner_launch_async/);
+    assert.match(header, /vb_app_runner_stop/);
+    assert.match(header, /vb_app_runner_wait_stopped/);
+    assert.match(header, /vb_app_runner_current_id/);
     assert.match(runner, /VB_LUA_TASK_STACK_SIZE/);
     assert.match(runner, /xTaskCreatePinnedToCore/);
     assert.match(runner, /vb_app_registry_entry_t/);
     assert.match(runner, /entry_to_registry/);
-    assert.match(runner, /s_async_running/);
+    assert.match(runner, /s_runner_state/);
+    assert.match(runner, /stop_requested/);
+    assert.match(runner, /vb_lua_tmr_set_stop_flag/);
     assert.match(runner, /luaL_newstate/);
     assert.match(runner, /luaL_openlibs/);
     assert.match(runner, /luaL_dofile/);
     assert.match(runner, /Lua app ok/);
-    assert.match(main, /vb_app_runner_run/);
+    assert.doesNotMatch(main, /vb_app_runner_run\(&s_apps,\s*&run\)/);
+    assert.match(main, /vb_launcher_ui_show\(&s_apps,\s*scan_err\)/);
+  });
+
+  it("boots into a native touch launcher", () => {
+    const header = readRequired(launcherHeaderPath);
+    const source = readRequired(launcherSourcePath);
+    const cmake = readRequired(cmakePath);
+    const main = readRequired(mainSourcePath);
+
+    assert.match(cmake, /launcher_ui\.c/);
+    assert.match(header, /vb_launcher_ui_show/);
+    assert.match(source, /VibeBoard Apps/);
+    assert.match(source, /lv_btn_create/);
+    assert.match(source, /lv_obj_add_event_cb/);
+    assert.match(source, /LV_EVENT_CLICKED/);
+    assert.match(source, /vb_app_runner_is_running/);
+    assert.match(source, /vb_app_runner_current_id/);
+    assert.match(source, /vb_app_runner_stop/);
+    assert.match(source, /vb_app_runner_wait_stopped\(1500\)/);
+    assert.match(source, /vb_app_runner_launch_async/);
+    assert.match(main, /#include "launcher_ui\.h"/);
+    assert.match(main, /vb_launcher_ui_show\(&s_apps,\s*scan_err\)/);
+    assert.doesNotMatch(main, /vb_app_runner_run\(&s_apps,\s*&run\)/);
   });
 
   it("keeps Lua alive for interval callbacks", () => {
     const runner = readRequired(runnerSourcePath);
 
     assert.match(runner, /vb_lua_tmr_register/);
+    assert.match(runner, /vb_lua_tmr_set_stop_flag/);
     assert.match(runner, /vb_lua_tmr_run_loop/);
     assert.doesNotMatch(runner, /VB_LUA_SMOKE_LOOP_TICKS/);
     const source = readRequired(luaTmrSourcePath);
+    const header = readRequired(luaTmrHeaderPath);
     assert.match(source, /vTaskDelay/);
+    assert.match(source, /stop_requested/);
+    assert.match(source, /Lua tmr loop stop requested/);
+    assert.match(header, /vb_lua_tmr_set_stop_flag/);
   });
 
   it("registers a NodeMCU-style tmr module", () => {

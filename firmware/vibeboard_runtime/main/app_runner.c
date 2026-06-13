@@ -22,7 +22,15 @@ static const char *TAG = "app_runner";
 #define VB_LUA_TASK_STACK_SIZE (32 * 1024)
 #define VB_LUA_TASK_PRIORITY 5
 
-static volatile bool s_async_running;
+typedef struct {
+    volatile bool running;
+    volatile bool stop_requested;
+    char current_id[VB_APP_NAME_MAX];
+    char current_name[VB_APP_NAME_MAX];
+    esp_err_t last_status;
+} vb_app_runner_state_t;
+
+static vb_app_runner_state_t s_runner_state;
 
 typedef struct {
     vb_lua_tmr_state_t tmr;
@@ -102,6 +110,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner
     luaL_openlibs(L);
     vb_lua_runtime_t runtime = {0};
     vb_lua_tmr_init(&runtime.tmr);
+    vb_lua_tmr_set_stop_flag(&runtime.tmr, &s_runner_state.stop_requested);
 
     lua_pushcfunction(L, vb_lua_print);
     lua_setglobal(L, "print");
@@ -152,12 +161,16 @@ static void lua_async_task(void *arg)
 {
     vb_lua_async_context_t *context = (vb_lua_async_context_t *)arg;
     esp_err_t status = run_lua_file(&context->app, &context->result);
+    s_runner_state.last_status = status;
     ESP_LOGI(TAG,
              "Lua async finished: %s status=%s message=%s",
              context->app.first_app_name,
              esp_err_to_name(status),
              context->result.message);
-    s_async_running = false;
+    s_runner_state.stop_requested = false;
+    s_runner_state.running = false;
+    s_runner_state.current_id[0] = '\0';
+    s_runner_state.current_name[0] = '\0';
     free(context);
     vTaskDelete(NULL);
 }
@@ -213,7 +226,7 @@ esp_err_t vb_app_runner_launch_async(const vb_app_registry_entry_t *entry)
     if (entry == NULL || entry->path[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
-    if (s_async_running) {
+    if (s_runner_state.running) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -223,7 +236,11 @@ esp_err_t vb_app_runner_launch_async(const vb_app_registry_entry_t *entry)
     }
     entry_to_registry(entry, &context->app);
 
-    s_async_running = true;
+    strlcpy(s_runner_state.current_id, entry->id, sizeof(s_runner_state.current_id));
+    strlcpy(s_runner_state.current_name, entry->name[0] ? entry->name : entry->id, sizeof(s_runner_state.current_name));
+    s_runner_state.stop_requested = false;
+    s_runner_state.running = true;
+    s_runner_state.last_status = ESP_OK;
     BaseType_t created = xTaskCreatePinnedToCore(lua_async_task,
                                                  "vb_lua_launch",
                                                  VB_LUA_TASK_STACK_SIZE,
@@ -232,11 +249,46 @@ esp_err_t vb_app_runner_launch_async(const vb_app_registry_entry_t *entry)
                                                  NULL,
                                                  tskNO_AFFINITY);
     if (created != pdPASS) {
-        s_async_running = false;
+        s_runner_state.running = false;
+        s_runner_state.current_id[0] = '\0';
+        s_runner_state.current_name[0] = '\0';
         free(context);
         return ESP_ERR_NO_MEM;
     }
 
     ESP_LOGI(TAG, "Lua async launch: %s", context->app.first_app_name);
     return ESP_OK;
+}
+
+esp_err_t vb_app_runner_stop(void)
+{
+    if (!s_runner_state.running) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    ESP_LOGI(TAG, "Lua stop requested: %s", s_runner_state.current_name);
+    s_runner_state.stop_requested = true;
+    return ESP_OK;
+}
+
+esp_err_t vb_app_runner_wait_stopped(uint32_t timeout_ms)
+{
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    while (s_runner_state.running) {
+        if (timeout_ms > 0 && (xTaskGetTickCount() - start) >= timeout_ticks) {
+            return ESP_ERR_TIMEOUT;
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    return ESP_OK;
+}
+
+bool vb_app_runner_is_running(void)
+{
+    return s_runner_state.running;
+}
+
+const char *vb_app_runner_current_id(void)
+{
+    return s_runner_state.current_id;
 }

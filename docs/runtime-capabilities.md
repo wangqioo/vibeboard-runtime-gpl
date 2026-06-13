@@ -56,6 +56,9 @@ This document separates implemented API, build verification, and board verificat
 | Mac uploader tool | `npm run upload:app -- http://<ip>:8080 dist/apps/<app-id> <app-id>` | `board-verified` | CLI uses an `nc` transport for the current Mac/router path, uploaded `smoke_visual_remote` to the board, called `/rescan`, and confirmed the app through `/apps`. |
 | App launch | `POST /launch?app=<id>` | `board-verified` | Raw HTTP POST returned `{"ok":true,"launched":"smoke_visual_remote"}`; serial logs showed `Lua async launch: smoke_visual`, app-local SD asset resolution, and repeated progress updates. |
 | Mac launch tool | `npm run launch:app -- http://<ip>:8080 <app-id>` | `board-verified` | CLI reached the board; after `smoke_visual_remote` was already running, the board returned `500 app already running`, proving the launch endpoint and single-runner guard path. |
+| App stop | `POST /stop`, `vb_app_runner_stop`, `vb_app_runner_wait_stopped` | `board-verified` | Switching away from `smoke_visual_remote` logged `Lua stop requested`, `Lua tmr loop stop requested`, and `message=stopped`; idle `POST /stop` returned `{"ok":true,"stopped":false}`. |
+| App switch | `POST /launch?app=<new-id>` while another app is running | `board-verified` | `POST /launch?app=smoke_network` while `smoke_visual_remote` was running returned `200 OK`; serial logs showed visual stopped, then `smoke_network` launched and completed with `ESP_OK`. |
+| Device Launcher | native LVGL app list, tap-to-launch via `vb_launcher_ui_show` | `build-verified` | Firmware boots to the native app list instead of auto-running the first app; tapping an app uses the same runner lifecycle as remote `/launch`. |
 
 ## Planned Runtime Modules
 

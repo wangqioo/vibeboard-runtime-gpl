@@ -1350,3 +1350,149 @@ Launch smoke_visual_remote failed after 3 attempts: 500 app already running
 ```
 
 Result: the no-SD-pull loop is now board-verified through package upload, rescan, confirmation, and direct remote launch. The remaining launcher work is product UX: list/select/switch apps from the device screen and define a controlled stop/restart model for long-running Lua apps.
+
+## 2026-06-13 controlled stop and switch build check
+
+Added the first controlled app lifecycle slice:
+
+```text
+POST /stop
+POST /launch?app=<id> while another app is running
+```
+
+Implementation notes:
+
+- `app_runner` now tracks a runner state instead of only a boolean `s_async_running`.
+- The runner records the current app id/name and exposes `vb_app_runner_stop()`, `vb_app_runner_wait_stopped()`, `vb_app_runner_is_running()`, and `vb_app_runner_current_id()`.
+- `lua_tmr` accepts a stop flag through `vb_lua_tmr_set_stop_flag()` and exits the timer loop with a `stopped` message when stop is requested.
+- `/status` now includes `running` and `current_app`.
+- `/stop` requests stop and waits up to 1500 ms.
+- `/launch` keeps returning `app already running` for the same app, but for a different app it requests stop, waits, then launches the new app.
+
+Verification completed in this slice:
+
+```text
+npm run test:firmware-static passed.
+npm test passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x171f60 bytes.
+```
+
+Initial board verification status:
+
+```text
+No /dev/cu.usbmodem* device was present.
+Observed ports:
+/dev/cu.Bluetooth-Incoming-Port
+/dev/cu.debug-console
+```
+
+Next board check when the device is connected:
+
+```text
+idf.py -p /dev/cu.usbmodem... flash
+POST /launch?app=smoke_visual_remote -> expect visual app starts
+POST /launch?app=smoke_network -> expect visual app stops, network app starts
+POST /stop -> expect current app stops and /status reports running=false
+```
+
+Result: controlled stop/switch is build-verified and ready for the next connected-board smoke.
+
+## 2026-06-13 controlled stop and switch board verification
+
+The LCKFB board was reconnected on:
+
+```text
+/dev/cu.usbmodem112301
+```
+
+Flash verification:
+
+```text
+idf.py -p /dev/cu.usbmodem112301 flash passed.
+vibeboard_runtime.bin binary size 0x171f60 bytes.
+Hard resetting via RTS pin... Done.
+```
+
+Boot evidence:
+
+```text
+I app_init: App version: 1d281ef-dirty
+I app_init: Compile time: Jun 13 2026 13:14:48
+Name: SD64G
+I app_registry: found 3 apps
+I install_service: install service listening on port 8080
+I lua_wifi: sta got ip 192.168.1.32
+I vibeboard_runtime: VibeBoard Runtime ready: sd=ok apps=3 lua=ok
+```
+
+Launch visual app:
+
+```text
+POST /launch?app=smoke_visual_remote -> 200 OK
+{"ok":true,"launched":"smoke_visual_remote"}
+
+I app_runner: Lua async launch: smoke_visual
+I app_runner: Lua app start: smoke_visual
+I lua_file: file module app dir: /sdcard/apps/smoke_visual_remote
+I app_runner: smoke visual ok S:/apps/smoke_visual_remote/assets/icon.bmp
+I lua_tmr: Lua tmr loop start
+I app_runner: smoke visual progress 23
+```
+
+Switch to network app while the visual app is still running:
+
+```text
+POST /launch?app=smoke_network -> 200 OK
+{"ok":true,"launched":"smoke_network"}
+
+I install_service: switch app smoke_visual_remote -> smoke_network
+I app_runner: Lua stop requested: smoke_visual
+I lua_tmr: Lua tmr loop stop requested
+I app_runner: Lua async finished: smoke_visual status=ESP_ERR_INVALID_STATE message=stopped
+I app_runner: Lua async launch: smoke_network
+I app_runner: Lua app start: smoke_network
+I app_runner: smoke network start
+I app_runner: http status 200
+I app_runner: Lua app ok
+I app_runner: Lua async finished: smoke_network status=ESP_OK message=ok
+```
+
+Status and idle stop checks:
+
+```text
+GET /status -> 200 OK
+{"sd":true,"app_count":3,"first_app":"smoke_network","install":"ok","running":false,"current_app":""}
+
+POST /stop -> 200 OK
+{"ok":true,"stopped":false}
+```
+
+Result: controlled stop and remote app switch are now board-verified. The next product slice can build a screen Launcher on top of the same stop/switch path.
+
+## 2026-06-13 device launcher UI build check
+
+Added a native LVGL launcher screen:
+
+```text
+VibeBoard Apps
+tap app -> vb_app_runner_launch_async()
+```
+
+Implementation notes:
+
+- `launcher_ui` renders the native app list from `vb_app_registry_result_t`.
+- `app_main()` now starts board hardware, scans SD apps, starts the install service, then shows the launcher.
+- Boot no longer auto-runs the first app.
+- Tapping an app uses the same runner lifecycle as remote `/launch`, including stop/wait before switching apps.
+
+Verification:
+
+```text
+npm run test:firmware-static passed.
+npm test passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x171f40 bytes.
+```
+
+Result: device launcher UI is build-verified. Board verification still needs flashing and touch testing on the physical screen.

@@ -4,6 +4,7 @@ idf_component_register(
         "app_registry.c"
         "board_lckfb_szpi_s3.c"
         "install_service.c"
+        "launcher_ui.c"
         "lua_file.c"
         "lua_http.c"
         "lua_lvgl.c"

@@ -213,6 +213,14 @@ void vb_lua_tmr_init(vb_lua_tmr_state_t *state)
     }
 }
 
+void vb_lua_tmr_set_stop_flag(vb_lua_tmr_state_t *state, volatile bool *stop_requested)
+{
+    if (state == NULL) {
+        return;
+    }
+    state->stop_requested = stop_requested;
+}
+
 void vb_lua_tmr_register(lua_State *L, vb_lua_tmr_state_t *state)
 {
     lua_pushlightuserdata(L, state);
@@ -262,6 +270,14 @@ esp_err_t vb_lua_tmr_run_loop(lua_State *L, vb_lua_tmr_state_t *state, char *err
     int idle_ticks = 0;
     ESP_LOGI(TAG, "Lua tmr loop start");
     while (true) {
+        if (state->stop_requested != NULL && *state->stop_requested) {
+            ESP_LOGI(TAG, "Lua tmr loop stop requested");
+            if (error != NULL && error_size > 0) {
+                strlcpy(error, "stopped", error_size);
+            }
+            return ESP_ERR_INVALID_STATE;
+        }
+
         bool has_active_timer = false;
         TickType_t now = xTaskGetTickCount();
 
