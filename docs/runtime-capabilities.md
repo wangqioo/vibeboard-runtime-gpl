@@ -62,8 +62,8 @@ This document separates implemented API, build verification, and board verificat
 
 ## Planned Runtime Modules
 
-| Capability | Target APIs | Status |
-| --- | --- | --- |
-| App manager | `app.list`, `app.current`, `app.launch`, `app.rescan`, `app.exiting`, `app.on` | `planned` |
-| Input | `touch.on`, `key.on` | `planned` |
-| Native modules | `require("/sd/modules/<module>.so")` | `planned` |
+| Capability | Target APIs | Status | Notes |
+| --- | --- | --- | --- |
+| Lua App manager | `app.list`, `app.current`, `app.launch`, `app.rescan`, `app.exiting`, `app.on` | `planned` | Deferred to Phase 5B. Phase 5A uses the native launcher plus HTTP lifecycle endpoints instead of exposing app management to Lua. |
+| Input | `touch.on`, `key.on` | `planned` | Hardware touch is usable by the native launcher; Lua input event APIs are a later phase. |
+| Native modules | `require("/sd/modules/<module>.so")` | `planned` | Deferred until launcher lifecycle and API versioning are stable. |

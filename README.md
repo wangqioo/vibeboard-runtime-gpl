@@ -21,10 +21,10 @@ Validated on real hardware:
 - `apps/smoke_timer` ran from SD card and verified auto timers, single timers, state, unregister, timer-loop idle, and `Lua app ok` on real hardware.
 - Lua `file` module, LVGL `S:` SD filesystem asset path, positioning, flags, and label long modes have board smoke evidence through `apps/smoke_file` and `apps/smoke_assets`.
 
-Still build-verified but not yet display-smoke-verified:
+Display follow-up and structure notes:
 
 - Current `apps/smoke_ui` has been migrated from direct `set_interval` usage to `tmr`; the earlier display demo was verified before that migration.
-- BMP image decoding is enabled with `CONFIG_LV_USE_BMP=y`; `apps/smoke_visual` packages a real BMP asset and uses `lv_img_create`, `lv_img_set_src`, `lv_btn_create`, `lv_bar_create`, `lv_bar_set_range`, and `lv_bar_set_value`.
+- BMP image decoding is enabled with `CONFIG_LV_USE_BMP=y`; `apps/smoke_visual` packages a real BMP asset and uses `lv_img_create`, `lv_img_set_src`, `lv_btn_create`, `lv_bar_create`, `lv_bar_set_range`, and `lv_bar_set_value`. It is board-verified through serial/runtime progress logs; BMP visual correctness still needs human screen confirmation.
 - LVGL binding code has been split into core registration, SD/asset filesystem, and widget bindings to keep new API work maintainable.
 - The firmware now uses a custom 4 MB app partition because the network-enabled runtime no longer fits in ESP-IDF's default 1 MB factory app partition.
 
@@ -34,7 +34,9 @@ Board-verified networking and install-service work:
 - The runtime starts a minimal HTTP install service on port `8080`: `POST /install?app=<id>&path=<relative>` writes files under `/sdcard/apps/<id>/`.
 - The uploader command now writes a package, calls `/rescan`, and confirms the app through `/apps`: `npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` uploaded 5 files and confirmed `smoke_visual_remote`.
 - The runtime can launch an installed SD app without rebooting: `POST /launch?app=smoke_visual_remote` returned `200 OK`, and serial logs showed `smoke visual ok S:/apps/smoke_visual_remote/assets/icon.bmp` plus timer-driven progress updates.
-- The local helper command is `npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote`; if an app is already running, the board returns `app already running` instead of starting two Lua/LVGL apps at once.
+- The local helper command is `npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote`.
+- Controlled stop/switch is board-verified: launching a different app stops the current Lua app before starting the next one.
+- The device now boots into the native `VibeBoard Apps` launcher instead of auto-running the first SD app. Touch tap-to-launch works on the device screen; BOOT short press selects, and BOOT long press launches.
 
 ## Boundary
 
@@ -53,7 +55,7 @@ AI generates app.info + Lua + assets
   -> packager creates dist/apps/<app-id>
   -> user copies files to SD card /apps/<app-id> or uploads through the install service
   -> runtime scans /sdcard/apps
-  -> user launches the app through /launch or the runtime executes the boot app
+  -> user launches the app from the native screen launcher or through /launch
   -> Lua runner executes main.lua
 ```
 
@@ -76,8 +78,9 @@ ESP32 runtime boots
   -> initializes LCD, LVGL, backlight, SD card
   -> mounts SD at /sdcard
   -> scans /sdcard/apps
-  -> finds an app directory with app.info
-  -> reads entry = main.lua
+  -> finds app directories with app.info and valid entry files
+  -> shows the native VibeBoard Apps launcher
+  -> user taps an app or uses BOOT short-select/long-launch
   -> creates a Lua state
   -> registers runtime APIs such as lv_label_create, tmr, and set_interval
   -> runs /sdcard/apps/<app-id>/main.lua

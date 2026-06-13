@@ -36,9 +36,12 @@
 - WiFi、HTTP、JSON、NTP/time 最小 Lua 模块已实现并完成真机 smoke；`apps/smoke_network` 已读取 SD 卡 `wifi.json`，连接 `1-306`，拿到 `192.168.1.32`，并完成 HTTP 200。
 - 最小 HTTP 安装服务已实现并上板验证：`POST /install?app=<id>&path=<relative>` 可以把文件写入 `/sdcard/apps/<id>/`；`GET /status`、`GET /apps`、`POST /rescan` 已验证。
 - 免拔 SD 的上传和远程启动闭环已跑通：`npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` 上传并确认 App，`POST /launch?app=smoke_visual_remote` 返回 `200 OK`，串口确认从 `/sdcard/apps/smoke_visual_remote` 启动并持续刷新进度。
+- 原生设备 Launcher 已真机验证：开机进入 `VibeBoard Apps` 列表，不再自动运行第一个 App；触摸点击可启动 App，BOOT 短按可切换选中项，BOOT 长按可启动选中 App。
+- 受控 App stop/switch 已真机验证：远程 `/launch` 和设备 Launcher 都复用同一条 runner 生命周期，切换时会请求旧 App 停止并等待退出。
+- App registry 会过滤缺少入口文件的 App；例如 `raw_upload/main.lua` 不存在时不会进入可启动列表。
 - 网络运行时让固件超过默认 1MB app 分区，当前已切换到自定义 4MB factory app 分区。
 
-当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **25% 到 35%**：核心方向、文件/资源、基础控件、定时器和网络 API 已经进入可验证阶段，应用生态、Launcher、输入和 Native 模块还需要补齐。
+当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **30% 到 40%**：核心方向、文件/资源、基础控件、定时器、网络 API、免拔 SD 部署、原生 Launcher 和基础 App 生命周期已经进入可验证阶段；应用生态、Lua 侧 App 管理 API、输入事件 API 和 Native 模块还需要补齐。
 
 ## 当前完成清单与后续路线
 
@@ -90,6 +93,14 @@ npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visu
 npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote
 ```
 
+设备端启动链路：
+
+- 开机显示原生 `VibeBoard Apps` 列表，而不是自动运行第一个 App；
+- 触摸点击列表项可启动对应 App；
+- BOOT 短按选择列表项，BOOT 长按启动选中 App；
+- 启动前会复用 `app_runner` stop/switch 生命周期；
+- 缺少入口文件的 App 会被跳过，避免启动时才报错。
+
 验证和文档：
 
 - `npm test` 已覆盖 validator、packager、AI contract、uploader、plan writer、firmware static check；
@@ -115,26 +126,24 @@ AI 生成一个受限 Lua/LVGL App
 
 但当前还不是面向普通用户的完整产品：
 
-- 没有屏幕端 Launcher；
-- 没有触摸选择 App；
-- 没有 App 停止、退出、重启和切换模型；
+- 原生 Launcher 还缺停止当前 App、返回列表、刷新列表和屏幕错误详情；
+- App 生命周期已有实用 stop/switch 路径，但还不是完整状态机；
+- Lua 侧还没有 `app.list()` / `app.launch()` / `app.current()` 等 App manager API；
 - 还不能直接运行完整上游 HoloCubic App；
 - LVGL 绑定覆盖还不够广；
+- 触摸/按键还没有暴露成 Lua 输入事件 API；
 - 没有 Native `.so` 模块加载；
 - 没有浏览器端 App 管理 UI；
 - 没有 Runtime/API/App schema 版本兼容检查。
 
 ### 下一阶段必须补的核心能力
 
-第一优先级：App 生命周期和 Launcher。
+第一优先级：Phase 5 收尾，而不是重新做 Launcher。
 
-- 定义一个 App 运行状态机：`idle`、`starting`、`running`、`stopping`、`failed`；
-- 给 Lua runtime 增加停止信号；
-- 让 `tmr` loop、文件句柄、LVGL 对象和事件 handler 能被清理；
-- 把当前 `/launch` 从“只能在没有 App 跑时启动”升级为“可以受控切换”；
-- 做一个最小屏幕 Launcher，显示 `/sdcard/apps` 列表；
-- 触摸或按键选择 App 后启动；
-- 当前 App 出错时回到 Launcher，而不是卡死或重启。
+- 给原生 Launcher 增加停止当前 App、返回列表、刷新列表和启动失败详情；
+- 把当前实用 stop/switch 路径整理成更明确的状态：`idle`、`starting`、`running`、`stopping`、`failed`；
+- 确认 `tmr` loop、文件句柄、LVGL 对象和事件 handler 在切换时有清晰清理边界；
+- 当前 App 出错时回到 Launcher，而不是只依赖串口或 HTTP 状态。
 
 第二优先级：输入事件。
 
@@ -154,6 +163,7 @@ AI 生成一个受限 Lua/LVGL App
 
 第四优先级：设备端 App 管理。
 
+- Lua 侧 `app.list()`、`app.current()`、`app.launch(id)`、`app.rescan()`；
 - HTTP 删除 App；
 - upload staging + commit，避免半包被启动；
 - App 包 manifest/hash 校验；
@@ -170,27 +180,28 @@ AI 生成一个受限 Lua/LVGL App
 
 ### 推荐最近三个开发切片
 
-1. **受控停止和重启当前 App**
+1. **Launcher 收尾交互**
 
-   目标是让长运行 Lua App 能被停止，`/launch` 可以切到另一个 App。
-
-   验收：
-
-   - 启动 `smoke_visual_remote`；
-   - 再 launch `smoke_network`；
-   - 旧 App timer 停止，新 App 正常启动；
-   - 串口没有 Lua panic、LVGL assert 或内存明显泄漏。
-
-2. **最小屏幕 Launcher**
-
-   目标是在设备屏幕上看到 App 列表，并能选择启动。
+   目标是把现在能用的原生 Launcher 收成完整最小产品。
 
    验收：
 
-   - Launcher 显示 `smoke_network`、`raw_upload`、`smoke_visual_remote`；
-   - 点击或按键选择能启动对应 App；
-   - App 失败后能回到 Launcher；
+   - 运行 App 后能回到 Launcher；
+   - 屏幕上可以停止当前 App；
+   - 屏幕上可以刷新 App 列表；
+   - App 启动失败时屏幕显示可理解错误；
    - HTTP `/apps` 和屏幕列表来自同一份 registry。
+
+2. **App 生命周期状态化**
+
+   目标是把当前 stop/switch 的实用路径整理成明确状态机。
+
+   验收：
+
+   - `/status` 能报告 `idle`、`starting`、`running`、`stopping`、`failed`；
+   - 启动 `smoke_visual_remote` 后切到 `smoke_network`，旧 App timer 停止，新 App 正常启动；
+   - 串口没有 Lua panic、LVGL assert 或内存明显泄漏；
+   - 失败 App 不影响 Launcher 继续可用。
 
 3. **触摸事件 smoke**
 
@@ -734,6 +745,11 @@ apps/smoke_network/
 
 目标：从“开机跑第一个 App”升级为“可列出、启动、退出、切换 App”。
 
+Phase 5 现在拆成两段：
+
+- **Phase 5A 已验收：原生 Launcher MVP 和基础 stop/switch。**
+- **Phase 5B 待收尾：返回 Launcher、屏幕停止/刷新/错误提示、状态机、Lua 侧 App manager API。**
+
 需要新增或修改：
 
 ```text
@@ -746,9 +762,11 @@ apps/launcher/
 docs/runtime-capabilities.md
 ```
 
+实际实现采用 `launcher_ui.c` / `launcher_ui.h` 的原生 LVGL Launcher，而不是 `apps/launcher/` Lua App。原因是当前阶段需要稳定的系统级 app-selection screen；Lua Launcher 和 `app.*` API 后移到 Phase 5B。
+
 任务：
 
-1. Registry 支持多个 App，不只记录第一个。
+1. Registry 支持多个 App，不只记录第一个。**已完成并真机验证。**
 2. 增加 App metadata：
 
 ```text
@@ -760,7 +778,7 @@ capabilities
 path
 ```
 
-3. 实现 `app` 模块最小集合：
+3. 实现 `app` 模块最小集合。**后移到 Phase 5B；当前原生 Launcher 不依赖它。**
 
 ```lua
 app.list()
@@ -771,7 +789,7 @@ app.exiting()
 app.on(event, callback)
 ```
 
-4. 实现 App 生命周期：
+4. 实现 App 生命周期。**当前已有 stop/switch 实用路径，完整状态机后移到 Phase 5B。**
 
 ```text
 start
@@ -781,20 +799,20 @@ cleanup
 stopped
 ```
 
-5. 做最小 Launcher UI：
+5. 做最小 Launcher UI。**已完成并真机验证。**
 
 - 显示 App 列表；
 - 点击或按键启动 App；
-- 返回 Launcher；
-- App 失败时显示错误。
+- 返回 Launcher；**待 Phase 5B。**
+- App 失败时显示错误。**待 Phase 5B。**
 
 验收标准：
 
-- SD 卡放多个 App 时，Launcher 能列出；
-- 能从 Launcher 启动 `smoke_ui`；
-- 能退出 App 回到 Launcher；
-- `app.rescan()` 能识别新复制的 App；
-- App 崩溃不会导致整个 Runtime 崩溃。
+- SD 卡放多个 App 时，Launcher 能列出；**已验收。**
+- 能从 Launcher 启动 App；**已验收，触摸点击和 BOOT 长按均可启动。**
+- 能退出 App 回到 Launcher；**待 Phase 5B。**
+- `app.rescan()` 能识别新复制的 App；**HTTP `/rescan` 已验收，Lua `app.rescan()` 待 Phase 5B。**
+- App 崩溃不会导致整个 Runtime 崩溃。**待 Phase 5B 做失败样本验证。**
 
 ## Phase 6：触摸、按键和输入事件
 
@@ -855,14 +873,14 @@ key.on("long", callback)
 - 自动创建父目录；
 - `tools/app-uploader` 默认使用 Node 原生 HTTP，并有本地测试；CLI 在当前 Mac 网络路径使用 `nc` transport；
 - `npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` 已上传并确认 `smoke_visual_remote`；
-- `npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote` 已连到板端；当 App 已在运行时返回 `app already running`；
+- `npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote` 已连到板端；同一 App 已运行时会拒绝重复启动，启动另一个 App 时会走受控 stop/switch；
 - 原始 HTTP POST 从 Mac 写入 `raw_upload/app.info` 后，下一次启动日志显示 `app_registry: found 2 apps`。
 - 真机 raw HTTP 验证：`/status`、`/apps`、`/rescan`、`/launch` 均返回预期结果。
 
 当前限制：
 
-- 还没有 commit/staging、删除、浏览器 UI 或 Launcher 切换；
-- `/launch` 是远程启动，不是完整生命周期管理；当前只做单 runner guard，没有受控停止当前 App 后切换到另一个 App；
+- 还没有 commit/staging、删除或浏览器 UI；
+- `/launch` 已支持受控切换，但还不是完整生命周期状态机；失败状态和屏幕端错误恢复仍需 Phase 5B 收尾；
 - 当前 Mac 到板子 `192.168.1.32:8080` 的 Node/curl 连接曾偶发 `EHOSTUNREACH`，CLI 已先用 `nc` 绕过；后续仍需要收敛网络工具稳定性。
 
 需要新增或修改：
