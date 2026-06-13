@@ -109,6 +109,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /apps\[/);
     assert.match(source, /VB_APPS_PATH/);
     assert.match(source, /app\.info/);
+    assert.match(source, /stat\(app_path,\s*&st\)/);
+    assert.match(source, /skip app entry that is missing/);
     assert.match(source, /result->apps/);
   });
 
@@ -200,6 +202,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /lv_btn_create/);
     assert.match(source, /lv_obj_add_event_cb/);
     assert.match(source, /LV_EVENT_CLICKED/);
+    assert.match(source, /VB_LAUNCHER_BOOT_KEY/);
+    assert.match(source, /GPIO_NUM_0/);
+    assert.match(source, /VB_LAUNCHER_DEBOUNCE_MS/);
+    assert.match(source, /VB_LAUNCHER_KEY_COOLDOWN_MS/);
+    assert.match(source, /BOOT short: next/);
+    assert.match(source, /BOOT long press: launch/);
     assert.match(source, /vb_app_runner_is_running/);
     assert.match(source, /vb_app_runner_current_id/);
     assert.match(source, /vb_app_runner_stop/);

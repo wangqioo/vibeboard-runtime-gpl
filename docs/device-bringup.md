@@ -1496,3 +1496,70 @@ vibeboard_runtime.bin binary size 0x171f40 bytes.
 ```
 
 Result: device launcher UI is build-verified. Board verification still needs flashing and touch testing on the physical screen.
+
+## 2026-06-13 device launcher UI board verification
+
+The first `idf.py flash` run reported success, but serial boot logs showed the board was still running the older `esp32s3_device` OTA partition layout from `0x20000`. The flash contents were verified by reading back `0x8000`:
+
+```text
+ota_0,app,ota_0,0x20000,4032K,
+ota_1,app,ota_1,0x410000,4032K,
+assets,data,spiffs,0x800000,8M,
+```
+
+The runtime image was then written directly with `esptool write_flash`, and the partition table was read back again:
+
+```text
+nvs,data,nvs,0x9000,24K,
+phy_init,data,phy,0xf000,4K,
+factory,app,factory,0x10000,4M,
+```
+
+Boot evidence:
+
+```text
+I boot:  2 factory          factory app      00 00 00010000 00400000
+I boot: Loaded app from partition at offset 0x10000
+I app_init: Project name:     vibeboard_runtime
+I app_init: App version:      1d2d794
+I vibeboard_runtime: VibeBoard Runtime start
+Name: SD64G
+W app_registry: skip app entry that is missing: raw_upload/main.lua
+I app_registry: found 2 apps
+I install_service: install service listening on port 8080
+I vibeboard_runtime: VibeBoard Runtime ready: sd=ok apps=2 launcher=ok
+```
+
+This confirms boot now stops at the native launcher list instead of auto-running the first Lua app. There is no `Lua app start` during the boot-ready sequence.
+
+Touch check:
+
+```text
+FT5x06 regs=ESP_OK points=0x00 fw=0x01 state=0x00 err=0x0f
+```
+
+The touch controller answers on I2C, but it did not report touch points in this board session, including while the panel was being pressed. Touch remains a hardware/config follow-up, not a launcher lifecycle blocker.
+
+BOOT fallback verification:
+
+```text
+I launcher_ui: launcher BOOT short press: next
+I launcher_ui: launcher selected index: 1
+I launcher_ui: launcher BOOT short press: next
+I launcher_ui: launcher selected index: 0
+```
+
+The physical BOOT key short press was also confirmed by hand on the device screen: it changes the selected launcher item. Long-press launch was observed through the app runner after selection:
+
+```text
+I launcher_ui: launcher BOOT long press: launch
+I launcher_ui: launcher selected app: smoke_network
+I app_runner: Lua app start: smoke_network
+I app_runner: Lua async launch: smoke_network
+I app_runner: smoke network start
+I lua_wifi: sta got ip 192.168.1.32
+I app_runner: Lua app ok
+I app_runner: Lua async finished: smoke_network status=ESP_OK message=ok
+```
+
+Result: device launcher is board-verified for boot-to-list, missing-entry filtering, BOOT short-select, and BOOT long-launch. Touch tap-to-launch is implemented in LVGL but remains blocked by the current board touch controller not reporting points.

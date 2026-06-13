@@ -130,6 +130,10 @@ esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result)
             ESP_LOGW(TAG, "app entry path is too long: %s", entry->d_name);
             continue;
         }
+        if (stat(app_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+            ESP_LOGW(TAG, "skip app entry that is missing: %s/%s", entry->d_name, app_entry);
+            continue;
+        }
 
         result->app_count++;
         if (result->stored_app_count < VB_APP_REGISTRY_MAX_APPS) {
