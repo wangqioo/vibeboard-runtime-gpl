@@ -18,7 +18,7 @@ The local work after this baseline fixes a launcher BOOT-after-launch crash foun
 - BOOT short press selects; BOOT long press launches.
 - HTTP install, app listing, rescan, launch, stop, and switch are implemented.
 - Missing app entry files are filtered before they enter the launchable app list.
-- Phase 5B lifecycle-state foundation is build-verified:
+- Phase 5B lifecycle-state foundation is board-verified:
   - `/status` includes `state`.
   - states are `idle`, `starting`, `running`, `stopping`, `failed`.
   - compatibility fields `running` and `current_app` remain.
@@ -26,7 +26,8 @@ The local work after this baseline fixes a launcher BOOT-after-launch crash foun
   - launching `smoke_visual_remote`, then short-pressing BOOT used stale launcher LVGL pointers;
   - `launcher_ui.c` now deactivates launcher controls after handing the screen to a Lua app;
   - static tests and firmware build pass;
-  - fixed firmware was flashed to the board.
+  - fixed firmware was flashed to the board and board-verified.
+- `apps/smoke_fail` exists as an intentional Lua failure sample for lifecycle checks.
 
 ## Last Verified Commands
 
@@ -38,43 +39,11 @@ idf.py build
 esptool write_flash
 ```
 
-The BOOT-after-launch crash fix passed local verification and was flashed. Manual board re-test still needs one final trigger.
+The BOOT-after-launch crash fix and lifecycle `state` checks are board-verified.
 
 ## Immediate Next Work
 
-### 1. Finish BOOT-after-launch crash re-test
-
-On the flashed board:
-
-```text
-tap or launch smoke_visual_remote
-short-press BOOT once
-```
-
-Expected serial evidence:
-
-```text
-I launcher_ui: launcher inactive; BOOT short press ignored
-```
-
-There must be no `CORRUPT HEAP`, `Guru Meditation`, or reboot.
-
-After this is observed, promote the crash fix from build/flashed to board-verified in `docs/device-bringup.md`.
-
-### 2. Board-verify lifecycle `state`
-
-Flash and monitor the board, then verify:
-
-```text
-GET /status before launch -> state=idle
-POST /launch?app=smoke_visual_remote -> state=starting or running during launch
-POST /stop -> state=stopping during stop, then idle
-bad app launch -> state=failed
-```
-
-Record evidence in `docs/device-bringup.md`, then promote the lifecycle status row in `docs/runtime-capabilities.md` from `build-verified` to `board-verified`.
-
-### 3. Launcher UI controls
+### 1. Launcher UI controls
 
 Add device-screen controls to the native launcher:
 
@@ -95,30 +64,22 @@ docs/runtime-capabilities.md
 
 Avoid changing `app_runner.c` unless lifecycle state integration requires a small accessor.
 
-### 4. Failure-sample app
+### 2. Upload reliability cleanup
 
-Add a tiny app that fails intentionally, then use it to prove:
+Manual `curl --data-binary` upload works against the board, but `npm run upload:app` can still fail through the `nc` fallback on this Mac/router path. Clean up the uploader transport so it prefers the reliable native HTTP path when available, or improves retry/backoff around `nc`.
 
-- app failure sets `state=failed`;
-- launcher remains usable;
-- another app can still be launched afterward.
+### 3. Failure UI
 
-Suggested app id:
-
-```text
-smoke_fail
-```
+Use `apps/smoke_fail` to make failure visible on the native launcher screen, not only in `/status` and serial logs.
 
 ## Parallelization Guidance
 
-Safe parallel tracks after lifecycle board verification:
+Safe parallel tracks now:
 
 - Launcher UI controls.
-- Failure-sample app and validator/package coverage.
+- Uploader reliability cleanup.
 - Deployment productization planning: delete, staging/commit, browser UI.
 - Lua input-event design: `touch.on`, `key.on`.
-
-Do not parallel-edit `app_runner.c` and `install_service.c` until the lifecycle state field is board-verified.
 
 ## Deferred
 

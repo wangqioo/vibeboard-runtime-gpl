@@ -41,9 +41,9 @@ static void set_lifecycle_state(vb_app_runner_lifecycle_state_t state)
     s_runner_state.lifecycle_state = state;
 }
 
-static void finish_lifecycle_state(esp_err_t status)
+static void finish_lifecycle_state(esp_err_t status, bool was_stop_requested)
 {
-    if (status == ESP_OK) {
+    if (status == ESP_OK || was_stop_requested) {
         set_lifecycle_state(VB_APP_RUNNER_STATE_IDLE);
     } else {
         set_lifecycle_state(VB_APP_RUNNER_STATE_FAILED);
@@ -186,7 +186,8 @@ static void lua_task(void *arg)
     vb_lua_task_context_t *context = (vb_lua_task_context_t *)arg;
     set_lifecycle_state(VB_APP_RUNNER_STATE_RUNNING);
     context->status = run_lua_file(context->app, context->result);
-    finish_lifecycle_state(context->status);
+    bool was_stop_requested = s_runner_state.stop_requested;
+    finish_lifecycle_state(context->status, was_stop_requested);
     xTaskNotifyGive(context->caller);
     vTaskDelete(NULL);
 }
@@ -196,6 +197,7 @@ static void lua_async_task(void *arg)
     vb_lua_async_context_t *context = (vb_lua_async_context_t *)arg;
     set_lifecycle_state(VB_APP_RUNNER_STATE_RUNNING);
     esp_err_t status = run_lua_file(&context->app, &context->result);
+    bool was_stop_requested = s_runner_state.stop_requested;
     s_runner_state.last_status = status;
     ESP_LOGI(TAG,
              "Lua async finished: %s status=%s message=%s",
@@ -203,7 +205,7 @@ static void lua_async_task(void *arg)
              esp_err_to_name(status),
              context->result.message);
     s_runner_state.stop_requested = false;
-    finish_lifecycle_state(status);
+    finish_lifecycle_state(status, was_stop_requested);
     s_runner_state.current_id[0] = '\0';
     s_runner_state.current_name[0] = '\0';
     free(context);

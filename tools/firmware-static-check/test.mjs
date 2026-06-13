@@ -49,6 +49,8 @@ const smokeVisualBmpPath = join(repoRoot, "apps/smoke_visual/assets/icon.bmp");
 const smokeNetworkInfoPath = join(repoRoot, "apps/smoke_network/app.info");
 const smokeNetworkSourcePath = join(repoRoot, "apps/smoke_network/main.lua");
 const smokeNetworkConfigPath = join(repoRoot, "apps/smoke_network/wifi.example.json");
+const smokeFailInfoPath = join(repoRoot, "apps/smoke_fail/app.info");
+const smokeFailSourcePath = join(repoRoot, "apps/smoke_fail/main.lua");
 const smokeTimerInfoPath = join(repoRoot, "apps/smoke_timer/app.info");
 const smokeTimerSourcePath = join(repoRoot, "apps/smoke_timer/main.lua");
 
@@ -193,6 +195,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_STOPPING\)/);
     assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_FAILED\)/);
     assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_IDLE\)/);
+    assert.match(runner, /stop_requested[\s\S]*VB_APP_RUNNER_STATE_IDLE/);
+    assert.match(runner, /finish_lifecycle_state\(status,\s*was_stop_requested\)/);
     assert.match(runner, /VB_LUA_TASK_STACK_SIZE/);
     assert.match(runner, /xTaskCreatePinnedToCore/);
     assert.match(runner, /vb_app_registry_entry_t/);
@@ -564,5 +568,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /smoke network ready/);
     assert.match(config, /"ssid"\s*:\s*"YOUR_WIFI_SSID"/);
     assert.match(config, /"password"\s*:\s*"YOUR_WIFI_PASSWORD"/);
+  });
+
+  it("ships a failure smoke app for lifecycle status checks", () => {
+    const info = readRequired(smokeFailInfoPath);
+    const source = readRequired(smokeFailSourcePath);
+
+    assert.match(info, /name\s*=\s*smoke_fail/);
+    assert.match(info, /entry\s*=\s*main\.lua/);
+    assert.match(source, /smoke fail start/);
+    assert.match(source, /intentional smoke failure/);
   });
 });

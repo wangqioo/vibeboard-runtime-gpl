@@ -1,0 +1,4 @@
+name = smoke_fail
+entry = main.lua
+description = Intentional failure smoke app for lifecycle status checks
+capabilities = lvgl

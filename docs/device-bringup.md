@@ -1622,4 +1622,103 @@ I install_service: install service listening on port 8080
 I vibeboard_runtime: VibeBoard Runtime ready: sd=ok apps=2 launcher=ok
 ```
 
-Result: the crash fix is build-verified and flashed to the board. The original manual repro still needs one final hand check: launch `smoke_visual_remote`, short-press BOOT, and confirm the serial log reports `launcher inactive; BOOT short press ignored` with no reboot.
+Manual board re-test after reflashing `a491c29`:
+
+```text
+I app_init: Project name:     vibeboard_runtime
+I app_init: App version:      a491c29
+I app_init: ELF file SHA256:  1881e37f0...
+I vibeboard_runtime: VibeBoard Runtime ready: sd=ok apps=2 launcher=ok
+I launcher_ui: launcher BOOT long press: launch
+I launcher_ui: launcher selected app: smoke_network
+I app_runner: Lua app start: smoke_network
+I launcher_ui: launcher BOOT short press: next
+I launcher_ui: launcher inactive; BOOT short press ignored
+I launcher_ui: launcher BOOT long press: launch
+I launcher_ui: launcher inactive; BOOT long press ignored
+```
+
+Result: the crash fix is board-verified. After the launcher hands the screen to a Lua app, BOOT short/long presses are ignored instead of touching stale launcher LVGL objects. The board did not reboot and no `CORRUPT HEAP` or `Guru Meditation` appeared during the re-test.
+
+## 2026-06-13 lifecycle state board verification
+
+The Phase 5B `/status.state` field was verified on the board after reflashing the lifecycle stop fix:
+
+```text
+I app_init: Project name:     vibeboard_runtime
+I app_init: App version:      a491c29
+I app_init: ELF file SHA256:  09a2747e6...
+I boot:  2 factory          factory app      00 00 00010000 00400000
+I vibeboard_runtime: VibeBoard Runtime ready: sd=ok apps=2 launcher=ok
+```
+
+Initial HTTP state after `smoke_network` connected WiFi and exited:
+
+```text
+GET /status -> 200 OK
+{"sd":true,"app_count":2,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+```
+
+Running state with a long-lived visual app:
+
+```text
+POST /launch?app=smoke_visual_remote -> 200 OK
+{"ok":true,"launched":"smoke_visual_remote"}
+
+GET /status -> 200 OK
+{"sd":true,"app_count":2,"first_app":"smoke_network","install":"ok","state":"running","running":true,"current_app":"smoke_visual_remote"}
+
+I app_runner: Lua async launch: smoke_visual
+I app_runner: Lua app start: smoke_visual
+I app_runner: smoke visual ok S:/apps/smoke_visual_remote/assets/icon.bmp
+I lua_tmr: Lua tmr loop start
+```
+
+Controlled stop state fix:
+
+```text
+POST /stop -> 200 OK
+{"ok":true,"stopped":true}
+
+I app_runner: Lua stop requested: smoke_visual
+I lua_tmr: Lua tmr loop stop requested
+I app_runner: Lua async finished: smoke_visual status=ESP_ERR_INVALID_STATE message=stopped
+
+GET /status -> 200 OK
+{"sd":true,"app_count":2,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+```
+
+This confirms that a user-requested stop is no longer reported as `failed` even though the timer loop returns its internal stopped status.
+
+Failure state with `apps/smoke_fail`:
+
+```text
+POST /launch?app=smoke_fail -> 200 OK
+{"ok":true,"launched":"smoke_fail"}
+
+I app_runner: Lua async launch: smoke_fail
+I app_runner: Lua app start: smoke_fail
+I app_runner: smoke fail start
+E app_runner: Lua app failed: /sdcard/apps/smoke_fail/main.lua:2: intentional smoke failure
+I app_runner: Lua async finished: smoke_fail status=ESP_FAIL message=/sdcard/apps/smoke_fail/main.lua:2: intentional smoke failure
+
+GET /status -> 200 OK
+{"sd":true,"app_count":3,"first_app":"smoke_network","install":"ok","state":"failed","running":false,"current_app":""}
+```
+
+Recovery after failure:
+
+```text
+POST /launch?app=smoke_network -> 200 OK
+{"ok":true,"launched":"smoke_network"}
+
+I app_runner: Lua async launch: smoke_network
+I app_runner: Lua app start: smoke_network
+I app_runner: Lua app ok
+I app_runner: Lua async finished: smoke_network status=ESP_OK message=ok
+
+GET /status -> 200 OK
+{"sd":true,"app_count":3,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+```
+
+Result: `/status.state` is board-verified for idle, running, failed, controlled stop back to idle, and recovery from failed back to idle through a successful app launch. `current_app` is visible while running and cleared after app exit.
