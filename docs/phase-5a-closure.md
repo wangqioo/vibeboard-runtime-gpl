@@ -61,7 +61,7 @@ I app_runner: Lua async finished: smoke_network status=ESP_OK message=ok
 - Stop current app from the device screen.
 - Refresh/rescan app list from the device screen.
 - Show launch failure details on the device screen.
-- Make app lifecycle explicit in `/status`: `idle`, `starting`, `running`, `stopping`, `failed`.
+- Board-verify the build-verified `/status` lifecycle state: `idle`, `starting`, `running`, `stopping`, `failed`.
 - Add failure-sample verification proving a bad app does not break the runtime or launcher.
 - Expose Lua app manager APIs:
 
