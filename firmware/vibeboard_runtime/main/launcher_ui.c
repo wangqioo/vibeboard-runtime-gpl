@@ -42,11 +42,15 @@ static bool s_launcher_active;
 static bool s_launch_task_running;
 static bool s_refresh_task_running;
 static bool s_stop_task_running;
+static bool s_return_task_running;
 static portMUX_TYPE s_launcher_state_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static void launch_app_task(void *arg);
 static void refresh_launcher_task(void *arg);
 static void stop_launcher_task(void *arg);
+static void return_to_launcher_task(void *arg);
+static void start_return_to_launcher_task(void);
+static void refresh_launcher_from_task(const char *status);
 static void refresh_button_event_cb(lv_event_t *event);
 static void stop_button_event_cb(lv_event_t *event);
 static void collect_rendered_apps_snapshot(vb_app_registry_result_t *apps,
@@ -119,6 +123,22 @@ static void update_status_from_task(const char *prefix, const char *app_id)
     set_status_from_task(line);
 }
 
+static void format_return_status(char *dest, size_t dest_size)
+{
+    const char *state = vb_app_runner_current_state_name();
+    if (state != NULL && strcmp(state, "failed") == 0) {
+        const char *message = vb_app_runner_last_message();
+        if (message != NULL && message[0] != '\0') {
+            snprintf(dest, dest_size, "Failed: %s", message);
+        } else {
+            strlcpy(dest, "Failed:", dest_size);
+        }
+        return;
+    }
+
+    strlcpy(dest, "Stopped", dest_size);
+}
+
 static void launch_app(const vb_app_registry_entry_t *app, bool from_task)
 {
     if (app == NULL) {
@@ -171,6 +191,7 @@ static void launch_app(const vb_app_registry_entry_t *app, bool from_task)
         } else {
             deactivate_launcher_unlocked();
         }
+        start_return_to_launcher_task();
     } else {
         if (from_task) {
             set_status_from_task(esp_err_to_name(err));
@@ -272,7 +293,19 @@ static void select_next_from_task(void)
 static void launch_selected_from_task(void)
 {
     if (!s_launcher_active) {
-        ESP_LOGI(TAG, "launcher inactive; BOOT long press ignored");
+        if (vb_app_runner_is_running()) {
+            ESP_LOGI(TAG, "launcher inactive; BOOT long press: stop app");
+            esp_err_t err = vb_app_runner_stop();
+            if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
+                ESP_LOGW(TAG, "failed to stop app from BOOT long press: %s", esp_err_to_name(err));
+            }
+            return;
+        }
+
+        ESP_LOGI(TAG, "launcher inactive; BOOT long press: return to launcher");
+        char status[96];
+        format_return_status(status, sizeof(status));
+        refresh_launcher_from_task(status);
         return;
     }
     lvgl_port_lock(0);
@@ -430,6 +463,33 @@ static void stop_launcher_task(void *arg)
     }
     clear_task_running(&s_stop_task_running);
     vTaskDelete(NULL);
+}
+
+static void return_to_launcher_task(void *arg)
+{
+    (void)arg;
+    while (vb_app_runner_is_running()) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    char status[96];
+    format_return_status(status, sizeof(status));
+    refresh_launcher_from_task(status);
+    clear_task_running(&s_return_task_running);
+    vTaskDelete(NULL);
+}
+
+static void start_return_to_launcher_task(void)
+{
+    if (!try_set_task_running(&s_return_task_running)) {
+        return;
+    }
+
+    BaseType_t created = xTaskCreate(return_to_launcher_task, "vb_return", 4096, NULL, 4, NULL);
+    if (created != pdPASS) {
+        clear_task_running(&s_return_task_running);
+        ESP_LOGW(TAG, "Return task failed");
+    }
 }
 
 static void refresh_button_event_cb(lv_event_t *event)
