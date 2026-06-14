@@ -20,6 +20,8 @@ static const char *TAG = "launcher_ui";
 
 static lv_obj_t *s_status_label;
 static const vb_app_registry_result_t *s_apps;
+static esp_err_t s_scan_err;
+static char s_pending_status[96];
 static int s_selected_index;
 static lv_obj_t *s_app_buttons[VB_APP_REGISTRY_MAX_APPS];
 static bool s_boot_key_task_started;
@@ -263,14 +265,18 @@ static lv_obj_t *create_label(lv_obj_t *parent, const char *text, int32_t width)
     return label;
 }
 
-void vb_launcher_ui_show(const vb_app_registry_result_t *apps, esp_err_t scan_err)
+static void set_pending_status(const char *text)
+{
+    strlcpy(s_pending_status, text ? text : "", sizeof(s_pending_status));
+}
+
+static void rebuild_launcher_unlocked(const vb_app_registry_result_t *apps, esp_err_t scan_err)
 {
     s_apps = apps;
+    s_scan_err = scan_err;
     s_selected_index = 0;
     memset(s_app_buttons, 0, sizeof(s_app_buttons));
     s_launcher_active = true;
-
-    lvgl_port_lock(0);
 
     lv_obj_t *screen = lv_scr_act();
     lv_obj_clean(screen);
@@ -287,14 +293,14 @@ void vb_launcher_ui_show(const vb_app_registry_result_t *apps, esp_err_t scan_er
     if (scan_err != ESP_OK) {
         char line[96];
         snprintf(line, sizeof(line), "Apps: %s", esp_err_to_name(scan_err));
-        set_status_unlocked(line);
-        lvgl_port_unlock();
+        set_status_unlocked(s_pending_status[0] ? s_pending_status : line);
+        s_pending_status[0] = '\0';
         return;
     }
 
     if (apps == NULL || apps->stored_app_count <= 0) {
-        set_status_unlocked("No apps on SD");
-        lvgl_port_unlock();
+        set_status_unlocked(s_pending_status[0] ? s_pending_status : "No apps on SD");
+        s_pending_status[0] = '\0';
         return;
     }
 
@@ -322,7 +328,20 @@ void vb_launcher_ui_show(const vb_app_registry_result_t *apps, esp_err_t scan_er
         lv_obj_align(id, LV_ALIGN_TOP_LEFT, 10, 24);
     }
     update_selection_unlocked();
+    if (s_pending_status[0] != '\0') {
+        set_status_unlocked(s_pending_status);
+        s_pending_status[0] = '\0';
+    }
+}
 
+void vb_launcher_ui_show(const vb_app_registry_result_t *apps, esp_err_t scan_err)
+{
+    s_apps = apps;
+    s_scan_err = scan_err;
+
+    lvgl_port_lock(0);
+    rebuild_launcher_unlocked(apps, scan_err);
     lvgl_port_unlock();
+
     start_boot_key_task();
 }
