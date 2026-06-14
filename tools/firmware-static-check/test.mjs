@@ -10,6 +10,7 @@ const boardSourcePath = join(firmwareRoot, "main/board_lckfb_szpi_s3.c");
 const registrySourcePath = join(firmwareRoot, "main/app_registry.c");
 const registryHeaderPath = join(firmwareRoot, "main/app_registry.h");
 const runnerSourcePath = join(firmwareRoot, "main/app_runner.c");
+const runnerHeaderPath = join(firmwareRoot, "main/app_runner.h");
 const installServiceSourcePath = join(firmwareRoot, "main/install_service.c");
 const installServiceHeaderPath = join(firmwareRoot, "main/install_service.h");
 const launcherHeaderPath = join(firmwareRoot, "main/launcher_ui.h");
@@ -210,6 +211,46 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /Lua app ok/);
     assert.doesNotMatch(main, /vb_app_runner_run\(&s_apps,\s*&run\)/);
     assert.match(main, /vb_launcher_ui_show\(&s_apps,\s*scan_err\)/);
+  });
+
+  it("exposes the last Lua runner result for launcher failure feedback", () => {
+    const header = readRequired(runnerHeaderPath);
+    const runner = readRequired(runnerSourcePath);
+
+    assert.match(header, /vb_app_runner_last_status/);
+    assert.match(header, /vb_app_runner_last_message/);
+    assert.match(runner, /last_message/);
+    assert.match(runner, /vb_app_runner_last_status/);
+    assert.match(runner, /vb_app_runner_last_message/);
+    assert.match(runner, /strlcpy\(s_runner_state\.last_message/);
+  });
+
+  it("keeps native launcher refresh and stop controls on the device screen", () => {
+    const source = readRequired(launcherSourcePath);
+
+    assert.match(source, /create_control_button/);
+    assert.match(source, /Stop/);
+    assert.match(source, /Refresh/);
+    assert.match(source, /stop_button_event_cb/);
+    assert.match(source, /refresh_button_event_cb/);
+    assert.match(source, /refresh_launcher_from_event/);
+    assert.match(source, /refresh_launcher_from_task/);
+    assert.match(source, /vb_app_registry_scan/);
+    assert.match(source, /vb_app_runner_stop/);
+    assert.match(source, /vb_app_runner_wait_stopped/);
+  });
+
+  it("returns to the native launcher after stop or async app failure", () => {
+    const source = readRequired(launcherSourcePath);
+
+    assert.match(source, /start_return_to_launcher_task/);
+    assert.match(source, /return_to_launcher_task/);
+    assert.match(source, /vb_app_runner_is_running/);
+    assert.match(source, /vb_app_runner_current_state_name/);
+    assert.match(source, /vb_app_runner_last_message/);
+    assert.match(source, /Failed:/);
+    assert.match(source, /Stopped/);
+    assert.match(source, /launcher inactive; BOOT long press: stop app/);
   });
 
   it("exposes app runner lifecycle state through HTTP status", () => {
