@@ -28,6 +28,7 @@ typedef struct {
     char current_id[VB_APP_NAME_MAX];
     char current_name[VB_APP_NAME_MAX];
     esp_err_t last_status;
+    char last_message[128];
 } vb_app_runner_state_t;
 
 static vb_app_runner_state_t s_runner_state;
@@ -199,6 +200,9 @@ static void lua_async_task(void *arg)
     esp_err_t status = run_lua_file(&context->app, &context->result);
     bool was_stop_requested = s_runner_state.stop_requested;
     s_runner_state.last_status = status;
+    strlcpy(s_runner_state.last_message,
+            context->result.message[0] ? context->result.message : esp_err_to_name(status),
+            sizeof(s_runner_state.last_message));
     ESP_LOGI(TAG,
              "Lua async finished: %s status=%s message=%s",
              context->app.first_app_name,
@@ -278,6 +282,7 @@ esp_err_t vb_app_runner_launch_async(const vb_app_registry_entry_t *entry)
     s_runner_state.stop_requested = false;
     set_lifecycle_state(VB_APP_RUNNER_STATE_STARTING);
     s_runner_state.last_status = ESP_OK;
+    strlcpy(s_runner_state.last_message, "", sizeof(s_runner_state.last_message));
     BaseType_t created = xTaskCreatePinnedToCore(lua_async_task,
                                                  "vb_lua_launch",
                                                  VB_LUA_TASK_STACK_SIZE,
@@ -290,6 +295,7 @@ esp_err_t vb_app_runner_launch_async(const vb_app_registry_entry_t *entry)
         s_runner_state.current_id[0] = '\0';
         s_runner_state.current_name[0] = '\0';
         s_runner_state.last_status = ESP_ERR_NO_MEM;
+        strlcpy(s_runner_state.last_message, esp_err_to_name(ESP_ERR_NO_MEM), sizeof(s_runner_state.last_message));
         free(context);
         return ESP_ERR_NO_MEM;
     }
@@ -342,4 +348,14 @@ vb_app_runner_lifecycle_state_t vb_app_runner_current_state(void)
 const char *vb_app_runner_current_state_name(void)
 {
     return vb_app_runner_state_name(vb_app_runner_current_state());
+}
+
+esp_err_t vb_app_runner_last_status(void)
+{
+    return s_runner_state.last_status;
+}
+
+const char *vb_app_runner_last_message(void)
+{
+    return s_runner_state.last_message;
 }

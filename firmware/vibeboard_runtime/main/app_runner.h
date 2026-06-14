@@ -34,6 +34,8 @@ const char *vb_app_runner_current_id(void);
 vb_app_runner_lifecycle_state_t vb_app_runner_current_state(void);
 const char *vb_app_runner_state_name(vb_app_runner_lifecycle_state_t state);
 const char *vb_app_runner_current_state_name(void);
+esp_err_t vb_app_runner_last_status(void);
+const char *vb_app_runner_last_message(void);
 
 #ifdef __cplusplus
 }
