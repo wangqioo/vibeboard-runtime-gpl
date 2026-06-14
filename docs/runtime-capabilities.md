@@ -1,6 +1,6 @@
 # Runtime Capabilities
 
-更新时间：2026-06-13
+更新时间：2026-06-15
 
 This document separates implemented API, build verification, and board verification. An API is not treated as fully done until it has a real device log in `docs/device-bringup.md`.
 
@@ -60,6 +60,7 @@ This document separates implemented API, build verification, and board verificat
 | App stop | `POST /stop`, `vb_app_runner_stop`, `vb_app_runner_wait_stopped` | `board-verified` | Switching away from `smoke_visual_remote` logged `Lua stop requested`, `Lua tmr loop stop requested`, and `message=stopped`; idle `POST /stop` returned `{"ok":true,"stopped":false}`. |
 | App switch | `POST /launch?app=<new-id>` while another app is running | `board-verified` | `POST /launch?app=smoke_network` while `smoke_visual_remote` was running returned `200 OK`; serial logs showed visual stopped, then `smoke_network` launched and completed with `ESP_OK`. |
 | Device Launcher | native LVGL app list, tap-to-launch, BOOT short-select/long-launch via `vb_launcher_ui_show` | `board-verified` | Board booted `vibeboard_runtime` from `factory 0x10000`, skipped missing `raw_upload/main.lua`, reported `VibeBoard Runtime ready: sd=ok apps=2 launcher=ok`; touch tap-to-launch works on the device screen, and BOOT short/long press provides a hardware fallback. |
+| Phase 5B launcher lifecycle controls | native launcher stop control, refresh/rescan control, return-to-launcher after stop or async failure, BOOT long-press stop while launcher is inactive, screen failure feedback from `vb_app_runner_last_message` | `build-verified` | Static tests cover `exposes the last Lua runner result for launcher failure feedback`, `keeps native launcher refresh and stop controls on the device screen`, and `returns to the native launcher after stop or async app failure`; local `npm test`, `npm run test:firmware-static`, `idf.py build`, and `git diff --check` passed before this documentation update. Board smoke still needs to verify stop, refresh, return-to-launcher, and failure feedback behavior on hardware. |
 
 ## Planned Runtime Modules
 
