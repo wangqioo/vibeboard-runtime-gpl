@@ -177,40 +177,26 @@ async function requestJson({ url, method, fetchImpl, requestImpl, retryAttempts,
   return JSON.parse(text);
 }
 
-export async function uploadApp({
-  appDir,
-  boardUrl,
-  appId = basename(appDir),
-  fetchImpl,
-  requestImpl = sendRequest,
-  retryAttempts = 3,
-  retryDelayMs = 250,
-  confirm = true,
-}) {
-  if (!boardUrl) {
-    throw new Error("boardUrl is required");
-  }
-  assertSafeRelativePath(appId);
+function buildUploadUrl(base, appId, relativePath, mode) {
+  const endpoint = mode === "direct" ? "install" : "stage";
+  return `${base}/${endpoint}?app=${encodeURIComponent(appId)}&path=${encodePath(relativePath)}`;
+}
 
-  const base = boardUrl.replace(/\/+$/, "");
-  const files = listUploadFiles(appDir);
-  for (const file of files) {
-    const url = `${base}/install?app=${encodeURIComponent(appId)}&path=${encodePath(file.relativePath)}`;
-    const body = readFileSync(file.fullPath);
-    await sendBoardRequest({
-      url,
-      body,
-      method: "POST",
-      fetchImpl,
-      requestImpl,
-      retryAttempts,
-      retryDelayMs,
-      label: `Upload ${file.relativePath}`,
-    });
-  }
+async function postEmpty({ url, fetchImpl, requestImpl, retryAttempts, retryDelayMs, label }) {
+  return sendBoardRequest({
+    url,
+    body: Buffer.alloc(0),
+    method: "POST",
+    fetchImpl,
+    requestImpl,
+    retryAttempts,
+    retryDelayMs,
+    label,
+  });
+}
 
-  let apps = null;
-  if (confirm) {
+async function confirmUploadedApp({ base, appId, mode, fetchImpl, requestImpl, retryAttempts, retryDelayMs }) {
+  if (mode === "direct") {
     await requestJson({
       url: `${base}/rescan`,
       method: "POST",
@@ -220,22 +206,128 @@ export async function uploadApp({
       retryDelayMs,
       label: "Rescan",
     });
-    apps = await requestJson({
-      url: `${base}/apps`,
-      method: "GET",
+  }
+
+  const apps = await requestJson({
+    url: `${base}/apps`,
+    method: "GET",
+    fetchImpl,
+    requestImpl,
+    retryAttempts,
+    retryDelayMs,
+    label: "List apps",
+  });
+  const found = Array.isArray(apps.apps) && apps.apps.some((app) => app.id === appId);
+  if (!found) {
+    throw new Error(`Uploaded app ${appId} was not found after ${mode === "direct" ? "rescan" : "commit"}`);
+  }
+  return apps;
+}
+
+export async function uploadApp({
+  appDir,
+  boardUrl,
+  appId = basename(appDir),
+  fetchImpl,
+  requestImpl = sendRequest,
+  retryAttempts = 3,
+  retryDelayMs = 250,
+  confirm = true,
+  mode = "staged",
+}) {
+  if (!boardUrl) {
+    throw new Error("boardUrl is required");
+  }
+  if (!["staged", "direct"].includes(mode)) {
+    throw new Error(`Unsupported upload mode: ${mode || "(empty)"}`);
+  }
+  assertSafeRelativePath(appId);
+
+  const base = boardUrl.replace(/\/+$/, "");
+  const files = listUploadFiles(appDir);
+
+  if (mode === "staged") {
+    const stagingUrl = `${base}/discard?app=${encodeURIComponent(appId)}`;
+    let stagedStarted = false;
+    try {
+      await postEmpty({
+        url: stagingUrl,
+        fetchImpl,
+        requestImpl,
+        retryAttempts,
+        retryDelayMs,
+        label: "Discard staging",
+      });
+      stagedStarted = true;
+      for (const file of files) {
+        const url = buildUploadUrl(base, appId, file.relativePath, mode);
+        const body = readFileSync(file.fullPath);
+        await sendBoardRequest({
+          url,
+          body,
+          method: "POST",
+          fetchImpl,
+          requestImpl,
+          retryAttempts,
+          retryDelayMs,
+          label: `Stage ${file.relativePath}`,
+        });
+      }
+      await postEmpty({
+        url: `${base}/commit?app=${encodeURIComponent(appId)}`,
+        fetchImpl,
+        requestImpl,
+        retryAttempts,
+        retryDelayMs,
+        label: "Commit staging",
+      });
+    } catch (error) {
+      if (stagedStarted) {
+        try {
+          await postEmpty({
+            url: stagingUrl,
+            fetchImpl,
+            requestImpl,
+            retryAttempts: 1,
+            retryDelayMs: 0,
+            label: "Discard staging after failure",
+          });
+        } catch {
+          // Keep the original upload failure as the user-facing error.
+        }
+      }
+      throw error;
+    }
+  } else {
+    for (const file of files) {
+      const url = buildUploadUrl(base, appId, file.relativePath, mode);
+      const body = readFileSync(file.fullPath);
+      await sendBoardRequest({
+        url,
+        body,
+        method: "POST",
+        fetchImpl,
+        requestImpl,
+        retryAttempts,
+        retryDelayMs,
+        label: `Upload ${file.relativePath}`,
+      });
+    }
+  }
+
+  const apps = confirm
+    ? await confirmUploadedApp({
+      base,
+      appId,
+      mode,
       fetchImpl,
       requestImpl,
       retryAttempts,
       retryDelayMs,
-      label: "List apps",
-    });
-    const found = Array.isArray(apps.apps) && apps.apps.some((app) => app.id === appId);
-    if (!found) {
-      throw new Error(`Uploaded app ${appId} was not found after rescan`);
-    }
-  }
+    })
+    : null;
 
-  return { appId, files, confirmed: confirm, apps };
+  return { appId, files, confirmed: confirm, apps, mode };
 }
 
 export async function launchApp({

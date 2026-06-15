@@ -47,6 +47,37 @@ describe("listUploadFiles", () => {
 });
 
 describe("uploadApp", () => {
+  it("stages files by default before commit", async () => {
+    const { root, appDir } = makePackage();
+    const calls = [];
+    try {
+      const result = await uploadApp({
+        appDir,
+        appId: "demo",
+        boardUrl: "http://192.168.1.32:8080/",
+        requestImpl: async (url, body, options = {}) => {
+          calls.push({ url, method: options.method, body: body ? body.toString("utf8") : "" });
+          if (url.endsWith("/apps")) return { ok: true, status: 200, text: '{"apps":[{"id":"demo"}]}' };
+          return { ok: true, status: 200, text: '{"ok":true,"app_count":1}' };
+        },
+      });
+
+      assert.equal(result.mode, "staged");
+      assert.equal(result.files.length, 3);
+      assert.equal(result.confirmed, true);
+      assert.equal(calls[0].url, "http://192.168.1.32:8080/discard?app=demo");
+      assert.equal(calls[0].method, "POST");
+      assert.equal(calls[1].url, "http://192.168.1.32:8080/stage?app=demo&path=app.info");
+      assert.match(calls[1].body, /name = demo/);
+      assert.ok(calls.some((call) => call.url.endsWith("/commit?app=demo") && call.method === "POST"));
+      assert.ok(calls.some((call) => call.url === "http://192.168.1.32:8080/apps" && call.method === "GET"));
+      assert.equal(calls.some((call) => call.url.includes("/install?")), false);
+      assert.equal(calls.some((call) => call.url.endsWith("/rescan")), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("posts each file to the board install endpoint", async () => {
     const { root, appDir } = makePackage();
     const calls = [];
@@ -55,6 +86,7 @@ describe("uploadApp", () => {
         appDir,
         appId: "demo",
         boardUrl: "http://192.168.1.32:8080/",
+        mode: "direct",
         fetchImpl: async (url, options) => {
           calls.push({ url, method: options.method, body: options.body.toString("utf8") });
           if (url.endsWith("/rescan")) return { ok: true, status: 200, text: async () => '{"ok":true,"app_count":1}' };
@@ -65,6 +97,7 @@ describe("uploadApp", () => {
 
       assert.equal(result.files.length, 3);
       assert.equal(result.confirmed, true);
+      assert.equal(result.mode, "direct");
       assert.equal(calls[0].url, "http://192.168.1.32:8080/install?app=demo&path=app.info");
       assert.equal(calls[0].method, "POST");
       assert.match(calls[0].body, /name = demo/);
@@ -89,17 +122,18 @@ describe("uploadApp", () => {
         boardUrl: "http://192.168.1.32:8080",
         requestImpl: async (url, body, options = {}) => {
           requests.push({ url, method: options.method, body: body ? body.toString("utf8") : "" });
-          if (url.endsWith("/rescan")) return { ok: true, status: 200, text: '{"ok":true,"app_count":1}' };
           if (url.endsWith("/apps")) return { ok: true, status: 200, text: '{"apps":[{"id":"demo"}]}' };
-          return { ok: true, status: 200, text: "ok\n" };
+          return { ok: true, status: 200, text: '{"ok":true,"app_count":1}' };
         },
       });
 
       assert.equal(result.files.length, 3);
       assert.equal(result.confirmed, true);
-      assert.equal(requests[0].url, "http://192.168.1.32:8080/install?app=demo&path=app.info");
-      assert.match(requests[0].body, /name = demo/);
-      assert.ok(requests.some((request) => request.url.endsWith("/rescan") && request.method === "POST"));
+      assert.equal(result.mode, "staged");
+      assert.equal(requests[0].url, "http://192.168.1.32:8080/discard?app=demo");
+      assert.equal(requests[1].url, "http://192.168.1.32:8080/stage?app=demo&path=app.info");
+      assert.match(requests[1].body, /name = demo/);
+      assert.ok(requests.some((request) => request.url.endsWith("/commit?app=demo") && request.method === "POST"));
       assert.ok(requests.some((request) => request.url.endsWith("/apps") && request.method === "GET"));
     } finally {
       globalThis.fetch = previousFetch;
@@ -130,13 +164,41 @@ describe("uploadApp", () => {
       });
 
       assert.equal(result.confirmed, true);
+      assert.equal(result.mode, "staged");
       assert.equal(appInfoAttempts, 2);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("fails when the board does not list the uploaded app after rescan", async () => {
+  it("best-effort discards staging after a staged upload failure", async () => {
+    const { root, appDir } = makePackage();
+    const calls = [];
+    try {
+      await assert.rejects(
+        uploadApp({
+          appDir,
+          appId: "demo",
+          boardUrl: "http://192.168.1.32:8080",
+          retryAttempts: 1,
+          requestImpl: async (url, body, options = {}) => {
+            calls.push({ url, method: options.method });
+            if (url.includes("/stage?") && url.endsWith("path=app.info")) {
+              return { ok: false, status: 500, text: "write failed" };
+            }
+            return { ok: true, status: 200, text: '{"ok":true}' };
+          },
+        }),
+        /500 write failed/,
+      );
+      assert.equal(calls[0].url, "http://192.168.1.32:8080/discard?app=demo");
+      assert.equal(calls.at(-1).url, "http://192.168.1.32:8080/discard?app=demo");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails when the board does not list the staged app after commit", async () => {
     const { root, appDir } = makePackage();
     try {
       await assert.rejects(
@@ -150,7 +212,7 @@ describe("uploadApp", () => {
             return { ok: true, status: 200, text: "ok\n" };
           },
         }),
-        /Uploaded app demo was not found after rescan/,
+        /Uploaded app demo was not found after commit/,
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -167,6 +229,7 @@ describe("parseUploadCliArgs", () => {
         appDir: "dist/apps/demo",
         appId: "demo",
         transport: "native",
+        mode: "staged",
       },
     );
   });
@@ -179,6 +242,7 @@ describe("parseUploadCliArgs", () => {
         appDir: "dist/apps/demo",
         appId: undefined,
         transport: "nc",
+        mode: "staged",
       },
     );
     assert.equal(
@@ -187,10 +251,34 @@ describe("parseUploadCliArgs", () => {
     );
   });
 
+  it("keeps direct upload mode as an explicit compatibility path", () => {
+    assert.deepEqual(
+      parseUploadCliArgs(["--mode", "direct", "http://192.168.1.32:8080", "dist/apps/demo", "demo"]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        appDir: "dist/apps/demo",
+        appId: "demo",
+        transport: "native",
+        mode: "direct",
+      },
+    );
+    assert.equal(
+      parseUploadCliArgs(["--mode=direct", "http://192.168.1.32:8080", "dist/apps/demo"]).mode,
+      "direct",
+    );
+  });
+
   it("rejects unknown uploader transports", () => {
     assert.throws(
       () => parseUploadCliArgs(["--transport", "curl", "http://192.168.1.32:8080", "dist/apps/demo"]),
       /Unsupported transport: curl/,
+    );
+  });
+
+  it("rejects unknown upload modes", () => {
+    assert.throws(
+      () => parseUploadCliArgs(["--mode", "raw", "http://192.168.1.32:8080", "dist/apps/demo"]),
+      /Unsupported upload mode: raw/,
     );
   });
 });
