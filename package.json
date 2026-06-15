@@ -18,6 +18,7 @@
     "package:demos": "node tools/app-packager/package-demos.mjs",
     "write:app-plan": "node tools/app-plan-writer/cli.mjs",
     "upload:app": "node tools/app-uploader/cli.mjs",
-    "launch:app": "node tools/app-uploader/launch.mjs"
+    "launch:app": "node tools/app-uploader/launch.mjs",
+    "delete:app": "node tools/app-uploader/delete.mjs"
   }
 }

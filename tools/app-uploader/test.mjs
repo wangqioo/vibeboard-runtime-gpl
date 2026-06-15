@@ -3,9 +3,10 @@ import { describe, it } from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseDeleteCliArgs } from "./delete.mjs";
 import { parseLaunchCliArgs } from "./launch.mjs";
 import { parseUploadCliArgs } from "./cli.mjs";
-import { createNcRequest, launchApp, listUploadFiles, uploadApp } from "./index.mjs";
+import { createNcRequest, deleteApp, launchApp, listUploadFiles, uploadApp } from "./index.mjs";
 
 function makePackage() {
   const root = mkdtempSync(join(tmpdir(), "vibeboard-uploader-"));
@@ -218,6 +219,30 @@ describe("parseLaunchCliArgs", () => {
   });
 });
 
+describe("parseDeleteCliArgs", () => {
+  it("uses the native Node HTTP transport by default", () => {
+    assert.deepEqual(
+      parseDeleteCliArgs(["http://192.168.1.32:8080", "demo"]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        appId: "demo",
+        transport: "native",
+      },
+    );
+  });
+
+  it("keeps nc as an explicit delete fallback transport", () => {
+    assert.deepEqual(
+      parseDeleteCliArgs(["--transport=nc", "http://192.168.1.32:8080", "demo"]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        appId: "demo",
+        transport: "nc",
+      },
+    );
+  });
+});
+
 describe("createNcRequest", () => {
   it("sends raw HTTP through an nc-compatible runner", async () => {
     const commands = [];
@@ -258,6 +283,25 @@ describe("launchApp", () => {
 
     assert.deepEqual(result, { ok: true, launched: "demo" });
     assert.equal(calls[0].url, "http://192.168.1.32:8080/launch?app=demo");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].body.length, 0);
+  });
+});
+
+describe("deleteApp", () => {
+  it("posts a delete request for an installed app", async () => {
+    const calls = [];
+    const result = await deleteApp({
+      boardUrl: "http://192.168.1.32:8080/",
+      appId: "demo",
+      requestImpl: async (url, body, options = {}) => {
+        calls.push({ url, method: options.method, body });
+        return { ok: true, status: 200, text: '{"ok":true,"deleted":"demo","app_count":2}' };
+      },
+    });
+
+    assert.deepEqual(result, { ok: true, deleted: "demo", app_count: 2 });
+    assert.equal(calls[0].url, "http://192.168.1.32:8080/delete?app=demo");
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].body.length, 0);
   });

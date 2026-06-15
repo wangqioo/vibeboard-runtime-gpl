@@ -262,3 +262,28 @@ export async function launchApp({
     label: `Launch ${appId}`,
   });
 }
+
+export async function deleteApp({
+  boardUrl,
+  appId,
+  fetchImpl,
+  requestImpl = sendRequest,
+  retryAttempts = 3,
+  retryDelayMs = 250,
+}) {
+  if (!boardUrl) {
+    throw new Error("boardUrl is required");
+  }
+  assertSafeRelativePath(appId);
+
+  const base = boardUrl.replace(/\/+$/, "");
+  return requestJson({
+    url: `${base}/delete?app=${encodeURIComponent(appId)}`,
+    method: "POST",
+    fetchImpl,
+    requestImpl,
+    retryAttempts,
+    retryDelayMs,
+    label: `Delete ${appId}`,
+  });
+}

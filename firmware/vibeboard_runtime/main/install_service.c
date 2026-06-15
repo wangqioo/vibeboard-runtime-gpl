@@ -1,10 +1,12 @@
 #include "install_service.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "app_registry.h"
 #include "app_runner.h"
@@ -59,6 +61,57 @@ static esp_err_t ensure_parent_dirs(const char *path)
         }
     }
     return ESP_OK;
+}
+
+static esp_err_t remove_app_tree(const char *path)
+{
+    struct stat statbuf;
+    if (stat(path, &statbuf) != 0) {
+        ESP_LOGE(TAG, "stat failed %s errno=%d", path, errno);
+        return ESP_FAIL;
+    }
+
+    if (!S_ISDIR(statbuf.st_mode)) {
+        if (unlink(path) == 0) {
+            return ESP_OK;
+        }
+        ESP_LOGE(TAG, "unlink failed %s errno=%d", path, errno);
+        return ESP_FAIL;
+    }
+
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        ESP_LOGE(TAG, "opendir failed %s errno=%d", path, errno);
+        return ESP_FAIL;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        char child_path[VB_APP_PATH_MAX];
+        int written = snprintf(child_path, sizeof(child_path), "%s/%s", path, entry->d_name);
+        if (written < 0 || written >= (int)sizeof(child_path)) {
+            closedir(dir);
+            ESP_LOGE(TAG, "delete path too long: %s/%s", path, entry->d_name);
+            return ESP_FAIL;
+        }
+
+        if (remove_app_tree(child_path) != ESP_OK) {
+            closedir(dir);
+            return ESP_FAIL;
+        }
+    }
+
+    closedir(dir);
+    if (rmdir(path) == 0) {
+        return ESP_OK;
+    }
+
+    ESP_LOGE(TAG, "rmdir failed %s errno=%d", path, errno);
+    return ESP_FAIL;
 }
 
 static esp_err_t get_query_value(httpd_req_t *req, const char *key, char *value, size_t value_size)
@@ -338,6 +391,72 @@ static esp_err_t stop_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t delete_handler(httpd_req_t *req)
+{
+    char app_id[64] = {0};
+    if (get_query_value(req, "app", app_id, sizeof(app_id)) != ESP_OK || reject_unsafe_path(app_id)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing app");
+        return ESP_FAIL;
+    }
+    if (s_context == NULL || s_context->registry == NULL || !s_context->sd_ok) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sd unavailable");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = vb_app_registry_scan(s_context->registry);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+
+    vb_app_registry_entry_t selected_app = {0};
+    vb_app_registry_lock();
+    const vb_app_registry_entry_t *app = find_app_by_id(s_context->registry, app_id);
+    if (app != NULL) {
+        selected_app = *app;
+    }
+    vb_app_registry_unlock();
+    if (selected_app.id[0] == '\0') {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "app not found");
+        return ESP_FAIL;
+    }
+
+    if (vb_app_runner_is_running() && strcmp(vb_app_runner_current_id(), selected_app.id) == 0) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_sendstr(req, "app is running\n");
+        return ESP_FAIL;
+    }
+
+    char app_dir[VB_APP_PATH_MAX];
+    int written = snprintf(app_dir, sizeof(app_dir), "%s/%s", VB_APPS_PATH, selected_app.id);
+    if (written < 0 || written >= (int)sizeof(app_dir)) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+
+    err = remove_app_tree(app_dir);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "delete failed");
+        return ESP_FAIL;
+    }
+
+    err = vb_app_registry_scan(s_context->registry);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+
+    vb_app_registry_lock();
+    int app_count = s_context->registry->app_count;
+    vb_app_registry_unlock();
+
+    char body[128];
+    snprintf(body, sizeof(body), "{\"ok\":true,\"deleted\":\"%s\",\"app_count\":%d}\n", selected_app.id, app_count);
+    send_json(req, body);
+    return ESP_OK;
+}
+
 static esp_err_t register_handler(const char *uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *req))
 {
     const httpd_uri_t http_uri = {
@@ -398,6 +517,10 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
         return err;
     }
     err = register_handler("/stop", HTTP_POST, stop_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/delete", HTTP_POST, delete_handler);
     if (err != ESP_OK) {
         return err;
     }

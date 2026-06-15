@@ -1867,3 +1867,64 @@ Checklist result:
 - BOOT long-press stop worked while a Lua app owned the screen.
 
 Result: the Phase 5B launcher lifecycle controls are board-verified through HTTP, serial logs, and manual physical screen evidence.
+
+## 2026-06-15 app delete/uninstall endpoint
+
+Firmware with `POST /delete?app=<id>` was built and flashed to `/dev/cu.usbmodem111301`.
+
+Build and flash evidence:
+
+```text
+vibeboard_runtime.bin binary size 0x173ae0 bytes. Smallest app partition is 0x400000 bytes. 0x28c520 bytes (64%) free.
+esptool.py --chip esp32s3 -p /dev/cu.usbmodem111301 ... write_flash ...
+Hash of data verified.
+Hard resetting via RTS pin...
+```
+
+Post-flash status:
+
+```text
+GET /status -> 200 OK
+{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+```
+
+Disposable upload/delete smoke:
+
+```text
+npm run package:app -- apps/smoke_visual
+packaged smoke_visual
+output dist/apps/smoke_visual
+
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_delete_probe
+uploaded smoke_delete_probe/app.info 144 bytes
+uploaded smoke_delete_probe/assets/icon.bmp 30122 bytes
+uploaded smoke_delete_probe/install-notes.txt 205 bytes
+uploaded smoke_delete_probe/main.lua 1798 bytes
+uploaded smoke_delete_probe/manifest.json 1105 bytes
+uploaded 5 files
+rescan ok; confirmed smoke_delete_probe in /apps
+
+npm run delete:app -- http://192.168.1.32:8080 smoke_delete_probe
+deleted smoke_delete_probe; app_count=4
+
+GET /apps -> 200 OK
+{"apps":[{"id":"smoke_network","name":"smoke_network","entry":"main.lua"},{"id":"smoke_visual_remote","name":"smoke_visual","entry":"main.lua"},{"id":"smoke_fail","name":"smoke_fail","entry":"main.lua"},{"id":"smoke_visual_native","name":"smoke_visual","entry":"main.lua"}]}
+```
+
+Running-app delete protection:
+
+```text
+npm run launch:app -- http://192.168.1.32:8080 smoke_visual_native
+launched smoke_visual_native
+
+npm run delete:app -- http://192.168.1.32:8080 smoke_visual_native
+Delete smoke_visual_native failed after 3 attempts: 409 app is running
+
+POST /stop -> 200 OK
+{"ok":true,"stopped":true}
+
+GET /status -> 200 OK
+{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+```
+
+Result: app delete/uninstall is board-verified for successful recursive app directory deletion, registry rescan, host `delete:app` helper behavior, and running-app conflict protection.

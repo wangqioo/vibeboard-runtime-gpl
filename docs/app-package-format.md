@@ -137,3 +137,34 @@ Example:
 ```
 
 The runtime treats this file as optional. If it is absent or malformed, boot continues to the native launcher and the install service still starts. The current firmware also reads the existing local `/sdcard/apps/smoke_network/wifi.json` as a compatibility fallback for board bring-up; new setups should prefer `/sdcard/runtime/wifi.json`.
+
+## App Deployment Service
+
+The runtime exposes a small HTTP deployment surface on port `8080` once runtime WiFi is connected.
+
+Installed apps live under:
+
+```text
+/sdcard/apps/<app-id>/
+```
+
+Current endpoints:
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/install?app=<id>&path=<relative>` | `POST` | Write one app package file under `/sdcard/apps/<id>/`. |
+| `/apps` | `GET` | List app entries from the current SD registry. |
+| `/rescan` | `POST` | Rescan `/sdcard/apps`. |
+| `/launch?app=<id>` | `POST` | Launch an installed app. |
+| `/stop` | `POST` | Stop the currently running app, if any. |
+| `/delete?app=<id>` | `POST` | Delete one installed app directory and rescan. |
+
+Host helpers:
+
+```bash
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_native
+npm run launch:app -- http://192.168.1.32:8080 smoke_visual_native
+npm run delete:app -- http://192.168.1.32:8080 smoke_visual_native
+```
+
+`/delete` refuses to delete the app that is currently running. Stop the app first with `/stop` or the native launcher Stop control, then delete it.

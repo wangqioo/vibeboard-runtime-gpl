@@ -66,7 +66,6 @@ The BOOT-after-launch crash fix, lifecycle `state` checks, runtime WiFi autoconn
 
 Turn the now-verified upload/launch path into a more complete app deployment workflow:
 
-- define app delete/uninstall semantics;
 - add a staging/commit model for multi-file upload failures;
 - consider a small browser UI on top of `/apps`, `/install`, `/rescan`, `/launch`, and `/stop`;
 - decide where persistent runtime WiFi config should live outside the current compatibility fallback.
