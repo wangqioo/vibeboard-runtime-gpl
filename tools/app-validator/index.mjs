@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { basename, isAbsolute, join, normalize, relative } from "node:path";
+import { basename, isAbsolute, join, normalize, relative, sep } from "node:path";
 
 const CAPABILITY_USAGE_PATTERNS = [
   { capability: "timer", pattern: /\btmr\s*\.|\bset_interval\s*\(/ },
@@ -53,11 +53,10 @@ export function validateAppDirectory(appDir) {
   let validatedEntryPath = "";
   if (metadata.entry) {
     const normalizedEntry = normalize(metadata.entry);
+    const entrySegments = normalizedEntry.split(/[\\/]+/);
     if (
       isAbsolute(normalizedEntry) ||
-      normalizedEntry === ".." ||
-      normalizedEntry.startsWith("../") ||
-      normalizedEntry.includes("/../")
+      entrySegments.includes("..")
     ) {
       errors.push("Entry path must stay inside the app directory");
     } else {
@@ -68,9 +67,9 @@ export function validateAppDirectory(appDir) {
         const resolvedAppDir = realpathSync(appDir);
         const resolvedEntryPath = realpathSync(entryPath);
         const resolvedRelativeEntry = relative(resolvedAppDir, resolvedEntryPath);
+        const relativeSegments = resolvedRelativeEntry.split(sep);
         if (
-          resolvedRelativeEntry === ".." ||
-          resolvedRelativeEntry.startsWith("../") ||
+          relativeSegments.includes("..") ||
           isAbsolute(resolvedRelativeEntry)
         ) {
           errors.push("Entry path must stay inside the app directory");

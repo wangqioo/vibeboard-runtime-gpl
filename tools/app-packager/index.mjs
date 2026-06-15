@@ -131,9 +131,15 @@ function movePackageIntoPlace(tmpPath, outputPath) {
   try {
     renameSync(tmpPath, outputPath);
   } catch (error) {
-    if (!["EEXIST", "ENOTEMPTY"].includes(error.code)) throw error;
+    if (!["EEXIST", "ENOTEMPTY", "EPERM"].includes(error.code)) throw error;
     rmSync(outputPath, { recursive: true, force: true });
-    renameSync(tmpPath, outputPath);
+    try {
+      renameSync(tmpPath, outputPath);
+    } catch (retryError) {
+      if (retryError.code !== "EPERM") throw retryError;
+      cpSync(tmpPath, outputPath, { recursive: true });
+      rmSync(tmpPath, { recursive: true, force: true });
+    }
   }
 }
 

@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   packageApp,
   packageDemoApps,
@@ -122,7 +123,7 @@ describe("packageApp", () => {
 
 describe("packageDemoApps", () => {
   it("packages the three demo apps", () => {
-    const repoRoot = new URL("../..", import.meta.url).pathname;
+    const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
     const result = packageDemoApps({ repoRoot });
     assert.deepEqual(result.map((item) => item.appId).sort(), ["nesgame", "voice_ai", "weather"]);
   });

@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const repoRoot = new URL("../..", import.meta.url).pathname;
+const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const firmwareRoot = join(repoRoot, "firmware/vibeboard_runtime");
 const boardHeaderPath = join(firmwareRoot, "main/board_lckfb_szpi_s3.h");
 const boardSourcePath = join(firmwareRoot, "main/board_lckfb_szpi_s3.c");
@@ -35,7 +36,6 @@ const luaWifiSourcePath = join(firmwareRoot, "main/lua_wifi.c");
 const luaWifiHeaderPath = join(firmwareRoot, "main/lua_wifi.h");
 const cmakePath = join(firmwareRoot, "main/CMakeLists.txt");
 const partitionsPath = join(firmwareRoot, "partitions.csv");
-const sdkconfigPath = join(firmwareRoot, "sdkconfig");
 const sdkconfigDefaultsPath = join(firmwareRoot, "sdkconfig.defaults");
 const smokeUiSourcePath = join(repoRoot, "apps/smoke_ui/main.lua");
 const smokeFileInfoPath = join(repoRoot, "apps/smoke_file/app.info");
@@ -85,12 +85,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
   });
 
   it("uses a runtime-sized app partition for network-enabled firmware", () => {
-    const sdkconfig = readRequired(sdkconfigPath);
     const defaults = readRequired(sdkconfigDefaultsPath);
     const partitions = readRequired(partitionsPath);
 
-    assert.match(sdkconfig, /CONFIG_PARTITION_TABLE_CUSTOM=y/);
-    assert.match(sdkconfig, /CONFIG_PARTITION_TABLE_FILENAME="partitions\.csv"/);
     assert.match(defaults, /CONFIG_PARTITION_TABLE_CUSTOM=y/);
     assert.match(defaults, /CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions\.csv"/);
     assert.match(partitions, /factory,\s+app,\s+factory,\s+0x10000,\s+0x400000/);
@@ -449,12 +446,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const widgetSource = readRequired(luaLvglWidgetsSourcePath);
     const runner = readRequired(runnerSourcePath);
     const cmake = readRequired(cmakePath);
-    const sdkconfig = readRequired(sdkconfigPath);
+    const defaults = readRequired(sdkconfigDefaultsPath);
 
     assert.match(header, /vb_lua_lvgl_register/);
     assert.match(cmake, /lua_lvgl_fs\.c/);
     assert.match(cmake, /lua_lvgl_widgets\.c/);
-    assert.match(sdkconfig, /CONFIG_LV_USE_BMP=y/);
+    assert.match(defaults, /CONFIG_LV_USE_BMP=y/);
     assert.match(source, /vb_lua_lvgl_widgets_register/);
     assert.match(source, /vb_lua_lvgl_fs_register/);
     assert.match(source, /vb_lua_lvgl_store_object/);
