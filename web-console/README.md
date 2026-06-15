@@ -16,10 +16,13 @@ The console uses the existing runtime HTTP API for app lifecycle and deployment:
 The AI creator is intentionally browser-direct. The user enters an OpenAI API key
 in the page, and the page calls an OpenAI-compatible Responses API with structured
 JSON output. The default base URL is `https://rehdasu.cn`, and the browser appends
-`/v1/responses`. This means the key is visible to the browser session and developer
-tools. By default the key stays in page memory only. The optional remember checkbox
-stores it in browser `localStorage`. Because the board console is served over local
-HTTP, use the AI creator only on a trusted network.
+`/v1/responses`. The Base URL field also tolerates pasted values such as
+`base_url = "https://rehdasu.cn"`, `https://rehdasu.cn/v1`, or a full
+`https://rehdasu.cn/v1/responses` endpoint by normalizing them before the request.
+This means the key is visible to the browser session and developer tools. By default
+the key stays in page memory only. The optional remember checkbox stores it in
+browser `localStorage`. Because the board console is served over local HTTP, use the
+AI creator only on a trusted network.
 
 AI-created apps are still uploaded through `/discard`, `/stage`, and `/commit`.
 The browser performs client-side path and package checks before upload, and the
