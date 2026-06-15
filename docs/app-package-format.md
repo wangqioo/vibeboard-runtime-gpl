@@ -127,6 +127,18 @@ Runtime-owned local config path:
 /sdcard/runtime/wifi.json
 ```
 
+Write it from the Mac after mounting the SD card:
+
+```bash
+npm run configure:wifi -- /Volumes/VIBEBOARD --ssid "YOUR_WIFI_SSID" --password "YOUR_WIFI_PASSWORD"
+```
+
+For open networks, omit `--password`:
+
+```bash
+npm run configure:wifi -- /Volumes/VIBEBOARD --ssid "Guest"
+```
+
 Example:
 
 ```json
@@ -136,7 +148,7 @@ Example:
 }
 ```
 
-The runtime treats this file as optional. If it is absent or malformed, boot continues to the native launcher and the install service still starts. The current firmware also reads the existing local `/sdcard/apps/smoke_network/wifi.json` as a compatibility fallback for board bring-up; new setups should prefer `/sdcard/runtime/wifi.json`.
+The runtime treats this file as optional. If it is absent or malformed, boot continues to the native launcher and the install service still starts. The current firmware also reads the existing local `/sdcard/apps/smoke_network/wifi.json` as a temporary compatibility fallback for board bring-up; new setups should use `npm run configure:wifi` and the runtime-owned `/sdcard/runtime/wifi.json` path.
 
 ## App Deployment Service
 

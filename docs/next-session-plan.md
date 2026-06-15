@@ -86,20 +86,25 @@ GET /status returned:
 
 ## Immediate Next Work
 
-### 1. Formal WiFi Configuration Entry
+### 1. Board-Verify Formal WiFi Configuration
 
-Current state: runtime WiFi can read `/sdcard/runtime/wifi.json`, but the board still has a compatibility fallback to `/sdcard/apps/smoke_network/wifi.json`.
+Current state: the formal Mac CLI entry writes `/sdcard/runtime/wifi.json` through the mounted SD card root:
+
+```bash
+npm run configure:wifi -- /Volumes/VIBEBOARD --ssid "YOUR_WIFI_SSID" --password "YOUR_WIFI_PASSWORD"
+```
+
+The board still accepts `/sdcard/apps/smoke_network/wifi.json` as a temporary compatibility fallback.
 
 Next slice:
 
-- decide the official write path:
-  - Mac CLI writes `/sdcard/runtime/wifi.json`;
-  - or Web Console writes WiFi config;
-  - or SD-file-only remains the documented setup flow;
-- add validation and clear error messages;
-- remove or explicitly mark the smoke-app fallback as temporary.
+- mount the SD card on the Mac;
+- run `npm run configure:wifi`;
+- boot the board and confirm the log uses `/sdcard/runtime/wifi.json`;
+- confirm `http://<board-ip>:8080/` loads without launching `smoke_network`;
+- after that evidence exists, remove or explicitly gate the smoke-app fallback.
 
-Expected result: a new user can put the board on WiFi without relying on a smoke app convention.
+Expected result: a new user can put the board on WiFi through the documented runtime config path without relying on a smoke app convention.
 
 ### 2. Real AI-Created App Smoke
 
@@ -145,7 +150,7 @@ Expected result: generated apps can fail early with `Runtime update required` in
 
 Safe parallel tracks:
 
-- WiFi config productization;
+- WiFi config board verification and fallback removal;
 - real Web Console AI smoke and documentation;
 - Lua input-event design;
 - compatibility/version metadata.

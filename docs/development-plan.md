@@ -218,7 +218,7 @@ open http://<board-ip>:8080/
 
 这些仍然是缺口：
 
-- 还没有正式 WiFi 配置入口；`/sdcard/runtime/wifi.json` 可用，但仍保留 smoke app fallback；
+- 正式 WiFi 配置入口已有 Mac CLI，仍需要上板记录，并且固件暂时保留 smoke app fallback；
 - Web Console AI 还需要一次真实 API-key prompt 到 running app 的人工记录；
 - 浏览器 Console 还没有设备日志流、代码编辑器、版本兼容提示等高级体验；
 - Lua 侧还没有 `touch.on(...)` / `key.on(...)` 输入事件 API；
@@ -230,22 +230,31 @@ open http://<board-ip>:8080/
 
 ## 下一阶段路线图
 
-### Slice 1: 正式 WiFi 配置入口
+### Slice 1: 正式 WiFi 配置上板验收
 
 目标：让新用户不依赖 `smoke_network/wifi.json` 也能让板子加入 WiFi。
 
-候选方案：
+正式路径：
 
-- Mac CLI 写入 `/sdcard/runtime/wifi.json`；
-- Web Console 提供 WiFi 配置表单；
-- 保留 SD 文件配置，但移除 smoke app fallback。
+```bash
+npm run configure:wifi -- /Volumes/VIBEBOARD --ssid "YOUR_WIFI_SSID" --password "YOUR_WIFI_PASSWORD"
+```
+
+该命令写入：
+
+```text
+/sdcard/runtime/wifi.json
+```
+
+当前固件仍保留 `/sdcard/apps/smoke_network/wifi.json` fallback，用于现有 bring-up SD 卡兼容。
 
 验收：
 
-- 文档只推荐一个正式配置路径；
+- 文档只推荐 `configure:wifi` 和 `/sdcard/runtime/wifi.json`；
 - 错误 SSID/password 有清晰日志或 UI 提示；
 - 新板子可以按文档接入 WiFi 并访问 `http://<board-ip>:8080/`；
-- smoke app fallback 被删除或明确标成临时兼容。
+- 真机日志显示读取的是 `/sdcard/runtime/wifi.json`；
+- smoke app fallback 被删除、编译开关控制，或明确标成临时兼容。
 
 ### Slice 2: Web Console AI 真机 smoke
 
@@ -382,7 +391,7 @@ Runtime update required
 
 ## 最近推荐顺序
 
-1. 正式 WiFi 配置入口。
+1. 正式 WiFi 配置上板验收和 fallback 收敛。
 2. Web Console AI 真实 prompt-to-running-app smoke。
 3. Lua touch/key 输入事件。
 4. Runtime/API/App 兼容机制。

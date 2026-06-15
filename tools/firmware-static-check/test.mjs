@@ -537,6 +537,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /vb_runtime_wifi_start_from_sd/);
     assert.match(source, /\/sdcard\/runtime\/wifi\.json/);
     assert.match(source, /\/sdcard\/apps\/smoke_network\/wifi\.json/);
+    assert.match(source, /path\s*=\s*VB_RUNTIME_WIFI_CONFIG_PATH/);
+    assert.match(source, /path\s*=\s*VB_LEGACY_SMOKE_WIFI_CONFIG_PATH/);
+    assert.ok(
+      source.indexOf("path = VB_RUNTIME_WIFI_CONFIG_PATH") < source.indexOf("path = VB_LEGACY_SMOKE_WIFI_CONFIG_PATH"),
+      "runtime WiFi config should be attempted before the legacy smoke fallback",
+    );
     assert.match(source, /runtime WiFi config not found/);
     assert.match(source, /cJSON_Parse/);
     assert.match(source, /ssid/);

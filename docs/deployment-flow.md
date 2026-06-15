@@ -106,7 +106,7 @@ The API key is not sent to the board. The first implementation intentionally kee
 
 Current limitations:
 
-- no formal WiFi configuration entry yet beyond `/sdcard/runtime/wifi.json` and the current smoke app compatibility fallback;
+- formal WiFi configuration has a Mac CLI entry, but the `/sdcard/runtime/wifi.json` path still needs fresh board evidence before removing the smoke app compatibility fallback;
 - browser AI creation has static coverage and board delivery coverage, but a real API-key prompt-to-running-app smoke still needs to be recorded;
 - browser-direct OpenAI calls depend on browser/network/CORS behavior;
 - browser AI creation currently supports text package files, not binary asset generation;

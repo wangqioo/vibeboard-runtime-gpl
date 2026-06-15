@@ -42,6 +42,7 @@ This document separates implemented API, build verification, and board verificat
 | --- | --- | --- | --- |
 | WiFi STA | `wifi.mode`, `wifi.start`, `wifi.sta.config`, `wifi.sta.connect`, `wifi.sta.getip` | `board-verified` | `apps/smoke_network` connected to `1-306`, logged `sta got ip 192.168.1.32`, and Lua read the IP. |
 | Runtime WiFi autoconnect | `vb_runtime_wifi_start_from_sd`, `/sdcard/runtime/wifi.json`, compatibility read from `/sdcard/apps/smoke_network/wifi.json` | `board-verified` | Boot logged `runtime WiFi autoconnect using /sdcard/apps/smoke_network/wifi.json`, joined `1-306`, and logged `runtime sta got ip 192.168.1.32` before any app was manually launched. |
+| Runtime WiFi config writer | `npm run configure:wifi -- <sd-root> --ssid <ssid> [--password <password>]` | `build-verified` | Tool tests verify CLI parsing, SSID/password validation, and writing `runtime/wifi.json` under the mounted SD root. Fresh board evidence for the runtime-owned path is pending. |
 | HTTP client | `http.get`, `http.post` | `board-verified` | `apps/smoke_network` called `http.get("http://httpbin.org/get")`, logged `http status 200`, and read 243 body bytes. |
 | JSON | `sjson.decode`, `sjson.encode` | `board-verified` | `apps/smoke_network` decoded `wifi.json` and encoded `{"app":"smoke_network","city":"Shanghai"}` on board. |
 | Time/NTP | `time.get`, `time.settimezone`, `time.initntp` | `board-verified` | `apps/smoke_network` ran no-credentials and WiFi-credentials paths without `Invalid mbox` and logged `time now ...`. |

@@ -57,7 +57,7 @@ boot -> runtime WiFi -> scan SD apps -> native launcher or browser console
 
 The next productization slice is no longer basic launcher or upload plumbing. The remaining near-term work is:
 
-- choose and implement the formal WiFi configuration entry, then remove the smoke-app compatibility fallback;
+- board-verify the formal `configure:wifi` SD setup flow, then remove the smoke-app compatibility fallback;
 - run and record a real AI-generated app smoke from the Web Console with a user-provided API key;
 - expose touch/key input events to Lua apps;
 - add runtime/API/app schema compatibility checks;
@@ -223,6 +223,22 @@ The product idea is not just "ESP32 can run Lua." The useful idea is turning ESP
 npm test
 npm run validate:apps
 ```
+
+## Configure Runtime WiFi
+
+Mount the SD card on the Mac, then write the runtime-owned WiFi config:
+
+```bash
+npm run configure:wifi -- /Volumes/VIBEBOARD --ssid "YOUR_WIFI_SSID" --password "YOUR_WIFI_PASSWORD"
+```
+
+This writes:
+
+```text
+/sdcard/runtime/wifi.json
+```
+
+After boot, the runtime reads this file before starting the browser console and install service. The old `apps/smoke_network/wifi.json` path remains only as a temporary bring-up fallback.
 
 ## Package Apps
 
