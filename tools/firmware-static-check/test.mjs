@@ -217,9 +217,14 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /VibeBoard Runtime/);
     assert.match(source, /AI Create App/);
     assert.match(source, /OpenAI API Key/);
+    assert.match(source, /AI Base URL/);
+    assert.match(source, /https:\/\/rehdasu\.cn/);
     assert.match(source, /Remember key in this browser/);
     assert.match(source, /Clear key/);
-    assert.match(source, /https:\/\/api\.openai\.com\/v1\/responses/);
+    assert.match(source, /normalizeAiBaseUrl/);
+    assert.match(source, /aiBaseUrl/);
+    assert.match(source, /\/v1\/responses/);
+    assert.doesNotMatch(source, /https:\/\/api\.openai\.com\/v1\/responses/);
     assert.match(source, /Authorization/);
     assert.match(source, /Bearer/);
     assert.match(source, /json_schema/);
