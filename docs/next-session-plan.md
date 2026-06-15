@@ -58,34 +58,33 @@ idf.py build
 esptool write_flash
 ```
 
-The BOOT-after-launch crash fix, lifecycle `state` checks, runtime WiFi autoconnect, and native HTTP upload/launch path are board-verified. The Phase 5B lifecycle controls are board-verified through HTTP and serial for stop/rescan/failure/recovery, but the visible native screen controls still need one short physical touch/BOOT smoke.
+The BOOT-after-launch crash fix, lifecycle `state` checks, runtime WiFi autoconnect, native HTTP upload/launch path, and Phase 5B lifecycle controls are board-verified. Verification includes HTTP status checks, serial logs, and manual physical screen smoke for Stop, Refresh, return-to-launcher, readable failure feedback, and BOOT long-press stop.
 
 ## Immediate Next Work
 
-### 1. Physical screen smoke for launcher lifecycle controls
+### 1. Deployment productization
 
-Verify the visible device-screen controls on the physical board:
+Turn the now-verified upload/launch path into a more complete app deployment workflow:
 
-- tap native Stop while `smoke_visual_native` is running;
-- tap native Refresh and confirm the app list still shows the uploaded app;
-- confirm the launcher screen returns after an app stops or fails;
-- launch `apps/smoke_fail` and confirm the screen shows a readable failure message;
-- BOOT long-press stop while a Lua app owns the screen.
+- define app delete/uninstall semantics;
+- add a staging/commit model for multi-file upload failures;
+- consider a small browser UI on top of `/apps`, `/install`, `/rescan`, `/launch`, and `/stop`;
+- decide where persistent runtime WiFi config should live outside the current compatibility fallback.
 
 Suggested ownership:
 
 ```text
-docs/device-bringup.md
-docs/runtime-capabilities.md
+tools/app-uploader/
+firmware/vibeboard_runtime/main/install_service.c
+docs/app-package-format.md
 ```
 
-Expected result: record human screen evidence for Stop, Refresh, return-to-launcher, and failure-feedback behavior; then promote the Phase 5B launcher lifecycle controls from `partly-board-verified` to `board-verified`.
+Expected result: make deployment reliable enough for repeated app iteration without SD-card removal and without relying on manual recovery steps.
 
 ## Parallelization Guidance
 
 Safe parallel tracks now:
 
-- Physical screen smoke for launcher lifecycle controls.
 - Deployment productization planning: delete, staging/commit, browser UI.
 - Lua input-event design: `touch.on`, `key.on`.
 

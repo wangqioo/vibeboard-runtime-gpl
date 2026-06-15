@@ -1852,4 +1852,18 @@ GET /status -> 200 OK
 {"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
 ```
 
-Result: runtime WiFi autoconnect is board-verified, and the default Node native HTTP uploader plus launch helper are board-verified without `--transport nc`. The HTTPD stack overflow found during launch verification is fixed and regression-guarded by firmware static tests. Stop/rescan/failure/recovery are verified through HTTP and serial logs. Physical touch checks for the native on-screen Stop/Refresh controls and BOOT long-press stop still need a short human screen smoke before the screen-control row can be promoted to fully board-verified.
+Result: runtime WiFi autoconnect is board-verified, and the default Node native HTTP uploader plus launch helper are board-verified without `--transport nc`. The HTTPD stack overflow found during launch verification is fixed and regression-guarded by firmware static tests. Stop/rescan/failure/recovery are verified through HTTP and serial logs.
+
+## 2026-06-15 physical launcher lifecycle screen smoke
+
+Manual physical screen verification was performed on the LCKFB ESP32-S3 board after the runtime WiFi/upload/launch checks.
+
+Checklist result:
+
+- `smoke_visual_native` launched from the Mac helper and displayed the visual app image/progress UI on the device screen.
+- Tapping the native Stop control stopped the running Lua app and returned the board to the launcher.
+- Tapping the native Refresh control kept the app list usable and still showed the uploaded app.
+- Launching `smoke_fail` returned to the launcher with readable failure feedback.
+- BOOT long-press stop worked while a Lua app owned the screen.
+
+Result: the Phase 5B launcher lifecycle controls are board-verified through HTTP, serial logs, and manual physical screen evidence.

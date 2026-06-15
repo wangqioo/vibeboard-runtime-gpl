@@ -8,7 +8,7 @@ This document separates implemented API, build verification, and board verificat
 
 | Status | Meaning |
 | --- | --- |
-| `board-verified` | Ran on the LCKFB ESP32-S3 board with serial evidence. |
+| `board-verified` | Ran on the LCKFB ESP32-S3 board with serial, HTTP, or manual screen evidence. |
 | `build-verified` | Compiles in ESP-IDF and has static/package tests, but has not been smoke-tested on board yet. |
 | `planned` | Documented target, not implemented yet. |
 
@@ -33,7 +33,7 @@ This document separates implemented API, build verification, and board verificat
 | Positioning and flags | `lv_obj_set_pos`, `lv_obj_set_x`, `lv_obj_set_y`, `lv_obj_add_flag`, `lv_obj_clear_flag`, `LV_OBJ_FLAG_SCROLLABLE`, `LV_OBJ_FLAG_HIDDEN` | `board-verified` | `apps/smoke_assets` ran on board and returned `Lua app ok`. |
 | Label long modes | `lv_label_set_long_mode`, `LV_LABEL_LONG_CLIP`, `LV_LABEL_LONG_WRAP`, `LV_LABEL_LONG_SCROLL_CIRCULAR` | `board-verified` | `apps/smoke_assets` ran on board and returned `Lua app ok`. |
 | Asset paths and image object basics | `lv_resolve_asset_path`, `lv_asset_exists`, `lv_img_create`, `lv_img_set_src`, LVGL `S:` filesystem drive | `board-verified` | `apps/smoke_assets` verified `S:/apps/smoke_assets/assets/icon.bin`, `asset fs ok`, and `Lua app ok` on board. |
-| BMP image decoder | `CONFIG_LV_USE_BMP=y`, `lv_extra_init`, BMP through `lv_img_set_src` | `board-verified` | `apps/smoke_visual` started on board, resolved `S:/apps/smoke_visual/assets/icon.bmp`, and kept running without Lua/runtime errors. Visual correctness still needs human screen confirmation. |
+| BMP image decoder | `CONFIG_LV_USE_BMP=y`, `lv_extra_init`, BMP through `lv_img_set_src` | `board-verified` | `apps/smoke_visual` started on board, resolved `S:/apps/smoke_visual/assets/icon.bmp`, kept running without Lua/runtime errors, and the physical screen smoke showed the visual app image/progress UI. |
 | Common widgets | `lv_btn_create`, `lv_bar_create`, `lv_bar_set_range`, `lv_bar_set_value`, `LV_ANIM_OFF`, `LV_ANIM_ON` | `board-verified` | `apps/smoke_visual` ran on board and logged timer-driven progress updates from 0 to 100 repeatedly. |
 
 ## Network, JSON, And Time
@@ -61,7 +61,7 @@ This document separates implemented API, build verification, and board verificat
 | App stop | `POST /stop`, `vb_app_runner_stop`, `vb_app_runner_wait_stopped` | `board-verified` | Switching away from `smoke_visual_remote` logged `Lua stop requested`, `Lua tmr loop stop requested`, and `message=stopped`; idle `POST /stop` returned `{"ok":true,"stopped":false}`. |
 | App switch | `POST /launch?app=<new-id>` while another app is running | `board-verified` | `POST /launch?app=smoke_network` while `smoke_visual_remote` was running returned `200 OK`; serial logs showed visual stopped, then `smoke_network` launched and completed with `ESP_OK`. |
 | Device Launcher | native LVGL app list, tap-to-launch, BOOT short-select/long-launch via `vb_launcher_ui_show` | `board-verified` | Board booted `vibeboard_runtime` from `factory 0x10000`, skipped missing `raw_upload/main.lua`, reported `VibeBoard Runtime ready: sd=ok apps=2 launcher=ok`; touch tap-to-launch works on the device screen, and BOOT short/long press provides a hardware fallback. |
-| Phase 5B launcher lifecycle controls | native launcher stop control, refresh/rescan control, return-to-launcher after stop or async failure, BOOT long-press stop while launcher is inactive, screen failure feedback from `vb_app_runner_last_message` | `partly-board-verified` | HTTP and serial board checks verified stop, rescan, return to idle after stop, failed state from `smoke_fail`, and recovery through `smoke_network`. Static tests cover the native screen Stop/Refresh controls and failure feedback. Physical touch/BOOT screen smoke still needs to confirm the visible on-device controls and failure text. |
+| Phase 5B launcher lifecycle controls | native launcher stop control, refresh/rescan control, return-to-launcher after stop or async failure, BOOT long-press stop while launcher is inactive, screen failure feedback from `vb_app_runner_last_message` | `board-verified` | HTTP and serial board checks verified stop, rescan, return to idle after stop, failed state from `smoke_fail`, and recovery through `smoke_network`. Manual physical screen smoke confirmed native Stop, Refresh, return-to-launcher, readable failure feedback, and BOOT long-press stop. |
 
 ## Planned Runtime Modules
 
