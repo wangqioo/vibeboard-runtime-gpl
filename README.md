@@ -264,3 +264,5 @@ See [docs/ai-generation-contract.md](docs/ai-generation-contract.md) for the pac
 ## Development Plan
 
 See [docs/development-plan.md](docs/development-plan.md) for the current status, completed work, and next-phase roadmap.
+
+For the tradeoffs between this runtime app model and traditional embedded firmware development, see [docs/runtime-vs-traditional-firmware.md](docs/runtime-vs-traditional-firmware.md).
