@@ -1928,3 +1928,89 @@ GET /status -> 200 OK
 ```
 
 Result: app delete/uninstall is board-verified for successful recursive app directory deletion, registry rescan, host `delete:app` helper behavior, and running-app conflict protection.
+
+## 2026-06-15 staged upload/commit endpoint
+
+Firmware with staged upload endpoints was built and flashed to `/dev/cu.usbmodem111301`.
+
+Build and flash evidence:
+
+```text
+vibeboard_runtime.bin binary size 0x1746c0 bytes. Smallest app partition is 0x400000 bytes. 0x28b940 bytes (64%) free.
+esptool.py --chip esp32s3 -p /dev/cu.usbmodem111301 ... write_flash ...
+Hash of data verified.
+Hard resetting via RTS pin...
+```
+
+During the first board smoke, `/stop` and `/delete` returned HTTPD URI 404 after adding `/stage`, `/commit`, and `/discard`. Root cause: the install service exceeded the default HTTPD URI handler capacity. The firmware now sets `config.max_uri_handlers = VB_INSTALL_HTTPD_MAX_HANDLERS`, guarded by static tests. After flashing the fix:
+
+```text
+POST /stop -> 200 OK
+{"ok":true,"stopped":false}
+
+POST /delete?app=__missing_probe__ -> 404 app not found
+```
+
+Default staged upload smoke:
+
+```text
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_stage_probe
+uploaded smoke_stage_probe/app.info 144 bytes
+uploaded smoke_stage_probe/assets/icon.bmp 30122 bytes
+uploaded smoke_stage_probe/install-notes.txt 205 bytes
+uploaded smoke_stage_probe/main.lua 1798 bytes
+uploaded smoke_stage_probe/manifest.json 1105 bytes
+uploaded 5 files
+rescan ok; confirmed smoke_stage_probe in /apps
+
+GET /apps -> 200 OK
+{"apps":[{"id":"smoke_network","name":"smoke_network","entry":"main.lua"},{"id":"smoke_visual_remote","name":"smoke_visual","entry":"main.lua"},{"id":"smoke_fail","name":"smoke_fail","entry":"main.lua"},{"id":"smoke_visual_native","name":"smoke_visual","entry":"main.lua"},{"id":"smoke_stage_probe","name":"smoke_visual","entry":"main.lua"}]}
+```
+
+Launch, stop, and cleanup:
+
+```text
+npm run launch:app -- http://192.168.1.32:8080 smoke_stage_probe
+launched smoke_stage_probe
+
+GET /status -> 200 OK
+{"sd":true,"app_count":5,"first_app":"smoke_network","install":"ok","state":"running","running":true,"current_app":"smoke_stage_probe"}
+
+POST /stop -> 200 OK
+{"ok":true,"stopped":true}
+
+npm run delete:app -- http://192.168.1.32:8080 smoke_stage_probe
+deleted smoke_stage_probe; app_count=4
+```
+
+Running-app commit protection:
+
+```text
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_stage_running
+uploaded 5 files
+rescan ok; confirmed smoke_stage_running in /apps
+
+npm run launch:app -- http://192.168.1.32:8080 smoke_stage_running
+launched smoke_stage_running
+
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_stage_running
+Commit staging failed after 3 attempts: 409 app is running
+
+POST /stop -> 200 OK
+{"ok":true,"stopped":true}
+
+npm run delete:app -- http://192.168.1.32:8080 smoke_stage_running
+deleted smoke_stage_running; app_count=4
+```
+
+Final board state:
+
+```text
+GET /status -> 200 OK
+{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+
+GET /apps -> 200 OK
+{"apps":[{"id":"smoke_network","name":"smoke_network","entry":"main.lua"},{"id":"smoke_visual_remote","name":"smoke_visual","entry":"main.lua"},{"id":"smoke_fail","name":"smoke_fail","entry":"main.lua"},{"id":"smoke_visual_native","name":"smoke_visual","entry":"main.lua"}]}
+```
+
+Result: staged upload/commit is board-verified for default Mac upload behavior, staged file writes, commit validation into the app registry, launchability after commit, stop/delete cleanup, running-app conflict protection, and HTTPD handler capacity regression coverage.
