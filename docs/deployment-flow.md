@@ -51,6 +51,14 @@ Transport options:
 npm run upload:app -- http://<board-ip>:8080 dist/apps/<app-id> <app-id>
 ```
 
+The uploader and launch helper default to Node's native HTTP client. The old `nc`
+transport remains available only as an explicit fallback:
+
+```bash
+npm run upload:app -- --transport nc http://<board-ip>:8080 dist/apps/<app-id> <app-id>
+npm run launch:app -- --transport nc http://<board-ip>:8080 <app-id>
+```
+
 The current firmware endpoint is intentionally small:
 
 ```text

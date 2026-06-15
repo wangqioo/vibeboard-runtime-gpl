@@ -35,6 +35,9 @@ The current branch also implements Phase 5B launcher lifecycle controls; those c
   - stopping an app or observing an async app failure returns to the native launcher;
   - launcher failure feedback uses the runner last-result message;
   - BOOT long press can stop a running app while the launcher is inactive.
+- Uploader reliability cleanup is implemented and locally tested:
+  - `upload:app` and `launch:app` default to Node native HTTP;
+  - `nc` remains available as an explicit `--transport nc` fallback.
 
 ## Last Verified Commands
 
@@ -69,16 +72,23 @@ docs/runtime-capabilities.md
 
 Expected result: record board evidence for stop, refresh, return-to-launcher, and failure-feedback behavior; then promote the Phase 5B launcher lifecycle controls from `build-verified` to `board-verified`.
 
-### 2. Upload reliability cleanup
+### 2. Upload reliability board check
 
-Manual `curl --data-binary` upload works against the board, but `npm run upload:app` can still fail through the `nc` fallback on this Mac/router path. Clean up the uploader transport so it prefers the reliable native HTTP path when available, or improves retry/backoff around `nc`.
+Confirm the native HTTP uploader path on the same Mac/router setup that previously needed raw `curl`:
+
+```text
+npm run upload:app -- http://<board-ip>:8080 dist/apps/smoke_visual smoke_visual_remote
+npm run launch:app -- http://<board-ip>:8080 smoke_visual_remote
+```
+
+Expected result: upload, `/rescan`, `/apps` confirmation, and `/launch` all work without `--transport nc`.
 
 ## Parallelization Guidance
 
 Safe parallel tracks now:
 
 - Board smoke for launcher lifecycle controls.
-- Uploader reliability cleanup.
+- Uploader reliability board check.
 - Deployment productization planning: delete, staging/commit, browser UI.
 - Lua input-event design: `touch.on`, `key.on`.
 

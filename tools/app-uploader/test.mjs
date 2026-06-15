@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseLaunchCliArgs } from "./launch.mjs";
+import { parseUploadCliArgs } from "./cli.mjs";
 import { createNcRequest, launchApp, listUploadFiles, uploadApp } from "./index.mjs";
 
 function makePackage() {
@@ -152,6 +154,67 @@ describe("uploadApp", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("parseUploadCliArgs", () => {
+  it("uses the native Node HTTP transport by default", () => {
+    assert.deepEqual(
+      parseUploadCliArgs(["http://192.168.1.32:8080", "dist/apps/demo", "demo"]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        appDir: "dist/apps/demo",
+        appId: "demo",
+        transport: "native",
+      },
+    );
+  });
+
+  it("keeps nc as an explicit fallback transport", () => {
+    assert.deepEqual(
+      parseUploadCliArgs(["--transport", "nc", "http://192.168.1.32:8080", "dist/apps/demo"]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        appDir: "dist/apps/demo",
+        appId: undefined,
+        transport: "nc",
+      },
+    );
+    assert.equal(
+      parseUploadCliArgs(["--transport=nc", "http://192.168.1.32:8080", "dist/apps/demo"]).transport,
+      "nc",
+    );
+  });
+
+  it("rejects unknown uploader transports", () => {
+    assert.throws(
+      () => parseUploadCliArgs(["--transport", "curl", "http://192.168.1.32:8080", "dist/apps/demo"]),
+      /Unsupported transport: curl/,
+    );
+  });
+});
+
+describe("parseLaunchCliArgs", () => {
+  it("uses the native Node HTTP transport by default", () => {
+    assert.deepEqual(
+      parseLaunchCliArgs(["http://192.168.1.32:8080", "demo"]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        appId: "demo",
+        transport: "native",
+      },
+    );
+  });
+
+  it("keeps nc as an explicit launch fallback transport", () => {
+    assert.deepEqual(
+      parseLaunchCliArgs(["--transport=nc", "http://192.168.1.32:8080", "demo"]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        appId: "demo",
+        transport: "nc",
+      },
+    );
   });
 });
 

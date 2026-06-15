@@ -1,21 +1,51 @@
 #!/usr/bin/env node
+import { pathToFileURL } from "node:url";
 import { createNcRequest, launchApp } from "./index.mjs";
 
 function usage() {
-  console.error("Usage: node tools/app-uploader/launch.mjs <board-url> <app-id>");
+  console.error("Usage: node tools/app-uploader/launch.mjs [--transport native|nc] <board-url> <app-id>");
   console.error("Example: node tools/app-uploader/launch.mjs http://192.168.1.32:8080 smoke_visual_remote");
 }
 
-const [boardUrl, appId] = process.argv.slice(2);
-if (!boardUrl || !appId || boardUrl === "-h" || boardUrl === "--help") {
-  usage();
-  process.exit(boardUrl === "-h" || boardUrl === "--help" ? 0 : 1);
+export function parseLaunchCliArgs(argv) {
+  const args = [...argv];
+  let transport = "native";
+  const positional = [];
+
+  while (args.length > 0) {
+    const arg = args.shift();
+    if (arg === "--transport") {
+      transport = args.shift() || "";
+      continue;
+    }
+    if (arg.startsWith("--transport=")) {
+      transport = arg.slice("--transport=".length);
+      continue;
+    }
+    positional.push(arg);
+  }
+
+  if (!["native", "nc"].includes(transport)) {
+    throw new Error(`Unsupported transport: ${transport || "(empty)"}`);
+  }
+
+  const [boardUrl, appId] = positional;
+  return { boardUrl, appId, transport };
 }
 
-try {
-  const result = await launchApp({ boardUrl, appId, requestImpl: createNcRequest() });
-  console.log(`launched ${result.launched || appId}`);
-} catch (error) {
-  console.error(error.message);
-  process.exit(1);
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const options = parseLaunchCliArgs(process.argv.slice(2));
+  if (!options.boardUrl || !options.appId || options.boardUrl === "-h" || options.boardUrl === "--help") {
+    usage();
+    process.exit(options.boardUrl === "-h" || options.boardUrl === "--help" ? 0 : 1);
+  }
+
+  try {
+    const requestImpl = options.transport === "nc" ? createNcRequest() : undefined;
+    const result = await launchApp({ boardUrl: options.boardUrl, appId: options.appId, requestImpl });
+    console.log(`launched ${result.launched || options.appId}`);
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
 }
