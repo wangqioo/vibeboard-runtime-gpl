@@ -6,6 +6,7 @@ idf_component_register(
         "install_service.c"
         "launcher_ui.c"
         "runtime_wifi.c"
+        "web_console.c"
         "lua_file.c"
         "lua_http.c"
         "lua_lvgl.c"

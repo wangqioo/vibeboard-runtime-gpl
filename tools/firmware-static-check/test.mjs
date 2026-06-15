@@ -14,6 +14,8 @@ const runnerSourcePath = join(firmwareRoot, "main/app_runner.c");
 const runnerHeaderPath = join(firmwareRoot, "main/app_runner.h");
 const installServiceSourcePath = join(firmwareRoot, "main/install_service.c");
 const installServiceHeaderPath = join(firmwareRoot, "main/install_service.h");
+const webConsoleSourcePath = join(firmwareRoot, "main/web_console.c");
+const webConsoleHeaderPath = join(firmwareRoot, "main/web_console.h");
 const launcherHeaderPath = join(firmwareRoot, "main/launcher_ui.h");
 const launcherSourcePath = join(firmwareRoot, "main/launcher_ui.c");
 const mainSourcePath = join(firmwareRoot, "main/main.c");
@@ -193,6 +195,61 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(main, /static\s+vb_app_registry_result_t\s+s_apps/);
     assert.match(main, /static\s+vb_install_service_context_t\s+s_install_context/);
     assert.match(main, /vb_install_service_start\(&s_install_context\)/);
+  });
+
+  it("serves a browser web console with direct AI app creation", () => {
+    const cmake = readRequired(cmakePath);
+    const installService = readRequired(installServiceSourcePath);
+    const header = readRequired(webConsoleHeaderPath);
+    const source = readRequired(webConsoleSourcePath);
+
+    assert.match(cmake, /web_console\.c/);
+    assert.match(header, /vb_web_console_register/);
+    assert.match(header, /httpd_handle_t/);
+    assert.match(installService, /#include "web_console\.h"/);
+    assert.match(installService, /vb_web_console_register\(s_server\)/);
+
+    assert.match(source, /esp_http_server\.h/);
+    assert.match(source, /\.uri\s*=\s*"\/"/);
+    assert.match(source, /\.method\s*=\s*HTTP_GET/);
+    assert.match(source, /httpd_resp_set_type\(req,\s*"text\/html"/);
+    assert.match(source, /Cache-Control/);
+    assert.match(source, /VibeBoard Runtime/);
+    assert.match(source, /AI Create App/);
+    assert.match(source, /OpenAI API Key/);
+    assert.match(source, /Remember key in this browser/);
+    assert.match(source, /Clear key/);
+    assert.match(source, /https:\/\/api\.openai\.com\/v1\/responses/);
+    assert.match(source, /Authorization/);
+    assert.match(source, /Bearer/);
+    assert.match(source, /json_schema/);
+    assert.match(source, /strict:\s*true/);
+    assert.match(source, /required:\s*\['kind',\s*'reason',\s*'app',\s*'files'\]/);
+    assert.match(source, /anyOf/);
+    assert.match(source, /type:\s*'null'/);
+    assert.match(source, /runtime_update_required/);
+
+    assert.match(source, /fetchJson\('\/status'\)/);
+    assert.match(source, /fetchJson\('\/apps'\)/);
+    assert.match(source, /postJson\('\/launch\?app='/);
+    assert.match(source, /postJson\('\/stop'/);
+    assert.match(source, /postJson\('\/delete\?app='/);
+    assert.match(source, /postJson\('\/discard\?app='/);
+    assert.match(source, /discardAfterFailure/);
+    assert.match(source, /fetch\(stageUrl/);
+    assert.match(source, /postJson\('\/commit\?app='/);
+    assert.match(source, /webkitdirectory/);
+
+    assert.match(source, /localStorage\.getItem\(KEY_STORAGE_NAME\)/);
+    assert.match(source, /localStorage\.setItem\(KEY_STORAGE_NAME,\s*key\)/);
+    assert.match(source, /localStorage\.removeItem\(KEY_STORAGE_NAME\)/);
+    assert.match(source, /validateAppId/);
+    assert.match(source, /\[A-Za-z0-9_-\]/);
+    assert.match(source, /validateRelativePath/);
+    assert.match(source, /path\.includes\('\.\.'\)/);
+    assert.match(source, /path\.startsWith\('\/'\)/);
+    assert.match(source, /path\.includes\('\\{2,}[\s\S]*'\)/);
+    assert.match(source, /synthesizeAppInfo/);
   });
 
   it("exposes Lua runner lifecycle for launcher and HTTP launch", () => {

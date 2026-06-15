@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "launcher_ui.h"
+#include "web_console.h"
 
 static const char *TAG = "install_service";
 #define VB_INSTALL_HTTPD_STACK_SIZE 8192
@@ -765,6 +766,11 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "httpd_start failed: %s", esp_err_to_name(err));
         s_server = NULL;
+        return err;
+    }
+
+    err = vb_web_console_register(s_server);
+    if (err != ESP_OK) {
         return err;
     }
 

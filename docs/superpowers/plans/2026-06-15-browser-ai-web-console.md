@@ -331,7 +331,7 @@ Inside `<section class="panel" id="aiPanel">`, include:
 <label>OpenAI API Key <input id="apiKey" type="password" autocomplete="off"></label>
 <label class="check"><input id="rememberKey" type="checkbox"> Remember key in this browser</label>
 <button id="clearKeyBtn" type="button">Clear key</button>
-<label>Model <input id="modelName" type="text" value="gpt-4.1-mini" autocomplete="off"></label>
+<label>Model <input id="modelName" type="text" value="gpt-5.5" autocomplete="off"></label>
 <label>New App ID <input id="aiAppId" type="text" autocomplete="off" placeholder="pomodoro"></label>
 <label>Prompt <textarea id="aiPrompt" rows="6"></textarea></label>
 <button id="generateBtn" type="button">Generate and Upload</button>
