@@ -152,7 +152,10 @@ Current endpoints:
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
-| `/install?app=<id>&path=<relative>` | `POST` | Write one app package file under `/sdcard/apps/<id>/`. |
+| `/stage?app=<id>&path=<relative>` | `POST` | Write one staged app package file under `/sdcard/.staging/<id>/`. |
+| `/commit?app=<id>` | `POST` | Validate staged `app.info` plus entry file, replace `/sdcard/apps/<id>/`, and rescan. |
+| `/discard?app=<id>` | `POST` | Remove staged files for one app without touching the installed app. |
+| `/install?app=<id>&path=<relative>` | `POST` | Compatibility direct write of one app package file under `/sdcard/apps/<id>/`. |
 | `/apps` | `GET` | List app entries from the current SD registry. |
 | `/rescan` | `POST` | Rescan `/sdcard/apps`. |
 | `/launch?app=<id>` | `POST` | Launch an installed app. |
@@ -166,5 +169,13 @@ npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visu
 npm run launch:app -- http://192.168.1.32:8080 smoke_visual_native
 npm run delete:app -- http://192.168.1.32:8080 smoke_visual_native
 ```
+
+`upload:app` defaults to staged mode: it discards stale staging data, uploads files to `/stage`, commits with `/commit`, and confirms the app through `/apps`. Direct mode remains available for recovery and debugging:
+
+```bash
+npm run upload:app -- --mode direct http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_native
+```
+
+`/commit` refuses to replace the app that is currently running. Stop the app first with `/stop` or the native launcher Stop control, then upload it again.
 
 `/delete` refuses to delete the app that is currently running. Stop the app first with `/stop` or the native launcher Stop control, then delete it.

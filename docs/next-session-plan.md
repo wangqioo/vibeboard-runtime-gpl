@@ -9,7 +9,7 @@ eafbf7b docs: add next session plan
 ```
 
 The local work after this baseline fixes a launcher BOOT-after-launch crash found during board verification.
-The current branch also implements Phase 5B launcher lifecycle controls, runtime WiFi autoconnect, and the native HTTP uploader/launch board check.
+The current branch also implements Phase 5B launcher lifecycle controls, runtime WiFi autoconnect, the native HTTP uploader/launch board check, app delete/uninstall, and staged upload/commit.
 
 ## What Is Done
 
@@ -47,6 +47,14 @@ The current branch also implements Phase 5B launcher lifecycle controls, runtime
   - `/rescan` and `/apps` confirmed it;
   - launched `smoke_visual_native`, `smoke_fail`, and `smoke_network`.
 - Launch verification exposed a board-side HTTPD stack overflow in `/launch`; the install service now sets `config.stack_size = 8192`, and the post-fix board launch check passed.
+- App delete/uninstall is implemented and board-verified:
+  - `POST /delete?app=<id>` recursively deletes one installed app directory and rescans;
+  - deletion of the currently running app returns `409 app is running`;
+  - `npm run delete:app` wraps the endpoint from the Mac.
+- Staged upload/commit is implemented and build-verified:
+  - `upload:app` defaults to `/discard -> /stage -> /commit -> /apps`;
+  - `--mode direct` keeps the old `/install -> /rescan -> /apps` path for recovery;
+  - firmware rejects unsafe paths, validates staged `app.info` plus entry file, refuses to commit over the running app, and uses same-filesystem rename replacement.
 
 ## Last Verified Commands
 
@@ -58,7 +66,7 @@ idf.py build
 esptool write_flash
 ```
 
-The BOOT-after-launch crash fix, lifecycle `state` checks, runtime WiFi autoconnect, native HTTP upload/launch path, and Phase 5B lifecycle controls are board-verified. Verification includes HTTP status checks, serial logs, and manual physical screen smoke for Stop, Refresh, return-to-launcher, readable failure feedback, and BOOT long-press stop.
+The BOOT-after-launch crash fix, lifecycle `state` checks, runtime WiFi autoconnect, native HTTP upload/launch path, app delete/uninstall, and Phase 5B lifecycle controls are board-verified. Staged upload/commit is currently build-verified and should be board-verified next. Verification includes HTTP status checks, serial logs, and manual physical screen smoke for Stop, Refresh, return-to-launcher, readable failure feedback, and BOOT long-press stop.
 
 ## Immediate Next Work
 
@@ -66,8 +74,8 @@ The BOOT-after-launch crash fix, lifecycle `state` checks, runtime WiFi autoconn
 
 Turn the now-verified upload/launch path into a more complete app deployment workflow:
 
-- add a staging/commit model for multi-file upload failures;
-- consider a small browser UI on top of `/apps`, `/install`, `/rescan`, `/launch`, and `/stop`;
+- board-verify the staged upload/commit path after flashing this branch;
+- consider a small browser UI on top of `/apps`, `/stage`, `/commit`, `/discard`, `/launch`, `/stop`, and `/delete`;
 - decide where persistent runtime WiFi config should live outside the current compatibility fallback.
 
 Suggested ownership:
@@ -84,7 +92,7 @@ Expected result: make deployment reliable enough for repeated app iteration with
 
 Safe parallel tracks now:
 
-- Deployment productization planning: delete, staging/commit, browser UI.
+- Deployment productization planning: browser UI and formal WiFi configuration.
 - Lua input-event design: `touch.on`, `key.on`.
 
 ## Deferred

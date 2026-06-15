@@ -6,8 +6,10 @@ Phase 2A defines the file contract, validates apps, and creates deployable file 
 AI produces app package
   -> app validator passes
   -> app packager writes dist/apps/<app-id>
-  -> upload package contents to the runtime or copy them to SD
-  -> runtime rescans /sdcard/apps
+  -> uploader discards stale staging data
+  -> uploader stages package files under /sdcard/.staging/<app-id>
+  -> runtime validates app.info plus the entry file and commits to /sdcard/apps/<app-id>
+  -> uploader confirms the app through /apps
   -> user launches from the native screen launcher or HTTP /launch
 ```
 
@@ -51,8 +53,13 @@ Transport options:
 npm run upload:app -- http://<board-ip>:8080 dist/apps/<app-id> <app-id>
 ```
 
-The uploader and launch helper default to Node's native HTTP client. The old `nc`
-transport remains available only as an explicit fallback:
+The uploader defaults to staged mode. It calls `/discard`, uploads files through `/stage`, commits with `/commit`, and confirms the committed app through `/apps`. The old direct `/install` path remains available as an explicit compatibility mode:
+
+```bash
+npm run upload:app -- --mode direct http://<board-ip>:8080 dist/apps/<app-id> <app-id>
+```
+
+The uploader and launch helper default to Node's native HTTP client. The old `nc` transport remains available only as an explicit fallback:
 
 ```bash
 npm run upload:app -- --transport nc http://<board-ip>:8080 dist/apps/<app-id> <app-id>
@@ -63,17 +70,21 @@ The current firmware endpoint is intentionally small:
 
 ```text
 POST /install?app=<id>&path=<relative>
+POST /stage?app=<id>&path=<relative>
+POST /commit?app=<id>
+POST /discard?app=<id>
 POST /rescan
 POST /launch?app=<id>
+POST /stop
+POST /delete?app=<id>
 ```
 
-`POST /install` writes one file under `/sdcard/apps/<id>/<relative>`, rejects absolute paths and `..`, and creates parent directories as needed. The uploader calls `/rescan` after upload and confirms the app through `/apps`. Apps can then be launched from the native `VibeBoard Apps` screen or through `/launch`.
+`POST /stage` writes one file under `/sdcard/.staging/<id>/<relative>`, rejects absolute paths and `..`, and creates parent directories as needed. `POST /commit` validates `app.info` and the declared entry file before replacing `/sdcard/apps/<id>`. Apps can then be launched from the native `VibeBoard Apps` screen or through `/launch`.
 
 Current limitations:
 
-- no staging/commit step yet, so a half-uploaded package can exist on SD;
-- no delete endpoint yet;
 - no browser management UI yet;
+- no formal WiFi configuration entry yet beyond `/sdcard/runtime/wifi.json` and the current smoke app compatibility fallback;
 - compatibility checks still rely on the app validator and documented runtime capabilities.
 
 Other transport options:
