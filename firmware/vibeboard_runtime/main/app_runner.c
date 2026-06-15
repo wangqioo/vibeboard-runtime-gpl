@@ -6,6 +6,7 @@
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "freertos/task.h"
 #include "lua_file.h"
 #include "lua_http.h"
@@ -28,26 +29,80 @@ typedef struct {
     char current_id[VB_APP_NAME_MAX];
     char current_name[VB_APP_NAME_MAX];
     esp_err_t last_status;
+    char last_message[128];
 } vb_app_runner_state_t;
 
 static vb_app_runner_state_t s_runner_state;
+static portMUX_TYPE s_runner_state_mux = portMUX_INITIALIZER_UNLOCKED;
 
 typedef struct {
     vb_lua_tmr_state_t tmr;
 } vb_lua_runtime_t;
 
-static void set_lifecycle_state(vb_app_runner_lifecycle_state_t state)
+static bool runner_state_is_active(vb_app_runner_lifecycle_state_t state)
 {
-    s_runner_state.lifecycle_state = state;
+    return state == VB_APP_RUNNER_STATE_STARTING ||
+           state == VB_APP_RUNNER_STATE_RUNNING ||
+           state == VB_APP_RUNNER_STATE_STOPPING;
 }
 
-static void finish_lifecycle_state(esp_err_t status, bool was_stop_requested)
+static void set_running_if_starting(void)
 {
-    if (status == ESP_OK || was_stop_requested) {
-        set_lifecycle_state(VB_APP_RUNNER_STATE_IDLE);
-    } else {
-        set_lifecycle_state(VB_APP_RUNNER_STATE_FAILED);
+    taskENTER_CRITICAL(&s_runner_state_mux);
+    if (s_runner_state.lifecycle_state == VB_APP_RUNNER_STATE_STARTING) {
+        s_runner_state.lifecycle_state = VB_APP_RUNNER_STATE_RUNNING;
     }
+    taskEXIT_CRITICAL(&s_runner_state_mux);
+}
+
+static esp_err_t reserve_runner_start(const char *id, const char *name)
+{
+    taskENTER_CRITICAL(&s_runner_state_mux);
+    if (runner_state_is_active(s_runner_state.lifecycle_state)) {
+        taskEXIT_CRITICAL(&s_runner_state_mux);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    strlcpy(s_runner_state.current_id, id ? id : "", sizeof(s_runner_state.current_id));
+    strlcpy(s_runner_state.current_name, name ? name : id ? id : "", sizeof(s_runner_state.current_name));
+    s_runner_state.stop_requested = false;
+    s_runner_state.lifecycle_state = VB_APP_RUNNER_STATE_STARTING;
+    s_runner_state.last_status = ESP_OK;
+    strlcpy(s_runner_state.last_message, "", sizeof(s_runner_state.last_message));
+    taskEXIT_CRITICAL(&s_runner_state_mux);
+    return ESP_OK;
+}
+
+static void fail_reserved_start(esp_err_t status)
+{
+    const char *message = esp_err_to_name(status);
+    taskENTER_CRITICAL(&s_runner_state_mux);
+    s_runner_state.lifecycle_state = VB_APP_RUNNER_STATE_FAILED;
+    s_runner_state.stop_requested = false;
+    s_runner_state.current_id[0] = '\0';
+    s_runner_state.current_name[0] = '\0';
+    s_runner_state.last_status = status;
+    strlcpy(s_runner_state.last_message, message, sizeof(s_runner_state.last_message));
+    taskEXIT_CRITICAL(&s_runner_state_mux);
+}
+
+static bool finish_runner_from_task(esp_err_t status, const char *message)
+{
+    bool was_stop_requested;
+    taskENTER_CRITICAL(&s_runner_state_mux);
+    was_stop_requested = s_runner_state.stop_requested;
+    s_runner_state.last_status = status;
+    strlcpy(s_runner_state.last_message, message ? message : esp_err_to_name(status), sizeof(s_runner_state.last_message));
+    s_runner_state.stop_requested = false;
+    if (status == ESP_OK || was_stop_requested) {
+        s_runner_state.lifecycle_state = VB_APP_RUNNER_STATE_IDLE;
+    } else {
+        s_runner_state.lifecycle_state = VB_APP_RUNNER_STATE_FAILED;
+    }
+    s_runner_state.current_id[0] = '\0';
+    s_runner_state.current_name[0] = '\0';
+    taskEXIT_CRITICAL(&s_runner_state_mux);
+    return was_stop_requested;
 }
 
 const char *vb_app_runner_state_name(vb_app_runner_lifecycle_state_t state)
@@ -184,10 +239,10 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner
 static void lua_task(void *arg)
 {
     vb_lua_task_context_t *context = (vb_lua_task_context_t *)arg;
-    set_lifecycle_state(VB_APP_RUNNER_STATE_RUNNING);
+    set_running_if_starting();
     context->status = run_lua_file(context->app, context->result);
-    bool was_stop_requested = s_runner_state.stop_requested;
-    finish_lifecycle_state(context->status, was_stop_requested);
+    const char *message = context->result->message[0] ? context->result->message : esp_err_to_name(context->status);
+    finish_runner_from_task(context->status, message);
     xTaskNotifyGive(context->caller);
     vTaskDelete(NULL);
 }
@@ -195,19 +250,15 @@ static void lua_task(void *arg)
 static void lua_async_task(void *arg)
 {
     vb_lua_async_context_t *context = (vb_lua_async_context_t *)arg;
-    set_lifecycle_state(VB_APP_RUNNER_STATE_RUNNING);
+    set_running_if_starting();
     esp_err_t status = run_lua_file(&context->app, &context->result);
-    bool was_stop_requested = s_runner_state.stop_requested;
-    s_runner_state.last_status = status;
+    const char *message = context->result.message[0] ? context->result.message : esp_err_to_name(status);
+    finish_runner_from_task(status, message);
     ESP_LOGI(TAG,
              "Lua async finished: %s status=%s message=%s",
              context->app.first_app_name,
              esp_err_to_name(status),
              context->result.message);
-    s_runner_state.stop_requested = false;
-    finish_lifecycle_state(status, was_stop_requested);
-    s_runner_state.current_id[0] = '\0';
-    s_runner_state.current_name[0] = '\0';
     free(context);
     vTaskDelete(NULL);
 }
@@ -222,6 +273,11 @@ esp_err_t vb_app_runner_run(const vb_app_registry_result_t *app, vb_app_runner_r
     if (app->app_count <= 0 || app->first_app_path[0] == '\0') {
         set_result(result, false, ESP_ERR_NOT_FOUND, "no app");
         return ESP_ERR_NOT_FOUND;
+    }
+    esp_err_t err = reserve_runner_start(app->first_app_name, app->first_app_name);
+    if (err != ESP_OK) {
+        set_result(result, false, err, esp_err_to_name(err));
+        return err;
     }
 
     vb_lua_task_context_t context = {
@@ -239,6 +295,7 @@ esp_err_t vb_app_runner_run(const vb_app_registry_result_t *app, vb_app_runner_r
                                                  NULL,
                                                  tskNO_AFFINITY);
     if (created != pdPASS) {
+        fail_reserved_start(ESP_ERR_NO_MEM);
         set_result(result, false, ESP_ERR_NO_MEM, "lua task failed");
         return ESP_ERR_NO_MEM;
     }
@@ -260,24 +317,32 @@ esp_err_t vb_app_runner_run_entry(const vb_app_registry_entry_t *entry, vb_app_r
 
 esp_err_t vb_app_runner_launch_async(const vb_app_registry_entry_t *entry)
 {
+    return vb_app_runner_launch_async_with_options(entry, NULL);
+}
+
+esp_err_t vb_app_runner_launch_async_with_options(const vb_app_registry_entry_t *entry,
+                                                  const vb_app_runner_launch_options_t *options)
+{
     if (entry == NULL || entry->path[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
-    if (vb_app_runner_is_running()) {
-        return ESP_ERR_INVALID_STATE;
+
+    esp_err_t err = reserve_runner_start(entry->id, entry->name[0] ? entry->name : entry->id);
+    if (err != ESP_OK) {
+        return err;
     }
 
     vb_lua_async_context_t *context = (vb_lua_async_context_t *)calloc(1, sizeof(*context));
     if (context == NULL) {
+        fail_reserved_start(ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
     }
     entry_to_registry(entry, &context->app);
 
-    strlcpy(s_runner_state.current_id, entry->id, sizeof(s_runner_state.current_id));
-    strlcpy(s_runner_state.current_name, entry->name[0] ? entry->name : entry->id, sizeof(s_runner_state.current_name));
-    s_runner_state.stop_requested = false;
-    set_lifecycle_state(VB_APP_RUNNER_STATE_STARTING);
-    s_runner_state.last_status = ESP_OK;
+    if (options != NULL && options->before_start != NULL) {
+        options->before_start(options->user_data);
+    }
+
     BaseType_t created = xTaskCreatePinnedToCore(lua_async_task,
                                                  "vb_lua_launch",
                                                  VB_LUA_TASK_STACK_SIZE,
@@ -286,10 +351,7 @@ esp_err_t vb_app_runner_launch_async(const vb_app_registry_entry_t *entry)
                                                  NULL,
                                                  tskNO_AFFINITY);
     if (created != pdPASS) {
-        set_lifecycle_state(VB_APP_RUNNER_STATE_FAILED);
-        s_runner_state.current_id[0] = '\0';
-        s_runner_state.current_name[0] = '\0';
-        s_runner_state.last_status = ESP_ERR_NO_MEM;
+        fail_reserved_start(ESP_ERR_NO_MEM);
         free(context);
         return ESP_ERR_NO_MEM;
     }
@@ -300,12 +362,17 @@ esp_err_t vb_app_runner_launch_async(const vb_app_registry_entry_t *entry)
 
 esp_err_t vb_app_runner_stop(void)
 {
-    if (!vb_app_runner_is_running()) {
+    char current_name[VB_APP_NAME_MAX];
+    taskENTER_CRITICAL(&s_runner_state_mux);
+    if (!runner_state_is_active(s_runner_state.lifecycle_state)) {
+        taskEXIT_CRITICAL(&s_runner_state_mux);
         return ESP_ERR_NOT_FOUND;
     }
-    ESP_LOGI(TAG, "Lua stop requested: %s", s_runner_state.current_name);
+    strlcpy(current_name, s_runner_state.current_name, sizeof(current_name));
     s_runner_state.stop_requested = true;
-    set_lifecycle_state(VB_APP_RUNNER_STATE_STOPPING);
+    s_runner_state.lifecycle_state = VB_APP_RUNNER_STATE_STOPPING;
+    taskEXIT_CRITICAL(&s_runner_state_mux);
+    ESP_LOGI(TAG, "Lua stop requested: %s", current_name);
     return ESP_OK;
 }
 
@@ -324,22 +391,47 @@ esp_err_t vb_app_runner_wait_stopped(uint32_t timeout_ms)
 
 bool vb_app_runner_is_running(void)
 {
-    return s_runner_state.lifecycle_state == VB_APP_RUNNER_STATE_STARTING ||
-           s_runner_state.lifecycle_state == VB_APP_RUNNER_STATE_RUNNING ||
-           s_runner_state.lifecycle_state == VB_APP_RUNNER_STATE_STOPPING;
+    vb_app_runner_lifecycle_state_t state = vb_app_runner_current_state();
+    return runner_state_is_active(state);
 }
 
 const char *vb_app_runner_current_id(void)
 {
-    return s_runner_state.current_id;
+    static char current_id[VB_APP_NAME_MAX];
+    taskENTER_CRITICAL(&s_runner_state_mux);
+    strlcpy(current_id, s_runner_state.current_id, sizeof(current_id));
+    taskEXIT_CRITICAL(&s_runner_state_mux);
+    return current_id;
 }
 
 vb_app_runner_lifecycle_state_t vb_app_runner_current_state(void)
 {
-    return s_runner_state.lifecycle_state;
+    vb_app_runner_lifecycle_state_t state;
+    taskENTER_CRITICAL(&s_runner_state_mux);
+    state = s_runner_state.lifecycle_state;
+    taskEXIT_CRITICAL(&s_runner_state_mux);
+    return state;
 }
 
 const char *vb_app_runner_current_state_name(void)
 {
     return vb_app_runner_state_name(vb_app_runner_current_state());
+}
+
+esp_err_t vb_app_runner_last_status(void)
+{
+    esp_err_t status;
+    taskENTER_CRITICAL(&s_runner_state_mux);
+    status = s_runner_state.last_status;
+    taskEXIT_CRITICAL(&s_runner_state_mux);
+    return status;
+}
+
+const char *vb_app_runner_last_message(void)
+{
+    static char last_message[sizeof(s_runner_state.last_message)];
+    taskENTER_CRITICAL(&s_runner_state_mux);
+    strlcpy(last_message, s_runner_state.last_message, sizeof(last_message));
+    taskEXIT_CRITICAL(&s_runner_state_mux);
+    return last_message;
 }

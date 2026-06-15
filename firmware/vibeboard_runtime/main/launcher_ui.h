@@ -7,7 +7,8 @@
 extern "C" {
 #endif
 
-void vb_launcher_ui_show(const vb_app_registry_result_t *apps, esp_err_t scan_err);
+void vb_launcher_ui_show(vb_app_registry_result_t *apps, esp_err_t scan_err);
+void vb_launcher_ui_note_async_launch(void);
 
 #ifdef __cplusplus
 }

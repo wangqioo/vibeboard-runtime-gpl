@@ -18,6 +18,7 @@ void app_main(void)
     vb_board_status_t board = {0};
     ESP_ERROR_CHECK(vb_board_start(&board));
 
+    ESP_ERROR_CHECK(vb_app_registry_init());
     memset(&s_apps, 0, sizeof(s_apps));
     esp_err_t scan_err = board.sd_ok ? vb_app_registry_scan(&s_apps) : board.sd_error;
     if (scan_err != ESP_OK) {

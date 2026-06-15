@@ -30,6 +30,9 @@ typedef struct {
     char first_app_path[VB_APP_PATH_MAX];
 } vb_app_registry_result_t;
 
+esp_err_t vb_app_registry_init(void);
+void vb_app_registry_lock(void);
+void vb_app_registry_unlock(void);
 esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result);
 
 #ifdef __cplusplus

@@ -7,8 +7,36 @@
 #include <sys/stat.h>
 
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 static const char *TAG = "app_registry";
+static SemaphoreHandle_t s_registry_mutex;
+
+esp_err_t vb_app_registry_init(void)
+{
+    if (s_registry_mutex == NULL) {
+        s_registry_mutex = xSemaphoreCreateMutex();
+    }
+    return s_registry_mutex != NULL ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+void vb_app_registry_lock(void)
+{
+    if (vb_app_registry_init() != ESP_OK) {
+        return;
+    }
+    if (s_registry_mutex != NULL) {
+        xSemaphoreTake(s_registry_mutex, portMAX_DELAY);
+    }
+}
+
+void vb_app_registry_unlock(void)
+{
+    if (s_registry_mutex != NULL) {
+        xSemaphoreGive(s_registry_mutex);
+    }
+}
 
 static bool build_path(char *dest, size_t dest_size, const char *parent, const char *child)
 {
@@ -79,6 +107,7 @@ esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result)
         return ESP_ERR_INVALID_ARG;
     }
 
+    vb_app_registry_lock();
     memset(result, 0, sizeof(*result));
     strcpy(result->first_app_name, "-");
     strcpy(result->first_app_entry, "main.lua");
@@ -86,6 +115,7 @@ esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result)
     DIR *dir = opendir(VB_APPS_PATH);
     if (dir == NULL) {
         ESP_LOGW(TAG, "apps directory not found: %s", VB_APPS_PATH);
+        vb_app_registry_unlock();
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -158,5 +188,6 @@ esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result)
 
     closedir(dir);
     ESP_LOGI(TAG, "found %d apps", result->app_count);
+    vb_app_registry_unlock();
     return ESP_OK;
 }

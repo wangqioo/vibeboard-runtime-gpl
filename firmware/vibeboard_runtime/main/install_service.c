@@ -13,12 +13,19 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "launcher_ui.h"
 
 static const char *TAG = "install_service";
 
 static httpd_handle_t s_server;
 static bool s_netif_ready;
 static vb_install_service_context_t *s_context;
+
+static void note_launcher_async_launch(void *user_data)
+{
+    (void)user_data;
+    vb_launcher_ui_note_async_launch();
+}
 
 static bool reject_unsafe_path(const char *path)
 {
@@ -164,8 +171,17 @@ static esp_err_t status_handler(httpd_req_t *req)
 {
     char body[384];
     const vb_app_registry_result_t *registry = s_context ? s_context->registry : NULL;
-    int app_count = registry ? registry->app_count : 0;
-    const char *first_app = (registry && registry->first_app_name[0] != '\0') ? registry->first_app_name : "-";
+    int app_count = 0;
+    char first_app[VB_APP_NAME_MAX];
+    strcpy(first_app, "-");
+    vb_app_registry_lock();
+    if (registry != NULL) {
+        app_count = registry->app_count;
+        if (registry->first_app_name[0] != '\0') {
+            strlcpy(first_app, registry->first_app_name, sizeof(first_app));
+        }
+    }
+    vb_app_registry_unlock();
     bool running = vb_app_runner_is_running();
     const char *state = vb_app_runner_current_state_name();
     const char *current_app = running ? vb_app_runner_current_id() : "";
@@ -187,9 +203,10 @@ static esp_err_t apps_handler(httpd_req_t *req)
     char body[1024];
     size_t used = 0;
     const vb_app_registry_result_t *registry = s_context ? s_context->registry : NULL;
-    int stored = registry ? registry->stored_app_count : 0;
 
     used += snprintf(body + used, sizeof(body) - used, "{\"apps\":[");
+    vb_app_registry_lock();
+    int stored = registry ? registry->stored_app_count : 0;
     for (int i = 0; i < stored && used < sizeof(body); i++) {
         const vb_app_registry_entry_t *app = &registry->apps[i];
         used += snprintf(body + used,
@@ -200,6 +217,7 @@ static esp_err_t apps_handler(httpd_req_t *req)
                          app->name,
                          app->entry);
     }
+    vb_app_registry_unlock();
     if (used < sizeof(body)) {
         snprintf(body + used, sizeof(body) - used, "]}\n");
     } else {
@@ -222,8 +240,12 @@ static esp_err_t rescan_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    vb_app_registry_lock();
+    int app_count = s_context->registry->app_count;
+    vb_app_registry_unlock();
+
     char body[96];
-    snprintf(body, sizeof(body), "{\"ok\":true,\"app_count\":%d}\n", s_context->registry->app_count);
+    snprintf(body, sizeof(body), "{\"ok\":true,\"app_count\":%d}\n", app_count);
     send_json(req, body);
     return ESP_OK;
 }
@@ -246,19 +268,25 @@ static esp_err_t launch_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    vb_app_registry_entry_t selected_app = {0};
+    vb_app_registry_lock();
     const vb_app_registry_entry_t *app = find_app_by_id(s_context->registry, app_id);
-    if (app == NULL) {
+    if (app != NULL) {
+        selected_app = *app;
+    }
+    vb_app_registry_unlock();
+    if (selected_app.id[0] == '\0') {
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "app not found");
         return ESP_FAIL;
     }
 
     if (vb_app_runner_is_running()) {
         const char *current_id = vb_app_runner_current_id();
-        if (strcmp(current_id, app->id) == 0) {
+        if (strcmp(current_id, selected_app.id) == 0) {
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "app already running");
             return ESP_FAIL;
         }
-        ESP_LOGI(TAG, "switch app %s -> %s", current_id, app->id);
+        ESP_LOGI(TAG, "switch app %s -> %s", current_id, selected_app.id);
         err = vb_app_runner_stop();
         if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
@@ -271,14 +299,18 @@ static esp_err_t launch_handler(httpd_req_t *req)
         }
     }
 
-    err = vb_app_runner_launch_async(app);
+    const vb_app_runner_launch_options_t launch_options = {
+        .before_start = note_launcher_async_launch,
+        .user_data = NULL,
+    };
+    err = vb_app_runner_launch_async_with_options(&selected_app, &launch_options);
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
         return ESP_FAIL;
     }
 
     char body[128];
-    snprintf(body, sizeof(body), "{\"ok\":true,\"launched\":\"%s\"}\n", app->id);
+    snprintf(body, sizeof(body), "{\"ok\":true,\"launched\":\"%s\"}\n", selected_app.id);
     send_json(req, body);
     return ESP_OK;
 }
