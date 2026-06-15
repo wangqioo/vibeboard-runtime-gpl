@@ -1,16 +1,16 @@
 # Deployment Flow
 
-Phase 2A defines the file contract, validates apps, and creates deployable file packages.
+VibeBoard app deployment is now a staged board workflow. The normal path never writes half an app into the launchable directory.
 
 ```text
 AI produces app package
   -> app validator passes
   -> app packager writes dist/apps/<app-id>
-  -> uploader discards stale staging data
-  -> uploader stages package files under /sdcard/.staging/<app-id>
+  -> browser console or host uploader discards stale staging data
+  -> browser console or host uploader stages package files under /sdcard/.staging/<app-id>
   -> runtime validates app.info plus the entry file and commits to /sdcard/apps/<app-id>
-  -> uploader confirms the app through /apps
-  -> user launches from the native screen launcher or HTTP /launch
+  -> client confirms the app through /apps
+  -> user launches from the native screen launcher, browser console, or HTTP /launch
 ```
 
 Create a package for one app:
@@ -47,6 +47,14 @@ Device storage target:
 
 Transport options:
 
+- Browser console served by the runtime:
+
+```text
+http://<board-ip>:8080/
+```
+
+The browser console supports app listing, status refresh, manual folder upload, launch, stop, delete, and browser-side AI app creation. Manual and AI-created apps both use the same staged `/discard -> /stage -> /commit` path.
+
 - WiFi HTTP upload exposed by the runtime:
 
 ```bash
@@ -69,6 +77,9 @@ npm run launch:app -- --transport nc http://<board-ip>:8080 <app-id>
 The current firmware endpoint is intentionally small:
 
 ```text
+GET /
+GET /status
+GET /apps
 POST /install?app=<id>&path=<relative>
 POST /stage?app=<id>&path=<relative>
 POST /commit?app=<id>
@@ -79,17 +90,30 @@ POST /stop
 POST /delete?app=<id>
 ```
 
-`POST /stage` writes one file under `/sdcard/.staging/<id>/<relative>`, rejects absolute paths and `..`, and creates parent directories as needed. `POST /commit` validates `app.info` and the declared entry file before replacing `/sdcard/apps/<id>`. Apps can then be launched from the native `VibeBoard Apps` screen or through `/launch`.
+`GET /` serves the self-contained Web Console. `POST /stage` writes one file under `/sdcard/.staging/<id>/<relative>`, rejects absolute paths and `..`, and creates parent directories as needed. `POST /commit` validates `app.info` and the declared entry file before replacing `/sdcard/apps/<id>`. Apps can then be launched from the native `VibeBoard Apps` screen, browser console, or `/launch`.
+
+Browser AI creation:
+
+```text
+prompt + OpenAI API key in browser
+  -> direct HTTPS call to OpenAI Responses API
+  -> strict JSON app package response
+  -> browser validates app id, file paths, text file types, and main.lua
+  -> staged upload and commit
+```
+
+The API key is not sent to the board. The first implementation intentionally keeps the AI bridge in the browser, so the key is visible to that browser session and should only be used from a trusted machine and network.
 
 Current limitations:
 
-- no browser management UI yet;
 - no formal WiFi configuration entry yet beyond `/sdcard/runtime/wifi.json` and the current smoke app compatibility fallback;
-- compatibility checks still rely on the app validator and documented runtime capabilities.
+- browser AI creation has static coverage and board delivery coverage, but a real API-key prompt-to-running-app smoke still needs to be recorded;
+- browser-direct OpenAI calls depend on browser/network/CORS behavior;
+- browser AI creation currently supports text package files, not binary asset generation;
+- compatibility checks still rely on the app validator, browser-side schema validation, and documented runtime capabilities.
 
 Other transport options:
 
-- Browser upload through a future VibeBoard Runtime web console.
 - SD-card copy for recovery and offline installation.
 
 USB flashing is for runtime installation and recovery, not the normal app-edit loop.

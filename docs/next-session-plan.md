@@ -5,95 +5,152 @@ Date: 2026-06-15
 ## Current Baseline
 
 ```text
-eafbf7b docs: add next session plan
+b9da3dc feat: add browser AI web console
 ```
 
-The local work after this baseline fixes a launcher BOOT-after-launch crash found during board verification.
-The current branch also implements Phase 5B launcher lifecycle controls, runtime WiFi autoconnect, the native HTTP uploader/launch board check, app delete/uninstall, and staged upload/commit.
+The current branch has the first end-to-end productization loop on real hardware:
+
+```text
+runtime WiFi
+  -> board-served Web Console
+  -> app list/status
+  -> staged upload/commit
+  -> launch/stop/delete
+  -> browser-side AI app creation path
+```
 
 ## What Is Done
 
 - Phase 5A native launcher MVP is board-verified.
-- The device boots to `VibeBoard Apps` instead of auto-running the first app.
-- Touch tap-to-launch works on the device screen.
-- BOOT short press selects; BOOT long press launches.
-- HTTP install, app listing, rescan, launch, stop, and switch are implemented.
-- Missing app entry files are filtered before they enter the launchable app list.
-- Phase 5B lifecycle-state foundation is board-verified:
-  - `/status` includes `state`.
-  - states are `idle`, `starting`, `running`, `stopping`, `failed`.
-  - compatibility fields `running` and `current_app` remain.
-- A real launcher/Lua screen ownership crash was reproduced and fixed:
-  - launching `smoke_visual_remote`, then short-pressing BOOT used stale launcher LVGL pointers;
-  - `launcher_ui.c` now deactivates launcher controls after handing the screen to a Lua app;
-  - static tests and firmware build pass;
-  - fixed firmware was flashed to the board and board-verified.
-- `apps/smoke_fail` exists as an intentional Lua failure sample for lifecycle checks.
-- Phase 5B launcher lifecycle controls are implemented and build-verified:
-  - native Stop control requests runner stop and waits for completion;
-  - native Refresh control rescans the SD app registry and rebuilds the launcher list;
-  - stopping an app or observing an async app failure returns to the native launcher;
-  - launcher failure feedback uses the runner last-result message;
-  - BOOT long press can stop a running app while the launcher is inactive.
-- Runtime WiFi autoconnect is implemented and board-verified:
-  - boot reads `/sdcard/runtime/wifi.json`;
-  - the current test board also accepts the existing local `/sdcard/apps/smoke_network/wifi.json`;
-  - boot logs `runtime sta got ip 192.168.1.32` without manually launching `smoke_network`.
-- Uploader reliability cleanup is implemented and board-verified:
-  - `upload:app` and `launch:app` default to Node native HTTP;
-  - `nc` remains available as an explicit `--transport nc` fallback.
-- Native HTTP upload/launch board check passed without `--transport nc`:
-  - uploaded `smoke_visual_native`;
-  - `/rescan` and `/apps` confirmed it;
-  - launched `smoke_visual_native`, `smoke_fail`, and `smoke_network`.
-- Launch verification exposed a board-side HTTPD stack overflow in `/launch`; the install service now sets `config.stack_size = 8192`, and the post-fix board launch check passed.
-- App delete/uninstall is implemented and board-verified:
-  - `POST /delete?app=<id>` recursively deletes one installed app directory and rescans;
-  - deletion of the currently running app returns `409 app is running`;
-  - `npm run delete:app` wraps the endpoint from the Mac.
-- Staged upload/commit is implemented and board-verified:
-  - `upload:app` defaults to `/discard -> /stage -> /commit -> /apps`;
-  - `--mode direct` keeps the old `/install -> /rescan -> /apps` path for recovery;
-  - firmware rejects unsafe paths, validates staged `app.info` plus entry file, refuses to commit over the running app, and uses same-filesystem rename replacement;
-  - adding staged endpoints exposed the default HTTPD URI handler capacity limit; the install service now sets `config.max_uri_handlers = 12`, and `/stop` plus `/delete` stayed registered after reflashing.
+- Phase 5B lifecycle controls are board-verified:
+  - native Stop control;
+  - native Refresh control;
+  - return to launcher after stop;
+  - readable failure feedback;
+  - BOOT long-press stop while a Lua app owns the screen.
+- Runtime WiFi autoconnect is board-verified:
+  - preferred config path is `/sdcard/runtime/wifi.json`;
+  - the current board still accepts `/sdcard/apps/smoke_network/wifi.json` as a compatibility fallback.
+- HTTP lifecycle service is board-verified:
+  - `GET /status`;
+  - `GET /apps`;
+  - `POST /rescan`;
+  - `POST /launch`;
+  - `POST /stop`;
+  - `POST /delete`.
+- App delete/uninstall is board-verified:
+  - recursive app directory deletion;
+  - registry rescan after deletion;
+  - `409 app is running` protection.
+- Staged upload/commit is board-verified:
+  - `/discard -> /stage -> /commit -> /apps`;
+  - staged path validation;
+  - `app.info` and entry-file validation during commit;
+  - same-filesystem replacement of installed apps;
+  - `409 app is running` protection.
+- Browser Web Console is implemented and board-verified for delivery:
+  - `GET /` returns the console HTML;
+  - app list/status APIs are reachable from the same board service;
+  - launch, stop, delete, and manual upload controls are wired to the HTTP API.
+- Browser AI app creation is implemented:
+  - direct browser call to OpenAI Responses API;
+  - API key stays in the browser and is not sent to the ESP32;
+  - strict JSON schema output;
+  - client-side validation of app id, paths, file types, and required files;
+  - staged upload and commit after generation.
 
 ## Last Verified Commands
 
 ```text
-npm run test:firmware-static
 npm test
 git diff --check
 idf.py build
 esptool write_flash
+curl http://192.168.1.32:8080/
+curl http://192.168.1.32:8080/status
+curl http://192.168.1.32:8080/apps
+open http://192.168.1.32:8080/
 ```
 
-The BOOT-after-launch crash fix, lifecycle `state` checks, runtime WiFi autoconnect, native HTTP upload/launch path, app delete/uninstall, staged upload/commit, and Phase 5B lifecycle controls are board-verified. Verification includes HTTP status checks, serial logs, and manual physical screen smoke for Stop, Refresh, return-to-launcher, readable failure feedback, and BOOT long-press stop.
+Board delivery evidence:
+
+```text
+GET / returned HTML containing:
+VibeBoard Runtime
+AI Create App
+OpenAI API Key
+
+GET /status returned:
+{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+```
 
 ## Immediate Next Work
 
-### 1. Deployment productization
+### 1. Formal WiFi Configuration Entry
 
-Turn the now-verified upload/launch path into a more complete app deployment workflow:
+Current state: runtime WiFi can read `/sdcard/runtime/wifi.json`, but the board still has a compatibility fallback to `/sdcard/apps/smoke_network/wifi.json`.
 
-- consider a small browser UI on top of `/apps`, `/stage`, `/commit`, `/discard`, `/launch`, `/stop`, and `/delete`;
-- decide where persistent runtime WiFi config should live outside the current compatibility fallback.
+Next slice:
 
-Suggested ownership:
+- decide the official write path:
+  - Mac CLI writes `/sdcard/runtime/wifi.json`;
+  - or Web Console writes WiFi config;
+  - or SD-file-only remains the documented setup flow;
+- add validation and clear error messages;
+- remove or explicitly mark the smoke-app fallback as temporary.
 
-```text
-tools/app-uploader/
-firmware/vibeboard_runtime/main/install_service.c
-docs/app-package-format.md
-```
+Expected result: a new user can put the board on WiFi without relying on a smoke app convention.
 
-Expected result: make deployment reliable enough for repeated app iteration without SD-card removal and without relying on manual recovery steps.
+### 2. Real AI-Created App Smoke
+
+Current state: the Web Console AI path is implemented and statically tested. The board serves the console, but a real prompt-to-running-app smoke with an API key has not been recorded in docs.
+
+Next slice:
+
+- open `http://192.168.1.32:8080/`;
+- enter a temporary OpenAI API key;
+- prompt for a simple timer/card app;
+- confirm generated files upload through staged commit;
+- launch the app;
+- record `/apps`, `/status`, and any browser/network constraints.
+
+Expected result: documented evidence that the browser AI workflow creates and runs a real SD Lua app.
+
+### 3. Lua Input Events
+
+Current state: touch works for the native launcher, but Lua apps do not have touch/key event APIs.
+
+Next slice:
+
+- design a small input API, likely `touch.on(...)` and `key.on(...)`;
+- add `apps/smoke_touch`;
+- verify quick taps and app switching clean up handlers.
+
+Expected result: AI-generated apps can build real interactive screens instead of only timer-driven UI.
+
+### 4. Runtime/API/App Compatibility
+
+Current state: package validation and docs define the supported API surface, but the runtime does not expose a versioned compatibility contract.
+
+Next slice:
+
+- expose runtime API/schema version in `/status` or a new endpoint;
+- add `requires_runtime` or equivalent package metadata;
+- reject incompatible apps before launch or commit;
+- make browser AI prompts include the current supported API list.
+
+Expected result: generated apps can fail early with `Runtime update required` instead of failing at Lua runtime.
 
 ## Parallelization Guidance
 
-Safe parallel tracks now:
+Safe parallel tracks:
 
-- Deployment productization planning: browser UI and formal WiFi configuration.
-- Lua input-event design: `touch.on`, `key.on`.
+- WiFi config productization;
+- real Web Console AI smoke and documentation;
+- Lua input-event design;
+- compatibility/version metadata.
+
+Avoid starting native module/NES work until input events and compatibility contracts are stable.
 
 ## Deferred
 

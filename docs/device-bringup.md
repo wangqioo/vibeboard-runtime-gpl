@@ -2014,3 +2014,39 @@ GET /apps -> 200 OK
 ```
 
 Result: staged upload/commit is board-verified for default Mac upload behavior, staged file writes, commit validation into the app registry, launchability after commit, stop/delete cleanup, running-app conflict protection, and HTTPD handler capacity regression coverage.
+
+## 2026-06-15 browser Web Console and AI creator delivery
+
+Firmware with the embedded Web Console was built, flashed, and checked on the board at `192.168.1.32`.
+
+Static and build verification:
+
+```text
+npm test
+git diff --check
+idf.py build
+```
+
+Board HTTP checks:
+
+```text
+GET / -> 200 OK
+HTML contained:
+VibeBoard Runtime
+AI Create App
+OpenAI API Key
+
+GET /status -> 200 OK
+{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+
+GET /apps -> 200 OK
+{"apps":[{"id":"smoke_network","name":"smoke_network","entry":"main.lua"},{"id":"smoke_visual_remote","name":"smoke_visual","entry":"main.lua"},{"id":"smoke_fail","name":"smoke_fail","entry":"main.lua"},{"id":"smoke_visual_native","name":"smoke_visual","entry":"main.lua"}]}
+```
+
+Manual browser check:
+
+```text
+open http://192.168.1.32:8080/
+```
+
+Result: the board serves the browser management page from `GET /`, and the page includes the direct browser AI app creator. This verifies page delivery and API reachability from the same runtime HTTP service. A real OpenAI-key prompt-to-running-app smoke is still pending and should be recorded separately after a temporary API key is used.

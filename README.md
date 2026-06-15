@@ -31,8 +31,12 @@ Display follow-up and structure notes:
 Board-verified networking and install-service work:
 
 - WiFi, HTTP, JSON, and NTP/time Lua modules are board-verified through `apps/smoke_network` with local `wifi.json`; the board connected to `1-306`, got `192.168.1.32`, and completed an HTTP 200 smoke request.
-- The runtime starts a minimal HTTP install service on port `8080`: `POST /install?app=<id>&path=<relative>` writes files under `/sdcard/apps/<id>/`.
-- The uploader command now writes a package, calls `/rescan`, and confirms the app through `/apps`: `npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` uploaded 5 files and confirmed `smoke_visual_remote`.
+- The runtime starts an HTTP install service on port `8080` with `GET /`, `GET /status`, `GET /apps`, `POST /stage`, `POST /commit`, `POST /discard`, `POST /install`, `POST /rescan`, `POST /launch`, `POST /stop`, and `POST /delete`.
+- The uploader defaults to staged deployment: `/discard -> /stage -> /commit -> /apps`. A failed upload can discard staging data without polluting the launchable app directory.
+- `POST /delete?app=<id>` and `npm run delete:app` are board-verified, including `409 app is running` protection.
+- The browser Web Console is served directly by the board at `http://192.168.1.32:8080/` and is board-verified for HTML delivery, app list/status APIs, manual upload, launch, stop, and delete controls.
+- The Web Console includes a browser-side AI app creator. It calls OpenAI directly from the user's browser, validates strict JSON package output, writes files through staged upload, commits only after all files are valid, and keeps the API key out of the ESP32 firmware.
+- The uploader command writes a package through the staged path and confirms the app through `/apps`: `npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` uploaded 5 files and confirmed `smoke_visual_remote`.
 - The runtime can launch an installed SD app without rebooting: `POST /launch?app=smoke_visual_remote` returned `200 OK`, and serial logs showed `smoke visual ok S:/apps/smoke_visual_remote/assets/icon.bmp` plus timer-driven progress updates.
 - The local helper command is `npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote`.
 - Controlled stop/switch is board-verified: launching a different app stops the current Lua app before starting the next one.
@@ -42,21 +46,22 @@ Board-verified networking and install-service work:
 
 ## Current Phase
 
-Phase 5A is closed: the native launcher MVP and basic app lifecycle loop are board-verified.
+Phase 5A, Phase 5B, staged deployment, app delete/uninstall, and the first browser Web Console are closed on real hardware.
 
 The runtime can now:
 
 ```text
-boot -> scan SD apps -> show native launcher -> launch by touch/BOOT/HTTP -> stop/switch apps
+boot -> runtime WiFi -> scan SD apps -> native launcher or browser console
+  -> upload/create app -> stage/commit -> launch/stop/delete
 ```
 
-Phase 5B is the next productization slice:
+The next productization slice is no longer basic launcher or upload plumbing. The remaining near-term work is:
 
-- return to launcher after an app is running;
-- stop the current app from the device screen;
-- refresh the app list from the device screen;
-- show launch failures on screen;
-- harden the uploader path where the Mac/router `nc` fallback can still fail even though raw HTTP upload works.
+- choose and implement the formal WiFi configuration entry, then remove the smoke-app compatibility fallback;
+- run and record a real AI-generated app smoke from the Web Console with a user-provided API key;
+- expose touch/key input events to Lua apps;
+- add runtime/API/app schema compatibility checks;
+- continue expanding the LVGL API whitelist that AI-generated apps are allowed to use.
 
 Lua `app.list()` / `app.launch()` / `app.current()` are intentionally deferred until a Lua-side workflow needs them.
 
@@ -72,13 +77,24 @@ Instead, the split is:
 Normal app iteration:
 
 ```text
-AI generates app.info + Lua + assets
+AI or developer produces app.info + Lua + assets
   -> validator checks package
   -> packager creates dist/apps/<app-id>
-  -> user copies files to SD card /apps/<app-id> or uploads through the install service
-  -> runtime scans /sdcard/apps
-  -> user launches the app from the native screen launcher or through /launch
+  -> user uploads through the browser console or host CLI
+  -> runtime stages files under /sdcard/.staging/<app-id>
+  -> commit validates app.info plus entry file and replaces /sdcard/apps/<app-id>
+  -> user launches from the native launcher, browser console, or /launch
   -> Lua runner executes main.lua
+```
+
+The browser AI path skips the local plan-writer step for quick experiments:
+
+```text
+browser prompt + OpenAI API key
+  -> OpenAI Responses API returns strict JSON files
+  -> browser validates ids and paths
+  -> browser uploads through /discard, /stage, and /commit
+  -> app appears in /apps and can be launched
 ```
 
 Still requires firmware work:
@@ -186,6 +202,7 @@ The product idea is not just "ESP32 can run Lua." The useful idea is turning ESP
 | `modules/` | Curated native module paths. |
 | `tools/app-validator/` | Package metadata parser and validator. |
 | `tools/app-packager/` | Validated app directory packager for device-storage deployment. |
+| `web-console/` | Browser console specification, UX notes, and AI creation plan. |
 | `docs/` | Runtime, deployment, app package, and AI generation docs. |
 
 ## First Demo Apps
@@ -234,6 +251,23 @@ dist/apps/<app-id>/
 
 Copy the contents of `dist/apps/<app-id>/` to `/sd/apps/<app-id>/` on the device storage. This package step does not flash firmware.
 
+## Browser Console
+
+Once the board has joined WiFi, open:
+
+```text
+http://<board-ip>:8080/
+```
+
+The console is served from the ESP32 runtime and supports:
+
+- status and app list refresh;
+- app launch, stop, and delete;
+- folder upload through staged commit;
+- browser-side AI app creation with strict JSON output and staged deployment.
+
+The OpenAI API key is entered in the browser. It is never sent to the ESP32, but it is visible to that browser session and any local browser tooling, so use it only on a trusted network and device.
+
 ## Write AI App Plans
 
 Turn an AI package plan JSON file into a local app directory:
@@ -255,7 +289,7 @@ generated/apps/<app-id>/
 dist/apps/<app-id>/        # only with --package
 ```
 
-This is still a file-level workflow. It does not call an AI model, flash firmware, or upload to a device.
+This CLI path is still a file-level workflow. It does not call an AI model, flash firmware, or upload to a device. For direct prompt-to-device experiments, use the browser Web Console AI creator.
 
 ## AI App Generation
 

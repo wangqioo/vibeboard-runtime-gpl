@@ -152,11 +152,13 @@ Current endpoints:
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
+| `/` | `GET` | Serve the self-contained browser Web Console. |
+| `/status` | `GET` | Report SD, app count, install service, lifecycle state, running flag, and current app. |
+| `/apps` | `GET` | List app entries from the current SD registry. |
 | `/stage?app=<id>&path=<relative>` | `POST` | Write one staged app package file under `/sdcard/.staging/<id>/`. |
 | `/commit?app=<id>` | `POST` | Validate staged `app.info` plus entry file, replace `/sdcard/apps/<id>/`, and rescan. |
 | `/discard?app=<id>` | `POST` | Remove staged files for one app without touching the installed app. |
 | `/install?app=<id>&path=<relative>` | `POST` | Compatibility direct write of one app package file under `/sdcard/apps/<id>/`. |
-| `/apps` | `GET` | List app entries from the current SD registry. |
 | `/rescan` | `POST` | Rescan `/sdcard/apps`. |
 | `/launch?app=<id>` | `POST` | Launch an installed app. |
 | `/stop` | `POST` | Stop the currently running app, if any. |
@@ -179,3 +181,22 @@ npm run upload:app -- --mode direct http://192.168.1.32:8080 dist/apps/smoke_vis
 `/commit` refuses to replace the app that is currently running. Stop the app first with `/stop` or the native launcher Stop control, then upload it again.
 
 `/delete` refuses to delete the app that is currently running. Stop the app first with `/stop` or the native launcher Stop control, then delete it.
+
+## Browser Console And AI Creation
+
+Open the board console after runtime WiFi connects:
+
+```text
+http://<board-ip>:8080/
+```
+
+The console can list apps, upload a local app folder, launch, stop, delete, and create a new app with a browser-side OpenAI call.
+
+AI-created apps use the same package contract:
+
+- generated `app.info`;
+- generated text entry file, usually `main.lua`;
+- optional generated text assets;
+- staged upload through `/discard`, `/stage`, and `/commit`.
+
+The OpenAI API key is entered in the browser and is not sent to the ESP32. The browser validates generated app ids, relative paths, file types, and required files before uploading; the runtime commit validation remains the final on-device check.
