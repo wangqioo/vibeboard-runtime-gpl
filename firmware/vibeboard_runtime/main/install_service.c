@@ -16,6 +16,7 @@
 #include "launcher_ui.h"
 
 static const char *TAG = "install_service";
+#define VB_INSTALL_HTTPD_STACK_SIZE 8192
 
 static httpd_handle_t s_server;
 static bool s_netif_ready;
@@ -366,6 +367,7 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
+    config.stack_size = VB_INSTALL_HTTPD_STACK_SIZE;
     config.uri_match_fn = httpd_uri_match_wildcard;
 
     err = httpd_start(&s_server, &config);

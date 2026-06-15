@@ -34,6 +34,8 @@ const luaTimeSourcePath = join(firmwareRoot, "main/lua_time.c");
 const luaTimeHeaderPath = join(firmwareRoot, "main/lua_time.h");
 const luaWifiSourcePath = join(firmwareRoot, "main/lua_wifi.c");
 const luaWifiHeaderPath = join(firmwareRoot, "main/lua_wifi.h");
+const runtimeWifiSourcePath = join(firmwareRoot, "main/runtime_wifi.c");
+const runtimeWifiHeaderPath = join(firmwareRoot, "main/runtime_wifi.h");
 const cmakePath = join(firmwareRoot, "main/CMakeLists.txt");
 const partitionsPath = join(firmwareRoot, "partitions.csv");
 const sdkconfigDefaultsPath = join(firmwareRoot, "sdkconfig.defaults");
@@ -138,6 +140,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /esp_netif_init/);
     assert.match(source, /esp_event_loop_create_default/);
     assert.match(source, /httpd_start/);
+    assert.match(source, /VB_INSTALL_HTTPD_STACK_SIZE\s+8192/);
+    assert.match(source, /config\.stack_size\s*=\s*VB_INSTALL_HTTPD_STACK_SIZE/);
     assert.match(source, /status_handler/);
     assert.match(source, /apps_handler/);
     assert.match(source, /rescan_handler/);
@@ -423,19 +427,49 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(wifiSource, /wifi_sta_config/);
     assert.match(wifiSource, /wifi_sta_connect/);
     assert.match(wifiSource, /wifi_sta_getip/);
-    assert.match(wifiSource, /nvs_flash_init/);
-    assert.match(wifiSource, /esp_wifi_set_ps/);
-    assert.match(wifiSource, /WIFI_PS_NONE/);
-    assert.match(wifiSource, /esp_event_handler_register/);
-    assert.match(wifiSource, /WIFI_EVENT_STA_START/);
-    assert.match(wifiSource, /WIFI_EVENT_STA_DISCONNECTED/);
-    assert.match(wifiSource, /IP_EVENT_STA_GOT_IP/);
-    assert.match(wifiSource, /s_sta_retry_count/);
-    assert.match(wifiSource, /esp_wifi_connect/);
+    assert.match(wifiSource, /#include "runtime_wifi\.h"/);
+    assert.match(wifiSource, /vb_runtime_wifi_ensure_wifi/);
+    assert.match(wifiSource, /vb_runtime_wifi_start/);
+    assert.match(wifiSource, /vb_runtime_wifi_configure_sta/);
+    assert.match(wifiSource, /vb_runtime_wifi_connect_sta/);
+    assert.match(wifiSource, /vb_runtime_wifi_ensure_netif/);
+    assert.match(wifiSource, /vb_runtime_wifi_sta_netif/);
+    assert.doesNotMatch(wifiSource, /esp_netif_create_default_wifi_sta/);
+    assert.doesNotMatch(wifiSource, /nvs_flash_init/);
     assert.match(runner, /vb_lua_wifi_register\(L\)/);
     assert.match(runner, /vb_lua_http_register\(L\)/);
     assert.match(runner, /vb_lua_sjson_register\(L\)/);
     assert.match(runner, /vb_lua_time_register\(L\)/);
+  });
+
+  it("starts optional runtime Wi-Fi from SD before serving installs", () => {
+    const header = readRequired(runtimeWifiHeaderPath);
+    const source = readRequired(runtimeWifiSourcePath);
+    const cmake = readRequired(cmakePath);
+    const main = readRequired(mainSourcePath);
+
+    assert.match(cmake, /runtime_wifi\.c/);
+    assert.match(cmake, /esp_wifi/);
+    assert.match(cmake, /json/);
+    assert.match(header, /vb_runtime_wifi_start_from_sd/);
+    assert.match(source, /\/sdcard\/runtime\/wifi\.json/);
+    assert.match(source, /\/sdcard\/apps\/smoke_network\/wifi\.json/);
+    assert.match(source, /runtime WiFi config not found/);
+    assert.match(source, /cJSON_Parse/);
+    assert.match(source, /ssid/);
+    assert.match(source, /password/);
+    assert.match(source, /esp_netif_create_default_wifi_sta/);
+    assert.match(source, /esp_wifi_set_mode\(WIFI_MODE_STA\)/);
+    assert.match(source, /esp_wifi_set_config\(WIFI_IF_STA/);
+    assert.match(source, /esp_wifi_start/);
+    assert.match(source, /esp_wifi_connect/);
+    assert.match(source, /runtime sta got ip/);
+    assert.match(main, /#include "runtime_wifi\.h"/);
+    assert.match(main, /vb_runtime_wifi_start_from_sd\(\)/);
+    assert.match(
+      main,
+      /vb_board_start\(&board\)[\s\S]*vb_runtime_wifi_start_from_sd\(\)[\s\S]*vb_install_service_start\(&s_install_context\)/,
+    );
   });
 
   it("registers a minimal LVGL Lua surface", () => {

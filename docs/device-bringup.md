@@ -1722,3 +1722,134 @@ GET /status -> 200 OK
 ```
 
 Result: `/status.state` is board-verified for idle, running, failed, controlled stop back to idle, and recovery from failed back to idle through a successful app launch. `current_app` is visible while running and cleared after app exit.
+
+## 2026-06-15 runtime WiFi autoconnect and native uploader board verification
+
+Phase 5B board closure was tested from branch `phase-5b-board-closure` on top of `5d8d4a7`.
+
+The runtime now starts WiFi from SD before serving installs. The runtime-owned config path is `/sdcard/runtime/wifi.json`; for the current test board it also accepts the existing local smoke config at `/sdcard/apps/smoke_network/wifi.json` so the board can join WiFi without first launching `smoke_network`.
+
+Build and flash evidence:
+
+```text
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x1735c0 bytes.
+Smallest app partition is 0x400000 bytes. 0x28ca40 bytes (64%) free.
+
+idf.py -p /dev/cu.usbmodem111301 flash passed.
+MAC: 10:51:db:80:e2:e8
+Hash of data verified.
+```
+
+Boot and autoconnect evidence:
+
+```text
+I app_init: Project name:     vibeboard_runtime
+I app_init: App version:      5d8d4a7-dirty
+Name: SD64G
+W app_registry: skip app entry that is missing: raw_upload/main.lua
+I app_registry: found 4 apps
+I runtime_wifi: runtime WiFi autoconnect using /sdcard/apps/smoke_network/wifi.json
+I install_service: install service listening on port 8080
+I vibeboard_runtime: VibeBoard Runtime ready: sd=ok apps=4 launcher=ok
+I wifi:connected with 1-306, aid = 3, channel 7, BW20, bssid = 24:b8:da:f4:62:c0
+I runtime_wifi: runtime sta got ip 192.168.1.32
+I esp_netif_handlers: sta ip: 192.168.1.32, mask: 255.255.255.0, gw: 192.168.1.1
+```
+
+Initial HTTP checks after boot:
+
+```text
+GET /status -> 200 OK
+{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+
+GET /apps -> 200 OK
+{"apps":[{"id":"smoke_network","name":"smoke_network","entry":"main.lua"},{"id":"smoke_visual_remote","name":"smoke_visual","entry":"main.lua"},{"id":"smoke_fail","name":"smoke_fail","entry":"main.lua"}]}
+```
+
+Default native HTTP uploader check:
+
+```text
+npm run package:app -- apps/smoke_visual
+packaged smoke_visual
+output dist/apps/smoke_visual
+
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_native
+uploaded smoke_visual_native/app.info 144 bytes
+uploaded smoke_visual_native/assets/icon.bmp 30122 bytes
+uploaded smoke_visual_native/install-notes.txt 205 bytes
+uploaded smoke_visual_native/main.lua 1798 bytes
+uploaded smoke_visual_native/manifest.json 1105 bytes
+uploaded 5 files
+rescan ok; confirmed smoke_visual_native in /apps
+```
+
+The first launch check exposed a board-side HTTPD stack issue. Both `npm run launch:app` and raw `curl -X POST /launch?app=smoke_visual_native` reset the connection because the board rebooted:
+
+```text
+Launch smoke_visual_native failed after 3 attempts: read ECONNRESET
+curl: (56) Recv failure: Connection reset by peer
+
+***ERROR*** A stack overflow in task  has been detected.
+ELF file SHA256: 716283217
+Rebooting...
+```
+
+Root cause: `launch_handler` runs in the ESP-IDF HTTPD task, and the default `HTTPD_DEFAULT_CONFIG().stack_size` is 4096 bytes. The handler rescans SD, copies app metadata, hands off launcher state, and creates the Lua runner task, which overflowed the HTTPD task stack.
+
+Fix:
+
+```text
+#define VB_INSTALL_HTTPD_STACK_SIZE 8192
+config.stack_size = VB_INSTALL_HTTPD_STACK_SIZE;
+```
+
+Post-fix launch check:
+
+```text
+npm run launch:app -- http://192.168.1.32:8080 smoke_visual_native
+launched smoke_visual_native
+
+I app_runner: Lua async launch: smoke_visual
+I app_runner: Lua app start: smoke_visual
+I lua_file: file module app dir: /sdcard/apps/smoke_visual_native
+I app_runner: smoke visual ok S:/apps/smoke_visual_native/assets/icon.bmp
+I lua_tmr: Lua tmr loop start
+I app_runner: smoke visual progress 23
+I app_runner: smoke visual progress 34
+...
+```
+
+Running, stop, rescan, and failure-recovery checks:
+
+```text
+GET /status -> 200 OK
+{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"running","running":true,"current_app":"smoke_visual_native"}
+
+POST /stop -> 200 OK
+{"ok":true,"stopped":true}
+
+GET /status -> 200 OK
+{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+
+POST /rescan -> 200 OK
+{"ok":true,"app_count":4}
+
+npm run launch:app -- http://192.168.1.32:8080 smoke_fail
+launched smoke_fail
+
+I app_runner: smoke fail start
+E app_runner: Lua app failed: /sdcard/apps/smoke_fail/main.lua:2: intentional smoke failure
+I app_runner: Lua async finished: smoke_fail status=ESP_FAIL message=/sdcard/apps/smoke_fail/main.lua:2: intentional smoke failure
+
+GET /status -> 200 OK
+{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"failed","running":false,"current_app":""}
+
+npm run launch:app -- http://192.168.1.32:8080 smoke_network
+launched smoke_network
+
+GET /status -> 200 OK
+{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+```
+
+Result: runtime WiFi autoconnect is board-verified, and the default Node native HTTP uploader plus launch helper are board-verified without `--transport nc`. The HTTPD stack overflow found during launch verification is fixed and regression-guarded by firmware static tests. Stop/rescan/failure/recovery are verified through HTTP and serial logs. Physical touch checks for the native on-screen Stop/Refresh controls and BOOT long-press stop still need a short human screen smoke before the screen-control row can be promoted to fully board-verified.

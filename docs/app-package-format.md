@@ -116,3 +116,24 @@ local now = time.get()
 ```
 
 Without `wifi.json`, `apps/smoke_network` still runs its JSON/time smoke path and prints a clear missing-credentials message. With local credentials deployed on SD, WiFi, HTTP, JSON, and time/NTP are board-verified.
+
+## Runtime WiFi Config
+
+The runtime can also join WiFi during boot so the HTTP install service is reachable before any Lua app is launched.
+
+Runtime-owned local config path:
+
+```text
+/sdcard/runtime/wifi.json
+```
+
+Example:
+
+```json
+{
+  "ssid": "YOUR_WIFI_SSID",
+  "password": "YOUR_WIFI_PASSWORD"
+}
+```
+
+The runtime treats this file as optional. If it is absent or malformed, boot continues to the native launcher and the install service still starts. The current firmware also reads the existing local `/sdcard/apps/smoke_network/wifi.json` as a compatibility fallback for board bring-up; new setups should prefer `/sdcard/runtime/wifi.json`.

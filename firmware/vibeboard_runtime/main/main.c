@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "install_service.h"
 #include "launcher_ui.h"
+#include "runtime_wifi.h"
 
 static const char *TAG = "vibeboard_runtime";
 static vb_app_registry_result_t s_apps;
@@ -26,6 +27,11 @@ void app_main(void)
     }
 
     if (board.sd_ok) {
+        esp_err_t wifi_err = vb_runtime_wifi_start_from_sd();
+        if (wifi_err != ESP_OK) {
+            ESP_LOGW(TAG, "runtime WiFi unavailable: %s", esp_err_to_name(wifi_err));
+        }
+
         s_install_context.sd_ok = board.sd_ok;
         s_install_context.sd_error = board.sd_error;
         s_install_context.registry = &s_apps;
