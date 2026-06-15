@@ -61,7 +61,9 @@ static void rebuild_launcher_unlocked(vb_app_registry_result_t *apps, esp_err_t 
 
 static void deactivate_launcher_unlocked(void)
 {
+    taskENTER_CRITICAL(&s_launcher_state_mux);
     s_launcher_active = false;
+    taskEXIT_CRITICAL(&s_launcher_state_mux);
     s_status_label = NULL;
     for (int i = 0; i < VB_APP_REGISTRY_MAX_APPS; i++) {
         s_app_buttons[i] = NULL;
@@ -107,6 +109,15 @@ static void clear_task_running(bool *flag)
     taskENTER_CRITICAL(&s_launcher_state_mux);
     *flag = false;
     taskEXIT_CRITICAL(&s_launcher_state_mux);
+}
+
+static bool is_launcher_active(void)
+{
+    bool active;
+    taskENTER_CRITICAL(&s_launcher_state_mux);
+    active = s_launcher_active;
+    taskEXIT_CRITICAL(&s_launcher_state_mux);
+    return active;
 }
 
 static void update_status_unlocked(const char *prefix, const char *app_id)
@@ -186,12 +197,7 @@ static void launch_app(const vb_app_registry_entry_t *app, bool from_task)
 
     esp_err_t err = vb_app_runner_launch_async(app);
     if (err == ESP_OK) {
-        if (from_task) {
-            deactivate_launcher_from_task();
-        } else {
-            deactivate_launcher_unlocked();
-        }
-        start_return_to_launcher_task();
+        vb_launcher_ui_note_async_launch();
     } else {
         if (from_task) {
             set_status_from_task(esp_err_to_name(err));
@@ -275,7 +281,8 @@ static void update_selection_unlocked(void)
 static void select_next_from_task(void)
 {
     lvgl_port_lock(0);
-    if (!s_launcher_active) {
+    bool launcher_active = is_launcher_active();
+    if (!launcher_active) {
         lvgl_port_unlock();
         ESP_LOGI(TAG, "launcher inactive; BOOT short press ignored");
         return;
@@ -292,7 +299,10 @@ static void select_next_from_task(void)
 
 static void launch_selected_from_task(void)
 {
-    if (!s_launcher_active) {
+    lvgl_port_lock(0);
+    bool launcher_active = is_launcher_active();
+    if (!launcher_active) {
+        lvgl_port_unlock();
         if (vb_app_runner_is_running()) {
             ESP_LOGI(TAG, "launcher inactive; BOOT long press: stop app");
             esp_err_t err = vb_app_runner_stop();
@@ -308,7 +318,6 @@ static void launch_selected_from_task(void)
         refresh_launcher_from_task(status);
         return;
     }
-    lvgl_port_lock(0);
     if (s_rendered_app_count <= 0) {
         lvgl_port_unlock();
         return;
@@ -565,7 +574,9 @@ static void rebuild_launcher_unlocked(vb_app_registry_result_t *apps, esp_err_t 
     s_scan_err = scan_err;
     s_selected_index = 0;
     memset(s_app_buttons, 0, sizeof(s_app_buttons));
+    taskENTER_CRITICAL(&s_launcher_state_mux);
     s_launcher_active = true;
+    taskEXIT_CRITICAL(&s_launcher_state_mux);
 
     lv_obj_t *screen = lv_scr_act();
     lv_obj_clean(screen);
@@ -644,4 +655,10 @@ void vb_launcher_ui_show(vb_app_registry_result_t *apps, esp_err_t scan_err)
     lvgl_port_unlock();
 
     start_boot_key_task();
+}
+
+void vb_launcher_ui_note_async_launch(void)
+{
+    deactivate_launcher_from_task();
+    start_return_to_launcher_task();
 }

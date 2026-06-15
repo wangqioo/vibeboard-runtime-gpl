@@ -191,13 +191,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /case\s+VB_APP_RUNNER_STATE_RUNNING:\s*return\s+"running"/);
     assert.match(runner, /case\s+VB_APP_RUNNER_STATE_STOPPING:\s*return\s+"stopping"/);
     assert.match(runner, /case\s+VB_APP_RUNNER_STATE_FAILED:\s*return\s+"failed"/);
-    assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_STARTING\)/);
-    assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_RUNNING\)/);
-    assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_STOPPING\)/);
+    assert.match(runner, /s_runner_state_mux/);
+    assert.match(runner, /s_runner_state\.lifecycle_state\s*=\s*VB_APP_RUNNER_STATE_STARTING/);
+    assert.match(runner, /set_running_if_starting/);
+    assert.match(runner, /s_runner_state\.lifecycle_state\s*=\s*VB_APP_RUNNER_STATE_STOPPING/);
     assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_FAILED\)/);
     assert.match(runner, /set_lifecycle_state\(VB_APP_RUNNER_STATE_IDLE\)/);
     assert.match(runner, /stop_requested[\s\S]*VB_APP_RUNNER_STATE_IDLE/);
-    assert.match(runner, /finish_lifecycle_state\(status,\s*was_stop_requested\)/);
+    assert.match(runner, /was_stop_requested\s*=\s*s_runner_state\.stop_requested[\s\S]*s_runner_state\.last_status\s*=\s*status/);
+    assert.match(runner, /s_runner_state\.last_message[\s\S]*s_runner_state\.lifecycle_state\s*=\s*VB_APP_RUNNER_STATE_IDLE/);
     assert.match(runner, /VB_LUA_TASK_STACK_SIZE/);
     assert.match(runner, /xTaskCreatePinnedToCore/);
     assert.match(runner, /vb_app_registry_entry_t/);
@@ -242,9 +244,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
   it("returns to the native launcher after stop or async app failure", () => {
     const source = readRequired(launcherSourcePath);
+    const header = readRequired(launcherHeaderPath);
+    const installService = readRequired(installServiceSourcePath);
 
     assert.match(source, /start_return_to_launcher_task/);
     assert.match(source, /return_to_launcher_task/);
+    assert.match(header, /vb_launcher_ui_note_async_launch/);
+    assert.match(source, /vb_launcher_ui_note_async_launch/);
+    assert.match(installService, /#include "launcher_ui\.h"/);
+    assert.match(installService, /vb_app_runner_launch_async\(&selected_app\)[\s\S]*vb_launcher_ui_note_async_launch/);
     assert.match(source, /vb_app_runner_is_running/);
     assert.match(source, /vb_app_runner_current_state_name/);
     assert.match(source, /vb_app_runner_last_message/);
@@ -297,8 +305,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /deactivate_launcher_unlocked/);
     assert.match(source, /deactivate_launcher_from_task/);
     assert.match(source, /s_app_buttons\[i\]\s*=\s*NULL/);
-    assert.match(source, /if\s*\(!s_launcher_active\)\s*\{/);
-    assert.match(source, /vb_app_runner_launch_async\(app\)[\s\S]*deactivate_launcher/);
+    assert.match(source, /is_launcher_active/);
+    assert.match(source, /if\s*\(!launcher_active\)\s*\{/);
+    assert.match(source, /vb_app_runner_launch_async\(app\)[\s\S]*vb_launcher_ui_note_async_launch/);
   });
 
   it("keeps Lua alive for interval callbacks", () => {

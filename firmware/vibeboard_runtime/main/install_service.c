@@ -13,6 +13,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "launcher_ui.h"
 
 static const char *TAG = "install_service";
 
@@ -297,6 +298,7 @@ static esp_err_t launch_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
         return ESP_FAIL;
     }
+    vb_launcher_ui_note_async_launch();
 
     char body[128];
     snprintf(body, sizeof(body), "{\"ok\":true,\"launched\":\"%s\"}\n", selected_app.id);
