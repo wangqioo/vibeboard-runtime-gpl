@@ -19,6 +19,7 @@
 
 static const char *TAG = "install_service";
 #define VB_INSTALL_HTTPD_STACK_SIZE 8192
+#define VB_INSTALL_HTTPD_MAX_HANDLERS 12
 #define VB_STAGING_PATH "/sdcard/.staging"
 #define VB_STAGING_BACKUP_SUFFIX ".previous"
 
@@ -757,6 +758,7 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
     config.stack_size = VB_INSTALL_HTTPD_STACK_SIZE;
+    config.max_uri_handlers = VB_INSTALL_HTTPD_MAX_HANDLERS;
     config.uri_match_fn = httpd_uri_match_wildcard;
 
     err = httpd_start(&s_server, &config);

@@ -142,6 +142,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /httpd_start/);
     assert.match(source, /VB_INSTALL_HTTPD_STACK_SIZE\s+8192/);
     assert.match(source, /config\.stack_size\s*=\s*VB_INSTALL_HTTPD_STACK_SIZE/);
+    assert.match(source, /VB_INSTALL_HTTPD_MAX_HANDLERS\s+12/);
+    assert.match(source, /config\.max_uri_handlers\s*=\s*VB_INSTALL_HTTPD_MAX_HANDLERS/);
     assert.match(source, /status_handler/);
     assert.match(source, /apps_handler/);
     assert.match(source, /rescan_handler/);
