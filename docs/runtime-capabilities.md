@@ -8,7 +8,7 @@ This document separates implemented API, build verification, and board verificat
 
 | Status | Meaning |
 | --- | --- |
-| `board-verified` | Ran on the LCKFB ESP32-S3 board with serial evidence. |
+| `board-verified` | Ran on the LCKFB ESP32-S3 board with serial, HTTP, or manual screen evidence. |
 | `build-verified` | Compiles in ESP-IDF and has static/package tests, but has not been smoke-tested on board yet. |
 | `planned` | Documented target, not implemented yet. |
 
@@ -33,7 +33,7 @@ This document separates implemented API, build verification, and board verificat
 | Positioning and flags | `lv_obj_set_pos`, `lv_obj_set_x`, `lv_obj_set_y`, `lv_obj_add_flag`, `lv_obj_clear_flag`, `LV_OBJ_FLAG_SCROLLABLE`, `LV_OBJ_FLAG_HIDDEN` | `board-verified` | `apps/smoke_assets` ran on board and returned `Lua app ok`. |
 | Label long modes | `lv_label_set_long_mode`, `LV_LABEL_LONG_CLIP`, `LV_LABEL_LONG_WRAP`, `LV_LABEL_LONG_SCROLL_CIRCULAR` | `board-verified` | `apps/smoke_assets` ran on board and returned `Lua app ok`. |
 | Asset paths and image object basics | `lv_resolve_asset_path`, `lv_asset_exists`, `lv_img_create`, `lv_img_set_src`, LVGL `S:` filesystem drive | `board-verified` | `apps/smoke_assets` verified `S:/apps/smoke_assets/assets/icon.bin`, `asset fs ok`, and `Lua app ok` on board. |
-| BMP image decoder | `CONFIG_LV_USE_BMP=y`, `lv_extra_init`, BMP through `lv_img_set_src` | `board-verified` | `apps/smoke_visual` started on board, resolved `S:/apps/smoke_visual/assets/icon.bmp`, and kept running without Lua/runtime errors. Visual correctness still needs human screen confirmation. |
+| BMP image decoder | `CONFIG_LV_USE_BMP=y`, `lv_extra_init`, BMP through `lv_img_set_src` | `board-verified` | `apps/smoke_visual` started on board, resolved `S:/apps/smoke_visual/assets/icon.bmp`, kept running without Lua/runtime errors, and the physical screen smoke showed the visual app image/progress UI. |
 | Common widgets | `lv_btn_create`, `lv_bar_create`, `lv_bar_set_range`, `lv_bar_set_value`, `LV_ANIM_OFF`, `LV_ANIM_ON` | `board-verified` | `apps/smoke_visual` ran on board and logged timer-driven progress updates from 0 to 100 repeatedly. |
 
 ## Network, JSON, And Time
@@ -41,6 +41,7 @@ This document separates implemented API, build verification, and board verificat
 | Capability | APIs | Status | Evidence |
 | --- | --- | --- | --- |
 | WiFi STA | `wifi.mode`, `wifi.start`, `wifi.sta.config`, `wifi.sta.connect`, `wifi.sta.getip` | `board-verified` | `apps/smoke_network` connected to `1-306`, logged `sta got ip 192.168.1.32`, and Lua read the IP. |
+| Runtime WiFi autoconnect | `vb_runtime_wifi_start_from_sd`, `/sdcard/runtime/wifi.json`, compatibility read from `/sdcard/apps/smoke_network/wifi.json` | `board-verified` | Boot logged `runtime WiFi autoconnect using /sdcard/apps/smoke_network/wifi.json`, joined `1-306`, and logged `runtime sta got ip 192.168.1.32` before any app was manually launched. |
 | HTTP client | `http.get`, `http.post` | `board-verified` | `apps/smoke_network` called `http.get("http://httpbin.org/get")`, logged `http status 200`, and read 243 body bytes. |
 | JSON | `sjson.decode`, `sjson.encode` | `board-verified` | `apps/smoke_network` decoded `wifi.json` and encoded `{"app":"smoke_network","city":"Shanghai"}` on board. |
 | Time/NTP | `time.get`, `time.settimezone`, `time.initntp` | `board-verified` | `apps/smoke_network` ran no-credentials and WiFi-credentials paths without `Invalid mbox` and logged `time now ...`. |
@@ -54,13 +55,13 @@ This document separates implemented API, build verification, and board verificat
 | App lifecycle status | `GET /status` field `state` with `idle`, `starting`, `running`, `stopping`, `failed`; compatibility fields `running` and `current_app` remain | `board-verified` | Board HTTP checks verified idle, running with `current_app=smoke_visual_remote`, controlled stop back to idle, intentional Lua failure as `failed`, and recovery from failed through `smoke_network`. |
 | App listing | `GET /apps` | `board-verified` | Raw HTTP GET returned `smoke_network` and `raw_upload` entries from the live SD registry. |
 | App rescan | `POST /rescan` | `board-verified` | Raw HTTP POST returned `{"ok":true,"app_count":2}` after re-running `vb_app_registry_scan`. |
-| Mac uploader tool | `npm run upload:app -- http://<ip>:8080 dist/apps/<app-id> <app-id>` | `board-verified` | CLI uses an `nc` transport for the current Mac/router path, uploaded `smoke_visual_remote` to the board, called `/rescan`, and confirmed the app through `/apps`. |
+| Mac uploader tool | `npm run upload:app -- http://<ip>:8080 dist/apps/<app-id> <app-id>` | `board-verified` | Default Node native HTTP uploaded `smoke_visual_native` to the board, uploaded 5 files, called `/rescan`, and confirmed the app through `/apps` without `--transport nc`. |
 | App launch | `POST /launch?app=<id>` | `board-verified` | Raw HTTP POST returned `{"ok":true,"launched":"smoke_visual_remote"}`; serial logs showed `Lua async launch: smoke_visual`, app-local SD asset resolution, and repeated progress updates. |
-| Mac launch tool | `npm run launch:app -- http://<ip>:8080 <app-id>` | `board-verified` | CLI reached the board; after `smoke_visual_remote` was already running, the board returned `500 app already running`, proving the launch endpoint and single-runner guard path. |
+| Mac launch tool | `npm run launch:app -- http://<ip>:8080 <app-id>` | `board-verified` | Default Node native HTTP launched `smoke_visual_native`, `smoke_fail`, and `smoke_network` without `--transport nc`; the launch check exposed and then verified the HTTPD 4096-byte stack overflow fix by increasing the install service HTTPD stack to 8192 bytes. |
 | App stop | `POST /stop`, `vb_app_runner_stop`, `vb_app_runner_wait_stopped` | `board-verified` | Switching away from `smoke_visual_remote` logged `Lua stop requested`, `Lua tmr loop stop requested`, and `message=stopped`; idle `POST /stop` returned `{"ok":true,"stopped":false}`. |
 | App switch | `POST /launch?app=<new-id>` while another app is running | `board-verified` | `POST /launch?app=smoke_network` while `smoke_visual_remote` was running returned `200 OK`; serial logs showed visual stopped, then `smoke_network` launched and completed with `ESP_OK`. |
 | Device Launcher | native LVGL app list, tap-to-launch, BOOT short-select/long-launch via `vb_launcher_ui_show` | `board-verified` | Board booted `vibeboard_runtime` from `factory 0x10000`, skipped missing `raw_upload/main.lua`, reported `VibeBoard Runtime ready: sd=ok apps=2 launcher=ok`; touch tap-to-launch works on the device screen, and BOOT short/long press provides a hardware fallback. |
-| Phase 5B launcher lifecycle controls | native launcher stop control, refresh/rescan control, return-to-launcher after stop or async failure, BOOT long-press stop while launcher is inactive, screen failure feedback from `vb_app_runner_last_message` | `build-verified` | Static tests cover `exposes the last Lua runner result for launcher failure feedback`, `keeps native launcher refresh and stop controls on the device screen`, and `returns to the native launcher after stop or async app failure`; local `npm test`, `npm run test:firmware-static`, `idf.py build`, and `git diff --check` passed before this documentation update. Board smoke still needs to verify stop, refresh, return-to-launcher, and failure feedback behavior on hardware. |
+| Phase 5B launcher lifecycle controls | native launcher stop control, refresh/rescan control, return-to-launcher after stop or async failure, BOOT long-press stop while launcher is inactive, screen failure feedback from `vb_app_runner_last_message` | `board-verified` | HTTP and serial board checks verified stop, rescan, return to idle after stop, failed state from `smoke_fail`, and recovery through `smoke_network`. Manual physical screen smoke confirmed native Stop, Refresh, return-to-launcher, readable failure feedback, and BOOT long-press stop. |
 
 ## Planned Runtime Modules
 

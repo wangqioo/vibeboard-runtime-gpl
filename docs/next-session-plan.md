@@ -9,7 +9,7 @@ eafbf7b docs: add next session plan
 ```
 
 The local work after this baseline fixes a launcher BOOT-after-launch crash found during board verification.
-The current branch also implements Phase 5B launcher lifecycle controls; those controls are build-verified, but not yet board-verified.
+The current branch also implements Phase 5B launcher lifecycle controls, runtime WiFi autoconnect, and the native HTTP uploader/launch board check.
 
 ## What Is Done
 
@@ -35,9 +35,18 @@ The current branch also implements Phase 5B launcher lifecycle controls; those c
   - stopping an app or observing an async app failure returns to the native launcher;
   - launcher failure feedback uses the runner last-result message;
   - BOOT long press can stop a running app while the launcher is inactive.
-- Uploader reliability cleanup is implemented and locally tested:
+- Runtime WiFi autoconnect is implemented and board-verified:
+  - boot reads `/sdcard/runtime/wifi.json`;
+  - the current test board also accepts the existing local `/sdcard/apps/smoke_network/wifi.json`;
+  - boot logs `runtime sta got ip 192.168.1.32` without manually launching `smoke_network`.
+- Uploader reliability cleanup is implemented and board-verified:
   - `upload:app` and `launch:app` default to Node native HTTP;
   - `nc` remains available as an explicit `--transport nc` fallback.
+- Native HTTP upload/launch board check passed without `--transport nc`:
+  - uploaded `smoke_visual_native`;
+  - `/rescan` and `/apps` confirmed it;
+  - launched `smoke_visual_native`, `smoke_fail`, and `smoke_network`.
+- Launch verification exposed a board-side HTTPD stack overflow in `/launch`; the install service now sets `config.stack_size = 8192`, and the post-fix board launch check passed.
 
 ## Last Verified Commands
 
@@ -49,46 +58,33 @@ idf.py build
 esptool write_flash
 ```
 
-The BOOT-after-launch crash fix and lifecycle `state` checks are board-verified. The Phase 5B launcher lifecycle controls are build-verified by firmware static tests and local firmware build, but still need board smoke on hardware.
+The BOOT-after-launch crash fix, lifecycle `state` checks, runtime WiFi autoconnect, native HTTP upload/launch path, and Phase 5B lifecycle controls are board-verified. Verification includes HTTP status checks, serial logs, and manual physical screen smoke for Stop, Refresh, return-to-launcher, readable failure feedback, and BOOT long-press stop.
 
 ## Immediate Next Work
 
-### 1. Board smoke for launcher lifecycle controls
+### 1. Deployment productization
 
-Verify the new device-screen controls on the physical board:
+Turn the now-verified upload/launch path into a more complete app deployment workflow:
 
-- stop current app;
-- refresh/rescan app list;
-- return to launcher after an app is running;
-- show launch failure on screen with `apps/smoke_fail`;
-- BOOT long-press stop while a Lua app owns the screen.
+- define app delete/uninstall semantics;
+- add a staging/commit model for multi-file upload failures;
+- consider a small browser UI on top of `/apps`, `/install`, `/rescan`, `/launch`, and `/stop`;
+- decide where persistent runtime WiFi config should live outside the current compatibility fallback.
 
 Suggested ownership:
 
 ```text
-docs/device-bringup.md
-docs/runtime-capabilities.md
+tools/app-uploader/
+firmware/vibeboard_runtime/main/install_service.c
+docs/app-package-format.md
 ```
 
-Expected result: record board evidence for stop, refresh, return-to-launcher, and failure-feedback behavior; then promote the Phase 5B launcher lifecycle controls from `build-verified` to `board-verified`.
-
-### 2. Upload reliability board check
-
-Confirm the native HTTP uploader path on the same Mac/router setup that previously needed raw `curl`:
-
-```text
-npm run upload:app -- http://<board-ip>:8080 dist/apps/smoke_visual smoke_visual_remote
-npm run launch:app -- http://<board-ip>:8080 smoke_visual_remote
-```
-
-Expected result: upload, `/rescan`, `/apps` confirmation, and `/launch` all work without `--transport nc`.
+Expected result: make deployment reliable enough for repeated app iteration without SD-card removal and without relying on manual recovery steps.
 
 ## Parallelization Guidance
 
 Safe parallel tracks now:
 
-- Board smoke for launcher lifecycle controls.
-- Uploader reliability board check.
 - Deployment productization planning: delete, staging/commit, browser UI.
 - Lua input-event design: `touch.on`, `key.on`.
 
