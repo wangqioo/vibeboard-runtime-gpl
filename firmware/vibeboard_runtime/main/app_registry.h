@@ -10,7 +10,7 @@ extern "C" {
 #define VB_APPS_PATH "/sdcard/apps"
 #define VB_APP_NAME_MAX 64
 #define VB_APP_PATH_MAX 192
-#define VB_APP_REGISTRY_MAX_APPS 12
+#define VB_APP_REGISTRY_MAX_APPS 32
 
 typedef struct {
     char id[VB_APP_NAME_MAX];

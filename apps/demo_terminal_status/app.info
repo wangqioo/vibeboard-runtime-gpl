@@ -1,0 +1,4 @@
+name = Terminal Status
+entry = main.lua
+description = Retro green terminal system status screen
+capabilities = lvgl,timer

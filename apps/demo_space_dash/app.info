@@ -1,0 +1,4 @@
+name = Space Dash
+entry = main.lua
+description = Animated spaceship dashboard with gauges
+capabilities = lvgl,timer

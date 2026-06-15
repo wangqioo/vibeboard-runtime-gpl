@@ -109,6 +109,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(header, /VB_APPS_PATH\s+"\/sdcard\/apps"/);
     assert.match(header, /VB_APP_REGISTRY_MAX_APPS/);
+    assert.match(header, /VB_APP_REGISTRY_MAX_APPS\s+32/);
     assert.match(header, /vb_app_registry_entry_t/);
     assert.match(header, /apps\[/);
     assert.match(source, /VB_APPS_PATH/);
@@ -590,6 +591,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /vb_lua_lvgl_widgets_register/);
     assert.match(source, /vb_lua_lvgl_fs_register/);
     assert.match(source, /vb_lua_lvgl_store_object/);
+    assert.match(source, /register_lvgl_module/);
+    assert.match(source, /package/);
+    assert.match(source, /loaded/);
+    assert.match(source, /lvgl/);
+    assert.match(source, /lua_setglobal\(L,\s*"lvgl"\)/);
+    assert.match(source, /LV_ALIGN_CENTER/);
+    assert.match(source, /ALIGN_CENTER/);
+    assert.match(source, /lv_scr_act/);
+    assert.match(source, /scr_act/);
     assert.match(internal, /vb_lua_lvgl_check_object_id/);
     assert.match(internal, /vb_lua_lvgl_resolve_object/);
     assert.match(internal, /vb_lua_lvgl_store_object/);

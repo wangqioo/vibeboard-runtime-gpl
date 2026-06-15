@@ -1,0 +1,4 @@
+name = Lucky Card
+entry = main.lua
+description = Rotating pocket fortune and tiny prompts
+capabilities = lvgl,timer

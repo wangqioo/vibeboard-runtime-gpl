@@ -1,0 +1,4 @@
+name = Night Light
+entry = main.lua
+description = Warm bedside night-light screen with slow breathing glow
+capabilities = lvgl,timer

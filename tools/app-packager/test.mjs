@@ -122,9 +122,21 @@ describe("packageApp", () => {
 });
 
 describe("packageDemoApps", () => {
-  it("packages the three demo apps", () => {
+  it("packages the demo apps", () => {
     const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
     const result = packageDemoApps({ repoRoot });
-    assert.deepEqual(result.map((item) => item.appId).sort(), ["nesgame", "voice_ai", "weather"]);
+    assert.deepEqual(result.map((item) => item.appId).sort(), [
+      "demo_digital_clock",
+      "demo_focus_timer",
+      "demo_lucky_card",
+      "demo_neon_dash",
+      "demo_night_light",
+      "demo_pixel_pet",
+      "demo_space_dash",
+      "demo_terminal_status",
+      "nesgame",
+      "voice_ai",
+      "weather"
+    ]);
   });
 });

@@ -1,162 +1,192 @@
 # Next Session Plan
 
-Date: 2026-06-15
+Date: 2026-06-16
 
 ## Current Baseline
 
-```text
-b9da3dc feat: add browser AI web console
-```
+Branch: `app-delete-uninstall`
 
-The current branch has the first end-to-end productization loop on real hardware:
+Current hardware baseline:
 
 ```text
 runtime WiFi
-  -> board-served Web Console
-  -> app list/status
-  -> staged upload/commit
+  -> board-served Web Console on :8080
+  -> staged app upload/commit
   -> launch/stop/delete
-  -> browser-side AI app creation path
+  -> Lua/LVGL timer-driven demo apps
+  -> style sample library installed on SD
 ```
+
+Latest board IP used during verification:
+
+```text
+http://192.168.1.32:8080
+```
+
+The board firmware was rebuilt and flashed after increasing the app registry capacity from 12 to 32 entries. `/apps` has been verified with 13 app entries.
 
 ## What Is Done
 
-- Phase 5A native launcher MVP is board-verified.
-- Phase 5B lifecycle controls are board-verified:
-  - native Stop control;
-  - native Refresh control;
-  - return to launcher after stop;
-  - readable failure feedback;
-  - BOOT long-press stop while a Lua app owns the screen.
-- Runtime WiFi autoconnect is board-verified:
-  - preferred config path is `/sdcard/runtime/wifi.json`;
-  - the current board still accepts `/sdcard/apps/smoke_network/wifi.json` as a compatibility fallback.
-- HTTP lifecycle service is board-verified:
-  - `GET /status`;
-  - `GET /apps`;
-  - `POST /rescan`;
-  - `POST /launch`;
-  - `POST /stop`;
-  - `POST /delete`.
-- App delete/uninstall is board-verified:
-  - recursive app directory deletion;
-  - registry rescan after deletion;
-  - `409 app is running` protection.
-- Staged upload/commit is board-verified:
-  - `/discard -> /stage -> /commit -> /apps`;
-  - staged path validation;
-  - `app.info` and entry-file validation during commit;
-  - same-filesystem replacement of installed apps;
-  - `409 app is running` protection.
-- Browser Web Console is implemented and board-verified for delivery:
-  - `GET /` returns the console HTML;
-  - app list/status APIs are reachable from the same board service;
-  - launch, stop, delete, and manual upload controls are wired to the HTTP API.
-- Browser AI app creation is implemented:
-  - direct browser call to OpenAI Responses API;
-  - API key stays in the browser and is not sent to the ESP32;
-  - strict JSON schema output;
-  - client-side validation of app id, paths, file types, and required files;
-  - staged upload and commit after generation.
+- Base VibeBoard runtime firmware is restored and running from factory app offset `0x10000`.
+- Runtime WiFi autoconnect uses `/sdcard/runtime/wifi.json` on the current board.
+- HTTP install service is reachable on port `8080`.
+- Browser Web Console delivery and app management remain in place.
+- `require("lvgl")` now registers a minimal `lvgl` module table and common short aliases such as `obj_create`, `label_create`, `ALIGN_CENTER`, and `ANIM_ON`.
+- App registry capacity is now `VB_APP_REGISTRY_MAX_APPS 32`, so the demo library can grow beyond 12 entries.
+- Style demo apps are package-validated, packaged by `package:demos`, uploaded to the board, and launch-verified:
+
+```text
+demo_digital_clock    black background, large white 7-segment digits
+demo_terminal_status  retro green terminal status screen
+demo_neon_dash        neon cyber dashboard
+demo_pixel_pet        blocky pixel pet
+demo_night_light      warm bedside night light
+demo_focus_timer      focus countdown
+demo_lucky_card       rotating inspiration card
+demo_space_dash       spaceship dashboard
+```
 
 ## Last Verified Commands
 
 ```text
+npm run test:validator
+npm run validate:apps
+npm run test:packager
+npm run package:demos
 npm test
 git diff --check
-idf.py build
-esptool write_flash
-curl http://192.168.1.32:8080/
-curl http://192.168.1.32:8080/status
-curl http://192.168.1.32:8080/apps
-open http://192.168.1.32:8080/
+idf.py -p /dev/cu.usbmodem111301 build flash
+curl -s http://192.168.1.32:8080/status
+curl -s http://192.168.1.32:8080/apps
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/<app-id> <app-id>
+npm run launch:app -- http://192.168.1.32:8080 <app-id>
 ```
 
-Board delivery evidence:
+Final board status from the last verification:
+
+```json
+{"sd":true,"app_count":13,"first_app":"smoke_network","install":"ok","state":"running","running":true,"current_app":"demo_night_light"}
+```
+
+## Important Lesson
+
+Free-form AI-generated Lua is not reliable enough as the default app creation path.
+
+Observed failures:
 
 ```text
-GET / returned HTML containing:
-VibeBoard Runtime
-AI Create App
-OpenAI API Key
-
-GET /status returned:
-{"sd":true,"app_count":4,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+module 'lvgl' not found
+attempt to call a nil value (field 'obj_center')
 ```
+
+The `require("lvgl")` compatibility patch helps with one class of failures, but it does not solve the deeper problem: the model can invent unsupported LVGL APIs. The default AI path should become template/DSL based.
 
 ## Immediate Next Work
 
-### 1. Board-Verify Formal WiFi Configuration
+### 1. Commit And Push The Current Baseline
 
-Current state: the formal Mac CLI entry writes `/sdcard/runtime/wifi.json` through the mounted SD card root:
+Before starting new feature work, commit the current verified baseline:
+
+- style demo apps;
+- package/validator updates;
+- `require("lvgl")` compatibility;
+- app registry capacity increase to 32;
+- development plan updates.
+
+Recommended verification before commit:
 
 ```bash
-npm run configure:wifi -- /Volumes/VIBEBOARD --ssid "YOUR_WIFI_SSID" --password "YOUR_WIFI_PASSWORD"
+npm test
+npm run validate:apps
+npm run package:demos
+git diff --check
 ```
 
-The board still accepts `/sdcard/apps/smoke_network/wifi.json` as a temporary compatibility fallback.
+### 2. Build Safe AI Generation Mode v1
+
+Goal: make browser AI create reliable apps by having AI output structured JSON, not arbitrary Lua.
+
+Default templates for v1:
+
+```text
+info_card
+timer_card
+digital_clock
+status_screen
+```
+
+Supported styles for `status_screen`:
+
+```text
+terminal_green
+neon_dash
+pixel_pet
+night_light
+space_dash
+```
+
+Implementation outline:
+
+- define a browser-side JSON schema for safe app specs;
+- update the AI prompt to request only that JSON;
+- add deterministic template generators that produce `app.info` and `main.lua`;
+- run client-side validation before staged upload;
+- keep free-form Lua generation only as an Advanced/Experimental option.
+
+Success criteria:
+
+- generated Lua uses only known `lvgl,timer` APIs;
+- invalid schema fails before upload;
+- generated app can be uploaded with `/discard -> /stage -> /commit`;
+- generated app launches without unsupported LVGL API errors;
+- Web Console shows the reason when generation or deployment fails.
+
+### 3. Board-Verify Formal WiFi Configuration
+
+Current state: the formal Mac CLI writes `/sdcard/runtime/wifi.json`.
 
 Next slice:
 
 - mount the SD card on the Mac;
 - run `npm run configure:wifi`;
-- boot the board and confirm the log uses `/sdcard/runtime/wifi.json`;
+- boot the board;
+- confirm the log uses `/sdcard/runtime/wifi.json`;
 - confirm `http://<board-ip>:8080/` loads without launching `smoke_network`;
-- after that evidence exists, remove or explicitly gate the smoke-app fallback.
+- then remove, gate, or clearly document the `smoke_network/wifi.json` fallback.
 
-Expected result: a new user can put the board on WiFi through the documented runtime config path without relying on a smoke app convention.
+### 4. Real Safe AI Smoke
 
-### 2. Real AI-Created App Smoke
+After Safe AI v1 exists:
 
-Current state: the Web Console AI path is implemented and statically tested. The board serves the console, but a real prompt-to-running-app smoke with an API key has not been recorded in docs.
+- open the Web Console;
+- enter a temporary API key;
+- ask for a terminal status screen, clock, or night light;
+- confirm AI returns safe JSON;
+- confirm staged upload and launch;
+- record prompt, generated spec, `/apps`, `/status`, and known limitations in `docs/device-bringup.md`.
 
-Next slice:
+### 5. Lua Input Events
 
-- open `http://192.168.1.32:8080/`;
-- enter a temporary OpenAI API key;
-- prompt for a simple timer/card app;
-- confirm generated files upload through staged commit;
-- launch the app;
-- record `/apps`, `/status`, and any browser/network constraints.
+Do this after Safe AI v1:
 
-Expected result: documented evidence that the browser AI workflow creates and runs a real SD Lua app.
+```lua
+touch.on("tap", function(event)
+  print(event.x, event.y)
+end)
 
-### 3. Lua Input Events
+key.on("boot", function(event)
+  print(event.action)
+end)
+```
 
-Current state: touch works for the native launcher, but Lua apps do not have touch/key event APIs.
+Expected deliverable:
 
-Next slice:
-
-- design a small input API, likely `touch.on(...)` and `key.on(...)`;
-- add `apps/smoke_touch`;
-- verify quick taps and app switching clean up handlers.
-
-Expected result: AI-generated apps can build real interactive screens instead of only timer-driven UI.
-
-### 4. Runtime/API/App Compatibility
-
-Current state: package validation and docs define the supported API surface, but the runtime does not expose a versioned compatibility contract.
-
-Next slice:
-
-- expose runtime API/schema version in `/status` or a new endpoint;
-- add `requires_runtime` or equivalent package metadata;
-- reject incompatible apps before launch or commit;
-- make browser AI prompts include the current supported API list.
-
-Expected result: generated apps can fail early with `Runtime update required` instead of failing at Lua runtime.
-
-## Parallelization Guidance
-
-Safe parallel tracks:
-
-- WiFi config board verification and fallback removal;
-- real Web Console AI smoke and documentation;
-- Lua input-event design;
-- compatibility/version metadata.
-
-Avoid starting native module/NES work until input events and compatibility contracts are stable.
+- `apps/smoke_touch`;
+- handler cleanup on app stop/switch;
+- validator and docs updated.
 
 ## Deferred
 
-Do not implement Lua `app.*` APIs yet. Keep them deferred until there is a concrete Lua-side workflow such as a Lua desktop, in-app navigation, or app-to-app handoff.
+- Do not expand free-form AI Lua as the main path.
+- Do not implement Lua `app.*` APIs until there is a concrete Lua-side workflow.
+- Do not start native module/NES work until input events and compatibility contracts are stable.

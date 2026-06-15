@@ -1,6 +1,6 @@
 # Runtime Capabilities
 
-更新时间：2026-06-15
+更新时间：2026-06-16
 
 This document separates implemented API, build verification, and board verification. An API is not treated as fully done until it has a real device log in `docs/device-bringup.md`.
 
@@ -30,6 +30,7 @@ This document separates implemented API, build verification, and board verificat
 | Sizing and alignment | `lv_obj_set_size`, `lv_obj_set_width`, `lv_obj_set_height`, `lv_obj_align` | `board-verified` | `apps/smoke_ui` layout displayed. |
 | Basic styles | `lv_obj_set_style_bg_color`, `lv_obj_set_style_text_color`, `lv_obj_set_style_radius`, `lv_obj_set_style_pad_all`, `lv_obj_set_style_border_width`, `lv_obj_set_style_border_color` | `board-verified` | `apps/smoke_ui` card displayed. |
 | Constants | `LV_ALIGN_CENTER`, `LV_ALIGN_TOP_LEFT`, `LV_ALIGN_TOP_MID`, `LV_ALIGN_BOTTOM_LEFT` | `board-verified` | `apps/smoke_ui` layout displayed. |
+| LVGL module compatibility | `require("lvgl")`, global `lvgl`, aliases such as `obj_create`, `label_create`, `ALIGN_CENTER`, `ANIM_ON` | `board-verified` | Firmware with the compatibility table was flashed and used during style demo verification; the change fixes `module 'lvgl' not found` but does not make arbitrary LVGL APIs available. |
 | Positioning and flags | `lv_obj_set_pos`, `lv_obj_set_x`, `lv_obj_set_y`, `lv_obj_add_flag`, `lv_obj_clear_flag`, `LV_OBJ_FLAG_SCROLLABLE`, `LV_OBJ_FLAG_HIDDEN` | `board-verified` | `apps/smoke_assets` ran on board and returned `Lua app ok`. |
 | Label long modes | `lv_label_set_long_mode`, `LV_LABEL_LONG_CLIP`, `LV_LABEL_LONG_WRAP`, `LV_LABEL_LONG_SCROLL_CIRCULAR` | `board-verified` | `apps/smoke_assets` ran on board and returned `Lua app ok`. |
 | Asset paths and image object basics | `lv_resolve_asset_path`, `lv_asset_exists`, `lv_img_create`, `lv_img_set_src`, LVGL `S:` filesystem drive | `board-verified` | `apps/smoke_assets` verified `S:/apps/smoke_assets/assets/icon.bin`, `asset fs ok`, and `Lua app ok` on board. |
@@ -55,6 +56,7 @@ This document separates implemented API, build verification, and board verificat
 | Device status | `GET /status` | `board-verified` | Raw HTTP GET returned `{"sd":true,"app_count":2,"first_app":"smoke_network","install":"ok"}`. |
 | App lifecycle status | `GET /status` field `state` with `idle`, `starting`, `running`, `stopping`, `failed`; compatibility fields `running` and `current_app` remain | `board-verified` | Board HTTP checks verified idle, running with `current_app=smoke_visual_remote`, controlled stop back to idle, intentional Lua failure as `failed`, and recovery from failed through `smoke_network`. |
 | App listing | `GET /apps` | `board-verified` | Raw HTTP GET returned `smoke_network` and `raw_upload` entries from the live SD registry. |
+| App registry capacity | `VB_APP_REGISTRY_MAX_APPS 32` | `board-verified` | After flashing the updated firmware, `GET /apps` returned 13 entries including `demo_night_light`; before the change the 12-entry stored list hid later apps. |
 | App rescan | `POST /rescan` | `board-verified` | Raw HTTP POST returned `{"ok":true,"app_count":2}` after re-running `vb_app_registry_scan`. |
 | Browser Web Console | `GET /` | `board-verified` | Board HTTP GET returned the self-contained console HTML containing `VibeBoard Runtime`, `AI Create App`, and `OpenAI API Key`; the console uses the same `/status`, `/apps`, `/stage`, `/commit`, `/launch`, `/stop`, and `/delete` API surface. |
 | Browser AI app creator | Direct browser call to OpenAI Responses API, strict JSON schema, client package validation, staged upload | `build-verified` | Static tests cover the console markup, OpenAI request shape, strict schema, path validation, localStorage opt-in, and discard-after-failure behavior. Board verification confirmed the page is served from the ESP32; a real API-key prompt-to-running-app smoke is still pending. |
@@ -69,6 +71,7 @@ This document separates implemented API, build verification, and board verificat
 | App switch | `POST /launch?app=<new-id>` while another app is running | `board-verified` | `POST /launch?app=smoke_network` while `smoke_visual_remote` was running returned `200 OK`; serial logs showed visual stopped, then `smoke_network` launched and completed with `ESP_OK`. |
 | Device Launcher | native LVGL app list, tap-to-launch, BOOT short-select/long-launch via `vb_launcher_ui_show` | `board-verified` | Board booted `vibeboard_runtime` from `factory 0x10000`, skipped missing `raw_upload/main.lua`, reported `VibeBoard Runtime ready: sd=ok apps=2 launcher=ok`; touch tap-to-launch works on the device screen, and BOOT short/long press provides a hardware fallback. |
 | Phase 5B launcher lifecycle controls | native launcher stop control, refresh/rescan control, return-to-launcher after stop or async failure, BOOT long-press stop while launcher is inactive, screen failure feedback from `vb_app_runner_last_message` | `board-verified` | HTTP and serial board checks verified stop, rescan, return to idle after stop, failed state from `smoke_fail`, and recovery through `smoke_network`. Manual physical screen smoke confirmed native Stop, Refresh, return-to-launcher, readable failure feedback, and BOOT long-press stop. |
+| Style demo app library | `demo_digital_clock`, `demo_terminal_status`, `demo_neon_dash`, `demo_pixel_pet`, `demo_night_light`, `demo_focus_timer`, `demo_lucky_card`, `demo_space_dash` | `board-verified` | `npm run validate:apps`, `npm run package:demos`, full `npm test`, staged upload, and HTTP launch/status checks verified the style demos; final board status reported `current_app=demo_night_light`. |
 
 ## Planned Runtime Modules
 

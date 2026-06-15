@@ -1,0 +1,4 @@
+name = Focus Timer
+entry = main.lua
+description = Mini focus sprint with countdown and progress
+capabilities = lvgl,timer

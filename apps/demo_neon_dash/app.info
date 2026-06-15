@@ -1,0 +1,4 @@
+name = Neon Dash
+entry = main.lua
+description = Cyber neon dashboard with animated gauges
+capabilities = lvgl,timer

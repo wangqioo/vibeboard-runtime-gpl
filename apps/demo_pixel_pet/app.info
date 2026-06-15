@@ -1,0 +1,4 @@
+name = Pixel Pet
+entry = main.lua
+description = Animated tiny pet with mood and energy meters
+capabilities = lvgl,timer

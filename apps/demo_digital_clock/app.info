@@ -1,0 +1,4 @@
+name = Digital Clock
+entry = main.lua
+description = Polished offline digital clock with animated seconds
+capabilities = lvgl,timer

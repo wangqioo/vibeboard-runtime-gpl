@@ -3,7 +3,19 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { validateAppDirectory } from "./index.mjs";
 
-const demoAppNames = ["weather", "voice_ai", "nesgame"];
+const demoAppNames = [
+  "weather",
+  "voice_ai",
+  "nesgame",
+  "demo_pixel_pet",
+  "demo_focus_timer",
+  "demo_lucky_card",
+  "demo_space_dash",
+  "demo_digital_clock",
+  "demo_terminal_status",
+  "demo_neon_dash",
+  "demo_night_light"
+];
 
 let failed = false;
 

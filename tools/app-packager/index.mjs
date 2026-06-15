@@ -22,7 +22,19 @@ import {
 } from "node:path";
 import { validateAppDirectory } from "../app-validator/index.mjs";
 
-export const DEMO_APP_DIRS = ["apps/weather", "apps/voice_ai", "apps/nesgame"];
+export const DEMO_APP_DIRS = [
+  "apps/weather",
+  "apps/voice_ai",
+  "apps/nesgame",
+  "apps/demo_pixel_pet",
+  "apps/demo_focus_timer",
+  "apps/demo_lucky_card",
+  "apps/demo_space_dash",
+  "apps/demo_digital_clock",
+  "apps/demo_terminal_status",
+  "apps/demo_neon_dash",
+  "apps/demo_night_light"
+];
 export const PACKAGE_SCHEMA = "vibeboard-runtime-app-package@1";
 
 const SKIP_NAMES = new Set([".DS_Store", "manifest.json"]);
