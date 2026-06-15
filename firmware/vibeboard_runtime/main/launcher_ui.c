@@ -24,11 +24,6 @@ typedef struct {
     vb_app_registry_entry_t app;
 } vb_launcher_launch_context_t;
 
-typedef struct {
-    vb_app_registry_entry_t apps[VB_APP_REGISTRY_MAX_APPS];
-    int app_count;
-} vb_launcher_render_snapshot_t;
-
 static lv_obj_t *s_status_label;
 static vb_app_registry_result_t *s_apps;
 static esp_err_t s_scan_err;
@@ -54,10 +49,7 @@ static void refresh_launcher_from_task(const char *status);
 static void note_async_launch_before_start(void *user_data);
 static void refresh_button_event_cb(lv_event_t *event);
 static void stop_button_event_cb(lv_event_t *event);
-static void collect_rendered_apps_snapshot(vb_app_registry_result_t *apps,
-                                           esp_err_t scan_err,
-                                           vb_launcher_render_snapshot_t *snapshot);
-static void publish_rendered_apps_snapshot(const vb_launcher_render_snapshot_t *snapshot);
+static void refresh_rendered_apps(vb_app_registry_result_t *apps, esp_err_t scan_err);
 static void rebuild_launcher_unlocked(vb_app_registry_result_t *apps, esp_err_t scan_err);
 
 static void deactivate_launcher_unlocked(void)
@@ -449,10 +441,8 @@ static void refresh_launcher_from_task(const char *status)
     }
     esp_err_t err = vb_app_registry_scan(s_apps);
     set_pending_status(status ? status : (err == ESP_OK ? "Refreshed" : esp_err_to_name(err)));
-    vb_launcher_render_snapshot_t snapshot;
-    collect_rendered_apps_snapshot(s_apps, err, &snapshot);
     lvgl_port_lock(0);
-    publish_rendered_apps_snapshot(&snapshot);
+    refresh_rendered_apps(s_apps, err);
     rebuild_launcher_unlocked(s_apps, err);
     lvgl_port_unlock();
 }
@@ -544,37 +534,24 @@ static void stop_button_event_cb(lv_event_t *event)
     }
 }
 
-static void collect_rendered_apps_snapshot(vb_app_registry_result_t *apps,
-                                           esp_err_t scan_err,
-                                           vb_launcher_render_snapshot_t *snapshot)
-{
-    memset(snapshot, 0, sizeof(*snapshot));
-
-    if (scan_err == ESP_OK && apps != NULL) {
-        vb_app_registry_lock();
-        int stored_app_count = apps->stored_app_count;
-        if (stored_app_count > VB_APP_REGISTRY_MAX_APPS) {
-            stored_app_count = VB_APP_REGISTRY_MAX_APPS;
-        }
-        for (int i = 0; i < stored_app_count; i++) {
-            snapshot->apps[i] = apps->apps[i];
-        }
-        snapshot->app_count = stored_app_count;
-        vb_app_registry_unlock();
-    }
-}
-
-static void publish_rendered_apps_snapshot(const vb_launcher_render_snapshot_t *snapshot)
+static void refresh_rendered_apps(vb_app_registry_result_t *apps, esp_err_t scan_err)
 {
     memset(s_rendered_apps, 0, sizeof(s_rendered_apps));
     s_rendered_app_count = 0;
-    if (snapshot == NULL) {
+    if (scan_err != ESP_OK || apps == NULL) {
         return;
     }
-    for (int i = 0; i < snapshot->app_count; i++) {
-        s_rendered_apps[i] = snapshot->apps[i];
+
+    vb_app_registry_lock();
+    int stored_app_count = apps->stored_app_count;
+    if (stored_app_count > VB_APP_REGISTRY_MAX_APPS) {
+        stored_app_count = VB_APP_REGISTRY_MAX_APPS;
     }
-    s_rendered_app_count = snapshot->app_count;
+    for (int i = 0; i < stored_app_count; i++) {
+        s_rendered_apps[i] = apps->apps[i];
+    }
+    s_rendered_app_count = stored_app_count;
+    vb_app_registry_unlock();
 }
 
 static void rebuild_launcher_unlocked(vb_app_registry_result_t *apps, esp_err_t scan_err)
@@ -656,10 +633,8 @@ void vb_launcher_ui_show(vb_app_registry_result_t *apps, esp_err_t scan_err)
     s_apps = apps;
     s_scan_err = scan_err;
 
-    vb_launcher_render_snapshot_t snapshot;
-    collect_rendered_apps_snapshot(apps, scan_err, &snapshot);
     lvgl_port_lock(0);
-    publish_rendered_apps_snapshot(&snapshot);
+    refresh_rendered_apps(apps, scan_err);
     rebuild_launcher_unlocked(apps, scan_err);
     lvgl_port_unlock();
 

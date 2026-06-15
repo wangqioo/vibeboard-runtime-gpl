@@ -244,6 +244,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /vb_app_registry_scan/);
     assert.match(source, /vb_app_runner_stop/);
     assert.match(source, /vb_app_runner_wait_stopped/);
+    assert.match(source, /refresh_rendered_apps/);
+    assert.doesNotMatch(source, /vb_launcher_render_snapshot_t\s+\w+/);
   });
 
   it("returns to the native launcher after stop or async app failure", () => {
