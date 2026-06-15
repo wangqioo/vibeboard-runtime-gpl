@@ -51,6 +51,7 @@ static void stop_launcher_task(void *arg);
 static void return_to_launcher_task(void *arg);
 static void start_return_to_launcher_task(void);
 static void refresh_launcher_from_task(const char *status);
+static void note_async_launch_before_start(void *user_data);
 static void refresh_button_event_cb(lv_event_t *event);
 static void stop_button_event_cb(lv_event_t *event);
 static void collect_rendered_apps_snapshot(vb_app_registry_result_t *apps,
@@ -195,10 +196,12 @@ static void launch_app(const vb_app_registry_entry_t *app, bool from_task)
         }
     }
 
-    esp_err_t err = vb_app_runner_launch_async(app);
-    if (err == ESP_OK) {
-        vb_launcher_ui_note_async_launch();
-    } else {
+    const vb_app_runner_launch_options_t options = {
+        .before_start = note_async_launch_before_start,
+        .user_data = NULL,
+    };
+    esp_err_t err = vb_app_runner_launch_async_with_options(app, &options);
+    if (err != ESP_OK) {
         if (from_task) {
             set_status_from_task(esp_err_to_name(err));
         } else {
@@ -499,6 +502,12 @@ static void start_return_to_launcher_task(void)
         clear_task_running(&s_return_task_running);
         ESP_LOGW(TAG, "Return task failed");
     }
+}
+
+static void note_async_launch_before_start(void *user_data)
+{
+    (void)user_data;
+    vb_launcher_ui_note_async_launch();
 }
 
 static void refresh_button_event_cb(lv_event_t *event)

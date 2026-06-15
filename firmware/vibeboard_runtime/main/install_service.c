@@ -21,6 +21,12 @@ static httpd_handle_t s_server;
 static bool s_netif_ready;
 static vb_install_service_context_t *s_context;
 
+static void note_launcher_async_launch(void *user_data)
+{
+    (void)user_data;
+    vb_launcher_ui_note_async_launch();
+}
+
 static bool reject_unsafe_path(const char *path)
 {
     return path == NULL || path[0] == '\0' || path[0] == '/' || strstr(path, "..") != NULL;
@@ -293,12 +299,15 @@ static esp_err_t launch_handler(httpd_req_t *req)
         }
     }
 
-    err = vb_app_runner_launch_async(&selected_app);
+    const vb_app_runner_launch_options_t launch_options = {
+        .before_start = note_launcher_async_launch,
+        .user_data = NULL,
+    };
+    err = vb_app_runner_launch_async_with_options(&selected_app, &launch_options);
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
         return ESP_FAIL;
     }
-    vb_launcher_ui_note_async_launch();
 
     char body[128];
     snprintf(body, sizeof(body), "{\"ok\":true,\"launched\":\"%s\"}\n", selected_app.id);
