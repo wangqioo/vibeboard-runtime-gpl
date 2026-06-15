@@ -19,6 +19,8 @@
 
 static const char *TAG = "install_service";
 #define VB_INSTALL_HTTPD_STACK_SIZE 8192
+#define VB_STAGING_PATH "/sdcard/.staging"
+#define VB_STAGING_BACKUP_SUFFIX ".previous"
 
 static httpd_handle_t s_server;
 static bool s_netif_ready;
@@ -44,12 +46,12 @@ static esp_err_t mkdir_if_missing(const char *path)
     return ESP_FAIL;
 }
 
-static esp_err_t ensure_parent_dirs(const char *path)
+static esp_err_t ensure_parent_dirs_from_base(const char *path, const char *base)
 {
     char buffer[VB_APP_PATH_MAX];
     strlcpy(buffer, path, sizeof(buffer));
 
-    for (char *cursor = buffer + strlen(VB_APPS_PATH) + 1; *cursor != '\0'; cursor++) {
+    for (char *cursor = buffer + strlen(base) + 1; *cursor != '\0'; cursor++) {
         if (*cursor != '/') {
             continue;
         }
@@ -61,6 +63,12 @@ static esp_err_t ensure_parent_dirs(const char *path)
         }
     }
     return ESP_OK;
+}
+
+static bool build_child_path(char *dest, size_t dest_size, const char *parent, const char *child)
+{
+    int written = snprintf(dest, dest_size, "%s/%s", parent, child);
+    return written >= 0 && written < (int)dest_size;
 }
 
 static esp_err_t remove_app_tree(const char *path)
@@ -114,6 +122,19 @@ static esp_err_t remove_app_tree(const char *path)
     return ESP_FAIL;
 }
 
+static esp_err_t remove_tree_if_exists(const char *path)
+{
+    struct stat statbuf;
+    if (stat(path, &statbuf) != 0) {
+        if (errno == ENOENT) {
+            return ESP_OK;
+        }
+        ESP_LOGE(TAG, "stat failed %s errno=%d", path, errno);
+        return ESP_FAIL;
+    }
+    return remove_app_tree(path);
+}
+
 static esp_err_t get_query_value(httpd_req_t *req, const char *key, char *value, size_t value_size)
 {
     char query[192] = {0};
@@ -146,29 +167,8 @@ static esp_err_t ensure_netif_ready(void)
     return ESP_OK;
 }
 
-static esp_err_t install_handler(httpd_req_t *req)
+static esp_err_t receive_request_file(httpd_req_t *req, const char *full_path)
 {
-    char app[64] = {0};
-    char path[128] = {0};
-    if (get_query_value(req, "app", app, sizeof(app)) != ESP_OK ||
-        get_query_value(req, "path", path, sizeof(path)) != ESP_OK ||
-        reject_unsafe_path(app) ||
-        reject_unsafe_path(path)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing app/path");
-        return ESP_FAIL;
-    }
-
-    char full_path[VB_APP_PATH_MAX];
-    int written = snprintf(full_path, sizeof(full_path), "%s/%s/%s", VB_APPS_PATH, app, path);
-    if (written < 0 || written >= (int)sizeof(full_path)) {
-        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
-        return ESP_FAIL;
-    }
-    if (ensure_parent_dirs(full_path) != ESP_OK) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "mkdir failed");
-        return ESP_FAIL;
-    }
-
     FILE *file = fopen(full_path, "wb");
     if (file == NULL) {
         ESP_LOGE(TAG, "open failed %s errno=%d", full_path, errno);
@@ -194,7 +194,156 @@ static esp_err_t install_handler(httpd_req_t *req)
     }
 
     fclose(file);
+    return ESP_OK;
+}
+
+static esp_err_t install_handler(httpd_req_t *req)
+{
+    char app[64] = {0};
+    char path[128] = {0};
+    if (get_query_value(req, "app", app, sizeof(app)) != ESP_OK ||
+        get_query_value(req, "path", path, sizeof(path)) != ESP_OK ||
+        reject_unsafe_path(app) ||
+        reject_unsafe_path(path)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing app/path");
+        return ESP_FAIL;
+    }
+
+    char full_path[VB_APP_PATH_MAX];
+    int written = snprintf(full_path, sizeof(full_path), "%s/%s/%s", VB_APPS_PATH, app, path);
+    if (written < 0 || written >= (int)sizeof(full_path)) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+    if (mkdir_if_missing(VB_APPS_PATH) != ESP_OK ||
+        ensure_parent_dirs_from_base(full_path, VB_APPS_PATH) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "mkdir failed");
+        return ESP_FAIL;
+    }
+
+    if (receive_request_file(req, full_path) != ESP_OK) {
+        return ESP_FAIL;
+    }
     ESP_LOGI(TAG, "installed %s bytes=%d", full_path, req->content_len);
+    httpd_resp_set_type(req, "text/plain");
+    httpd_resp_sendstr(req, "ok\n");
+    return ESP_OK;
+}
+
+static void copy_trimmed_info_value(char *dest, size_t dest_size, const char *value)
+{
+    while (*value == ' ' || *value == '\t') {
+        value++;
+    }
+
+    size_t len = strcspn(value, "\r\n");
+    while (len > 0 && (value[len - 1] == ' ' || value[len - 1] == '\t')) {
+        len--;
+    }
+    if (len >= dest_size) {
+        len = dest_size - 1;
+    }
+    memcpy(dest, value, len);
+    dest[len] = '\0';
+}
+
+static bool read_entry_from_info(const char *info_path, char *entry, size_t entry_size)
+{
+    FILE *file = fopen(info_path, "r");
+    if (file == NULL) {
+        return false;
+    }
+
+    char line[128];
+    while (fgets(line, sizeof(line), file) != NULL) {
+        char *equals = strchr(line, '=');
+        if (equals == NULL) {
+            continue;
+        }
+
+        char *key_end = equals;
+        while (key_end > line && (key_end[-1] == ' ' || key_end[-1] == '\t')) {
+            key_end--;
+        }
+        size_t key_len = key_end - line;
+        if (key_len == 5 && strncmp(line, "entry", 5) == 0) {
+            copy_trimmed_info_value(entry, entry_size, equals + 1);
+            break;
+        }
+    }
+
+    fclose(file);
+    if (entry[0] == '\0') {
+        strlcpy(entry, "main.lua", entry_size);
+    }
+    return true;
+}
+
+static esp_err_t validate_staged_app(const char *staging_dir)
+{
+    char info_path[VB_APP_PATH_MAX];
+    if (!build_child_path(info_path, sizeof(info_path), staging_dir, "app.info")) {
+        ESP_LOGE(TAG, "staged app info path too long: %s", staging_dir);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    struct stat st;
+    if (stat(info_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+        ESP_LOGE(TAG, "staged app missing app.info: %s", staging_dir);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    char entry[VB_APP_NAME_MAX] = {0};
+    if (!read_entry_from_info(info_path, entry, sizeof(entry)) || reject_unsafe_path(entry)) {
+        ESP_LOGE(TAG, "staged app has unsafe entry: %s", staging_dir);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char entry_path[VB_APP_PATH_MAX];
+    if (!build_child_path(entry_path, sizeof(entry_path), staging_dir, entry)) {
+        ESP_LOGE(TAG, "staged app entry path too long: %s/%s", staging_dir, entry);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (stat(entry_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+        ESP_LOGE(TAG, "staged app missing entry: %s", entry_path);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t stage_handler(httpd_req_t *req)
+{
+    char app[64] = {0};
+    char path[128] = {0};
+    if (get_query_value(req, "app", app, sizeof(app)) != ESP_OK ||
+        get_query_value(req, "path", path, sizeof(path)) != ESP_OK ||
+        reject_unsafe_path(app) ||
+        reject_unsafe_path(path)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing app/path");
+        return ESP_FAIL;
+    }
+    if (s_context == NULL || !s_context->sd_ok) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sd unavailable");
+        return ESP_FAIL;
+    }
+
+    char full_path[VB_APP_PATH_MAX];
+    int written = snprintf(full_path, sizeof(full_path), "%s/%s/%s", VB_STAGING_PATH, app, path);
+    if (written < 0 || written >= (int)sizeof(full_path)) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+    if (mkdir_if_missing(VB_STAGING_PATH) != ESP_OK ||
+        ensure_parent_dirs_from_base(full_path, VB_STAGING_PATH) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "mkdir failed");
+        return ESP_FAIL;
+    }
+
+    if (receive_request_file(req, full_path) != ESP_OK) {
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "staged %s bytes=%d", full_path, req->content_len);
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_sendstr(req, "ok\n");
     return ESP_OK;
@@ -457,6 +606,127 @@ static esp_err_t delete_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t discard_handler(httpd_req_t *req)
+{
+    char app_id[64] = {0};
+    if (get_query_value(req, "app", app_id, sizeof(app_id)) != ESP_OK || reject_unsafe_path(app_id)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing app");
+        return ESP_FAIL;
+    }
+    if (s_context == NULL || !s_context->sd_ok) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sd unavailable");
+        return ESP_FAIL;
+    }
+
+    char staging_dir[VB_APP_PATH_MAX];
+    if (!build_child_path(staging_dir, sizeof(staging_dir), VB_STAGING_PATH, app_id)) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = remove_tree_if_exists(staging_dir);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "discard failed");
+        return ESP_FAIL;
+    }
+
+    char body[128];
+    snprintf(body, sizeof(body), "{\"ok\":true,\"discarded\":\"%s\"}\n", app_id);
+    send_json(req, body);
+    return ESP_OK;
+}
+
+static esp_err_t commit_handler(httpd_req_t *req)
+{
+    char app_id[64] = {0};
+    if (get_query_value(req, "app", app_id, sizeof(app_id)) != ESP_OK || reject_unsafe_path(app_id)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing app");
+        return ESP_FAIL;
+    }
+    if (s_context == NULL || s_context->registry == NULL || !s_context->sd_ok) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sd unavailable");
+        return ESP_FAIL;
+    }
+    if (vb_app_runner_is_running() && strcmp(vb_app_runner_current_id(), app_id) == 0) {
+        httpd_resp_set_status(req, "409 Conflict");
+        httpd_resp_set_type(req, "text/plain");
+        httpd_resp_sendstr(req, "app is running\n");
+        return ESP_FAIL;
+    }
+
+    char staging_dir[VB_APP_PATH_MAX];
+    char app_dir[VB_APP_PATH_MAX];
+    char backup_dir[VB_APP_PATH_MAX];
+    if (!build_child_path(staging_dir, sizeof(staging_dir), VB_STAGING_PATH, app_id) ||
+        !build_child_path(app_dir, sizeof(app_dir), VB_APPS_PATH, app_id)) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+    int backup_written = snprintf(backup_dir, sizeof(backup_dir), "%s/%s%s", VB_STAGING_PATH, app_id, VB_STAGING_BACKUP_SUFFIX);
+    if (backup_written < 0 || backup_written >= (int)sizeof(backup_dir)) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = validate_staged_app(staging_dir);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid staged app");
+        return ESP_FAIL;
+    }
+
+    if (mkdir_if_missing(VB_APPS_PATH) != ESP_OK || mkdir_if_missing(VB_STAGING_PATH) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "mkdir failed");
+        return ESP_FAIL;
+    }
+    if (remove_tree_if_exists(backup_dir) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "backup cleanup failed");
+        return ESP_FAIL;
+    }
+
+    bool has_backup = false;
+    struct stat st;
+    if (stat(app_dir, &st) == 0) {
+        if (rename(app_dir, backup_dir) != 0) {
+            ESP_LOGE(TAG, "backup rename failed %s -> %s errno=%d", app_dir, backup_dir, errno);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "backup failed");
+            return ESP_FAIL;
+        }
+        has_backup = true;
+    } else if (errno != ENOENT) {
+        ESP_LOGE(TAG, "stat app dir failed %s errno=%d", app_dir, errno);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "stat failed");
+        return ESP_FAIL;
+    }
+
+    if (rename(staging_dir, app_dir) != 0) {
+        ESP_LOGE(TAG, "commit rename failed %s -> %s errno=%d", staging_dir, app_dir, errno);
+        if (has_backup && rename(backup_dir, app_dir) != 0) {
+            ESP_LOGE(TAG, "backup restore failed %s -> %s errno=%d", backup_dir, app_dir, errno);
+        }
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "commit failed");
+        return ESP_FAIL;
+    }
+
+    err = vb_app_registry_scan(s_context->registry);
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+
+    if (has_backup) {
+        remove_tree_if_exists(backup_dir);
+    }
+
+    vb_app_registry_lock();
+    int app_count = s_context->registry->app_count;
+    vb_app_registry_unlock();
+
+    char body[128];
+    snprintf(body, sizeof(body), "{\"ok\":true,\"committed\":\"%s\",\"app_count\":%d}\n", app_id, app_count);
+    send_json(req, body);
+    return ESP_OK;
+}
+
 static esp_err_t register_handler(const char *uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *req))
 {
     const httpd_uri_t http_uri = {
@@ -497,6 +767,18 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     }
 
     err = register_handler("/install", HTTP_POST, install_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/stage", HTTP_POST, stage_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/commit", HTTP_POST, commit_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/discard", HTTP_POST, discard_handler);
     if (err != ESP_OK) {
         return err;
     }
