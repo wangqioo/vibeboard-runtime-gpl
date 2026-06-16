@@ -4,6 +4,7 @@
 
 #include "driver/gpio.h"
 #include "esp_err.h"
+#include "lvgl.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,6 +44,7 @@ typedef struct {
 
 esp_err_t vb_board_start(vb_board_status_t *status);
 esp_err_t vb_board_mount_sd(vb_board_status_t *status);
+lv_indev_t *vb_board_touch_indev(void);
 
 #ifdef __cplusplus
 }

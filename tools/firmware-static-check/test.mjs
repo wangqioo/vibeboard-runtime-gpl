@@ -18,6 +18,8 @@ const webConsoleSourcePath = join(firmwareRoot, "main/web_console.c");
 const webConsoleHeaderPath = join(firmwareRoot, "main/web_console.h");
 const launcherHeaderPath = join(firmwareRoot, "main/launcher_ui.h");
 const launcherSourcePath = join(firmwareRoot, "main/launcher_ui.c");
+const systemGestureHeaderPath = join(firmwareRoot, "main/system_gesture.h");
+const systemGestureSourcePath = join(firmwareRoot, "main/system_gesture.c");
 const mainSourcePath = join(firmwareRoot, "main/main.c");
 const luaLvglSourcePath = join(firmwareRoot, "main/lua_lvgl.c");
 const luaLvglHeaderPath = join(firmwareRoot, "main/lua_lvgl.h");
@@ -365,6 +367,38 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /Failed:/);
     assert.match(source, /Stopped/);
     assert.match(source, /launcher inactive; BOOT long press: stop app/);
+  });
+
+  it("supports a system-level left and right edge swipe to exit running apps", () => {
+    const boardHeader = readRequired(boardHeaderPath);
+    const boardSource = readRequired(boardSourcePath);
+    const gestureHeader = readRequired(systemGestureHeaderPath);
+    const gestureSource = readRequired(systemGestureSourcePath);
+    const cmake = readRequired(cmakePath);
+    const main = readRequired(mainSourcePath);
+
+    assert.match(boardHeader, /lv_indev_t\s*\*vb_board_touch_indev\(void\)/);
+    assert.match(boardSource, /static\s+lv_indev_t\s+\*touch_indev/);
+    assert.match(boardSource, /touch_indev\s*=\s*lvgl_port_add_touch\(&touch_cfg\)/);
+    assert.match(boardSource, /vb_board_touch_indev/);
+
+    assert.match(cmake, /system_gesture\.c/);
+    assert.match(gestureHeader, /vb_system_gesture_start/);
+    assert.match(gestureSource, /VB_SYSTEM_EDGE_SWIPE_EDGE_PX\s+32/);
+    assert.match(gestureSource, /VB_SYSTEM_EDGE_SWIPE_MIN_DX\s+70/);
+    assert.match(gestureSource, /VB_SYSTEM_EDGE_SWIPE_MAX_DY\s+50/);
+    assert.match(gestureSource, /VB_SYSTEM_GESTURE_COOLDOWN_MS\s+800/);
+    assert.match(gestureSource, /vb_board_touch_indev\(\)/);
+    assert.match(gestureSource, /lv_indev_get_state/);
+    assert.match(gestureSource, /lv_indev_get_point/);
+    assert.match(gestureSource, /LV_INDEV_STATE_PR/);
+    assert.match(gestureSource, /VB_APP_RUNNER_STATE_RUNNING/);
+    assert.match(gestureSource, /vb_app_runner_stop/);
+    assert.match(gestureSource, /left edge swipe exit/);
+    assert.match(gestureSource, /right edge swipe exit/);
+    assert.match(gestureSource, /xTaskCreate/);
+    assert.match(main, /#include "system_gesture\.h"/);
+    assert.match(main, /vb_system_gesture_start\(\)/);
   });
 
   it("exposes app runner lifecycle state through HTTP status", () => {

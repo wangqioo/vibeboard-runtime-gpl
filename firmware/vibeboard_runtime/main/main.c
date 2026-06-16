@@ -7,6 +7,7 @@
 #include "install_service.h"
 #include "launcher_ui.h"
 #include "runtime_wifi.h"
+#include "system_gesture.h"
 
 static const char *TAG = "vibeboard_runtime";
 static vb_app_registry_result_t s_apps;
@@ -18,6 +19,10 @@ void app_main(void)
 
     vb_board_status_t board = {0};
     ESP_ERROR_CHECK(vb_board_start(&board));
+    esp_err_t gesture_err = vb_system_gesture_start();
+    if (gesture_err != ESP_OK && gesture_err != ESP_ERR_NOT_FOUND) {
+        ESP_LOGW(TAG, "system gesture unavailable: %s", esp_err_to_name(gesture_err));
+    }
 
     ESP_ERROR_CHECK(vb_app_registry_init());
     memset(&s_apps, 0, sizeof(s_apps));

@@ -33,7 +33,8 @@ export const DEMO_APP_DIRS = [
   "apps/demo_digital_clock",
   "apps/demo_terminal_status",
   "apps/demo_neon_dash",
-  "apps/demo_night_light"
+  "apps/demo_night_light",
+  "apps/demo_auto_snake"
 ];
 export const PACKAGE_SCHEMA = "vibeboard-runtime-app-package@1";
 

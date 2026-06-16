@@ -1,0 +1,4 @@
+name = Auto Snake
+entry = main.lua
+description = Self-playing snake demo with simple food seeking
+capabilities = lvgl,timer

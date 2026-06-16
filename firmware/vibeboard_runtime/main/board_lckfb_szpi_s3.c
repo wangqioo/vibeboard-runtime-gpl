@@ -25,6 +25,7 @@ static const char *TAG = "board_lckfb";
 static esp_lcd_panel_handle_t lcd_panel;
 static esp_lcd_panel_io_handle_t lcd_io;
 static esp_lcd_touch_handle_t touch;
+static lv_indev_t *touch_indev;
 static sdmmc_card_t *sd_card;
 
 static esp_err_t i2c_init(void)
@@ -179,7 +180,10 @@ static esp_err_t touch_init(lv_disp_t *disp)
         .disp = disp,
         .handle = touch,
     };
-    lvgl_port_add_touch(&touch_cfg);
+    touch_indev = lvgl_port_add_touch(&touch_cfg);
+    if (touch_indev == NULL) {
+        return ESP_FAIL;
+    }
     return ESP_OK;
 }
 
@@ -250,6 +254,11 @@ esp_err_t vb_board_mount_sd(vb_board_status_t *status)
 
     sdmmc_card_print_info(stdout, sd_card);
     return ESP_OK;
+}
+
+lv_indev_t *vb_board_touch_indev(void)
+{
+    return touch_indev;
 }
 
 esp_err_t vb_board_start(vb_board_status_t *status)

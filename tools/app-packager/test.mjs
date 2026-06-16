@@ -126,6 +126,7 @@ describe("packageDemoApps", () => {
     const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
     const result = packageDemoApps({ repoRoot });
     assert.deepEqual(result.map((item) => item.appId).sort(), [
+      "demo_auto_snake",
       "demo_digital_clock",
       "demo_focus_timer",
       "demo_lucky_card",

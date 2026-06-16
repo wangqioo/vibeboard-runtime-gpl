@@ -14,7 +14,8 @@ const demoAppNames = [
   "demo_digital_clock",
   "demo_terminal_status",
   "demo_neon_dash",
-  "demo_night_light"
+  "demo_night_light",
+  "demo_auto_snake"
 ];
 
 let failed = false;

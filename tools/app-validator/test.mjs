@@ -16,7 +16,8 @@ const funDemoApps = [
   "demo_digital_clock",
   "demo_terminal_status",
   "demo_neon_dash",
-  "demo_night_light"
+  "demo_night_light",
+  "demo_auto_snake"
 ];
 
 describe("parseAppInfo", () => {
@@ -67,6 +68,16 @@ describe("fun demo apps", () => {
     assert.match(pet, /draw_pet/);
     assert.match(night, /WARM_AMBER\s*=\s*0xffb45c/);
     assert.match(night, /moon|breath/i);
+  });
+
+  it("keeps demo_auto_snake as a timer-driven self-playing game", () => {
+    const source = readFileSync(join(repoRoot, "apps/demo_auto_snake/main.lua"), "utf8");
+
+    assert.match(source, /MAX_SNAKE\s*=\s*28/);
+    assert.match(source, /choose_direction/);
+    assert.match(source, /move_snake/);
+    assert.match(source, /snake_timer:alarm\(250,\s*tmr\.ALARM_AUTO/);
+    assert.doesNotMatch(source, /touch\.|key\./);
   });
 });
 
