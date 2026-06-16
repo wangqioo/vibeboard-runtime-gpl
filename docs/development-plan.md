@@ -203,6 +203,8 @@ apps/demo_space_dash       飞船仪表盘
 apps/demo_auto_snake       自动游玩的贪吃蛇演示
 apps/holocubic_nixie_clock Holocubic NixieClock 安全子集移植
 apps/holocubic_analog_clock Holocubic clock 安全子集移植
+apps/holocubic_matrix_rain Holocubic MatrixRain canvas 移植
+apps/smoke_canvas          最小 canvas API 烟测
 ```
 
 这些样板刻意只使用已验证的 `lvgl,timer` 子集，不依赖触摸、网络、图片或未验证字体。它们的作用不是堆功能，而是证明同一套安全 Runtime API 可以生成明显不同的视觉风格。
@@ -212,6 +214,7 @@ Holocubic 迁移说明：
 - 完整兼容矩阵见 `docs/holocubic-app-migration.json`；
 - 人读迁移计划见 `docs/holocubic-app-migration.md`；
 - 首批迁移不是原样复制 PNG/Canvas 版本，而是保留视觉意图、重写到当前已验证的安全 Runtime 子集；
+- Phase 2 已开始补最小 canvas Runtime：`lv_canvas_create`、`lv_canvas_fill_bg`、`lv_canvas_draw_rect`、`lv_canvas_draw_text`、`lv_obj_invalidate`，并用 `MatrixRain` 做第一个 canvas 类迁移；
 - 后续按 canvas、input、service/webui、bridge/audio、native module 分阶段推进。
 
 配套更新：
@@ -263,7 +266,7 @@ open http://<board-ip>:8080/
 - 浏览器 Console 还没有设备日志流、代码编辑器、版本兼容提示等高级体验；
 - Lua 侧还没有 `touch.on(...)` / `key.on(...)` 输入事件 API；
 - Lua 侧还没有 `app.list()` / `app.launch()` / `app.current()` 等 App manager API；
-- LVGL 绑定覆盖仍然有限，不能直接运行完整上游 HoloCubic App；
+- LVGL 绑定覆盖仍然有限，只新增了最小 canvas 子集，仍不能直接运行完整上游 HoloCubic App；
 - Runtime/API/App schema 还没有版本兼容机制；
 - Native `.so` 模块加载 ABI 未做，NES 还不能运行；
 - 音频和完整 Voice AI 仍未进入实现阶段。
@@ -284,7 +287,39 @@ open http://<board-ip>:8080/
 - 至少启动验证 `demo_digital_clock`、`demo_terminal_status`、`demo_neon_dash`、`demo_pixel_pet`、`demo_night_light`；
 - 更新 README 或能力文档后提交并推送。
 
-### Slice 1: 安全 AI 生成模式 v1
+### Slice 1: Holocubic Phase 2 Canvas 真机验收
+
+目标：把最小 canvas Runtime 从 build-verified 推进到 board-verified，并确认 `MatrixRain` 这类 canvas screensaver 可以稳定启动/停止/切换。
+
+验收：
+
+- `apps/smoke_canvas` staged upload、launch、stop 正常；
+- `apps/holocubic_matrix_rain` staged upload、launch、stop 正常；
+- 连续切换 canvas app 和普通 LVGL app 不崩、不泄漏到肉眼可见异常；
+- `docs/device-bringup.md` 记录 HTTP 状态、串口日志和屏幕确认；
+- `docs/runtime-capabilities.md` 把 canvas drawing 从 build-verified 更新为 board-verified。
+
+### Slice 2: 继续迁移 Canvas 类 Holocubic App
+
+目标：复用已验证 canvas API，继续迁移 Phase 2 候选。
+
+候选顺序：
+
+```text
+ConwayLife
+FluidPendant
+hwmon display-only
+BTC display-only
+```
+
+验收：
+
+- 每个 App 都有矩阵状态更新；
+- 每个 App 都进入 validator 和 packager；
+- 不引入输入、HTTP callback、自由字体加载或图片解码的新依赖；
+- 真机按 `validate -> package -> staged upload -> launch -> stop -> switch app` 验证。
+
+### Slice 3: 安全 AI 生成模式 v1
 
 目标：停止把“AI 直接生成任意 Lua”作为默认路径，改成 AI 输出安全模板 JSON，浏览器端确定性生成可运行 Lua。
 
@@ -324,7 +359,7 @@ status_screen   终端/仪表盘/夜灯等风格化状态屏
 - 10 次安全生成 + staged upload 不出现 unsupported LVGL API；
 - 失败信息显示在 Web Console，而不是只靠串口。
 
-### Slice 2: 正式 WiFi 配置上板验收
+### Slice 4: 正式 WiFi 配置上板验收
 
 目标：让新用户不依赖 `smoke_network/wifi.json` 也能让板子加入 WiFi。
 
@@ -350,7 +385,7 @@ npm run configure:wifi -- /Volumes/VIBEBOARD --ssid "YOUR_WIFI_SSID" --password 
 - 真机日志显示读取的是 `/sdcard/runtime/wifi.json`；
 - smoke app fallback 被删除、编译开关控制，或明确标成临时兼容。
 
-### Slice 3: Web Console AI 真机 smoke
+### Slice 5: Web Console AI 真机 smoke
 
 目标：把安全 AI Create App 路径用真实 API key 走完，并留下证据。
 
@@ -364,7 +399,7 @@ npm run configure:wifi -- /Volumes/VIBEBOARD --ssid "YOUR_WIFI_SSID" --password 
 - 启动后屏幕显示生成的 UI；
 - `docs/device-bringup.md` 记录 prompt、结果、HTTP 状态和已知限制。
 
-### Slice 4: Lua 输入事件
+### Slice 6: Lua 输入事件
 
 目标：让 AI 生成的 App 能做真实交互，而不是只靠 timer 刷新。
 
@@ -388,7 +423,7 @@ end)
 - App stop/switch 后 handler 被清理；
 - AI API 白名单和 validator 更新。
 
-### Slice 5: Runtime/API/App 兼容机制
+### Slice 7: Runtime/API/App 兼容机制
 
 目标：让工具和设备能在启动前判断“这个 App 当前 Runtime 能不能跑”。
 
@@ -486,11 +521,12 @@ Runtime update required
 
 ## 最近推荐顺序
 
-1. 当前样板库基线收口、提交并推送。
-2. 安全 AI 生成模式 v1。
-3. 正式 WiFi 配置上板验收和 fallback 收敛。
-4. Web Console AI 安全模板 prompt-to-running-app smoke。
-5. Lua touch/key 输入事件。
-6. Runtime/API/App 兼容机制。
-7. 继续扩展 LVGL AI 白名单和模板风格库。
-8. 再考虑上游 App、NES、音频和 Voice AI。
+1. 当前 canvas/MatrixRain 切片 build、flash、上板验收、提交并推送。
+2. 继续迁移 Phase 2 canvas 类 Holocubic App。
+3. 安全 AI 生成模式 v1。
+4. 正式 WiFi 配置上板验收和 fallback 收敛。
+5. Web Console AI 安全模板 prompt-to-running-app smoke。
+6. Lua touch/key 输入事件。
+7. Runtime/API/App 兼容机制。
+8. 继续扩展 LVGL AI 白名单和模板风格库。
+9. 再考虑 NES、音频和完整 Voice AI。

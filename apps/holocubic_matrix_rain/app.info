@@ -1,0 +1,4 @@
+name = Holocubic Matrix Rain
+entry = main.lua
+description = Phase 2 canvas port of the Holocubic MatrixRain screensaver
+capabilities = lvgl,timer

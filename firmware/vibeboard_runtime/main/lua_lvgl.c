@@ -7,6 +7,8 @@
 #include "lua_lvgl_internal.h"
 
 static lv_obj_t *s_objects[VB_LVGL_OBJECT_MAX];
+static vb_lua_lvgl_object_cleanup_t s_object_cleanups[VB_LVGL_OBJECT_MAX];
+static void *s_object_cleanup_data[VB_LVGL_OBJECT_MAX];
 static int s_object_count;
 
 typedef struct {
@@ -47,9 +49,41 @@ bool vb_lua_lvgl_can_store_object(void)
 
 int vb_lua_lvgl_store_object(lv_obj_t *object)
 {
+    return vb_lua_lvgl_store_object_with_cleanup(object, NULL, NULL);
+}
+
+int vb_lua_lvgl_store_object_with_cleanup(lv_obj_t *object,
+                                          vb_lua_lvgl_object_cleanup_t cleanup,
+                                          void *cleanup_data)
+{
     s_objects[s_object_count] = object;
+    s_object_cleanups[s_object_count] = cleanup;
+    s_object_cleanup_data[s_object_count] = cleanup_data;
     s_object_count++;
     return s_object_count;
+}
+
+void vb_lua_lvgl_cleanup(void)
+{
+    for (int i = 0; i < s_object_count; i++) {
+        if (s_object_cleanups[i] != NULL && s_object_cleanup_data[i] != NULL) {
+            s_object_cleanups[i](s_object_cleanup_data[i]);
+        }
+        s_objects[i] = NULL;
+        s_object_cleanups[i] = NULL;
+        s_object_cleanup_data[i] = NULL;
+    }
+    s_object_count = 0;
+}
+
+bool vb_lua_lvgl_has_cleanup(void)
+{
+    for (int i = 0; i < s_object_count; i++) {
+        if (s_object_cleanups[i] != NULL && s_object_cleanup_data[i] != NULL) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static void set_global_integer(lua_State *L, const char *name, int value)
@@ -92,6 +126,14 @@ static void register_lvgl_module(lua_State *L, const vb_lua_lvgl_constant_t *con
         { "lv_bar_create", "bar_create" },
         { "lv_bar_set_range", "bar_set_range" },
         { "lv_bar_set_value", "bar_set_value" },
+        { "lv_canvas_create", "canvas_create" },
+        { "lv_canvas_fill_bg", "canvas_fill_bg" },
+        { "lv_canvas_draw_rect", "canvas_draw_rect" },
+        { "lv_canvas_draw_text", "canvas_draw_text" },
+        { "lv_canvas_frame_begin", "canvas_frame_begin" },
+        { "lv_canvas_frame_end", "canvas_frame_end" },
+        { "lv_canvas_begin", "canvas_begin" },
+        { "lv_canvas_end", "canvas_end" },
         { "lv_obj_set_size", "obj_set_size" },
         { "lv_obj_set_width", "obj_set_width" },
         { "lv_obj_set_height", "obj_set_height" },
@@ -108,6 +150,7 @@ static void register_lvgl_module(lua_State *L, const vb_lua_lvgl_constant_t *con
         { "lv_label_set_long_mode", "label_set_long_mode" },
         { "lv_obj_add_flag", "obj_add_flag" },
         { "lv_obj_clear_flag", "obj_clear_flag" },
+        { "lv_obj_invalidate", "obj_invalidate" },
         { "lv_obj_align", "obj_align" },
     };
 
@@ -151,10 +194,12 @@ void vb_lua_lvgl_register(lua_State *L)
         { "LV_LABEL_LONG_SCROLL_CIRCULAR", "LABEL_LONG_SCROLL_CIRCULAR", LV_LABEL_LONG_SCROLL_CIRCULAR },
         { "LV_ANIM_OFF", "ANIM_OFF", LV_ANIM_OFF },
         { "LV_ANIM_ON", "ANIM_ON", LV_ANIM_ON },
+        { "LV_IMG_CF_TRUE_COLOR", "IMG_CF_TRUE_COLOR", LV_IMG_CF_TRUE_COLOR },
+        { "CANVAS_FMT_TRUE_COLOR", "CANVAS_FMT_TRUE_COLOR", LV_IMG_CF_TRUE_COLOR },
+        { "LV_TEXT_ALIGN_CENTER", "TEXT_ALIGN_CENTER", LV_TEXT_ALIGN_CENTER },
     };
 
-    memset(s_objects, 0, sizeof(s_objects));
-    s_object_count = 0;
+    vb_lua_lvgl_cleanup();
 
     vb_lua_lvgl_fs_register(L);
     vb_lua_lvgl_widgets_register(L);

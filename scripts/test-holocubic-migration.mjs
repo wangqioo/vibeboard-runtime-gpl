@@ -67,13 +67,17 @@ describe("holocubic app migration plan", () => {
     assert.match(doc, /lv_canvas/);
   });
 
-  it("ports the first two Holocubic clocks to the current safe runtime subset", () => {
+  it("ports the first Holocubic clocks to the current safe runtime subset", () => {
     const matrix = readJson(matrixPath);
     const firstBatch = matrix.apps.filter((app) => app.status === "ported").map((app) => app.targetId).sort();
 
-    assert.deepEqual(firstBatch, ["holocubic_analog_clock", "holocubic_nixie_clock"]);
+    assert.deepEqual(firstBatch, [
+      "holocubic_analog_clock",
+      "holocubic_matrix_rain",
+      "holocubic_nixie_clock"
+    ]);
 
-    for (const appId of firstBatch) {
+    for (const appId of ["holocubic_analog_clock", "holocubic_nixie_clock"]) {
       const appDir = join(repoRoot, "apps", appId);
       const validation = validateAppDirectory(appDir);
       const source = readFileSync(join(appDir, "main.lua"), "utf8");
@@ -85,5 +89,24 @@ describe("holocubic app migration plan", () => {
       assert.match(source, /lv_obj_create/);
       assert.doesNotMatch(source, /lv_img_|lv_canvas_|key\.|touch\.|http\.|wifi\.|file\./);
     }
+  });
+
+  it("ports MatrixRain as the first Phase 2 canvas screensaver", () => {
+    const matrix = readJson(matrixPath);
+    const matrixRain = matrix.apps.find((app) => app.upstreamId === "MatrixRain");
+    const appDir = join(repoRoot, "apps/holocubic_matrix_rain");
+    const validation = validateAppDirectory(appDir);
+    const source = readFileSync(join(appDir, "main.lua"), "utf8");
+
+    assert.equal(matrixRain.status, "ported");
+    assert.deepEqual(matrixRain.requiredRuntime, ["lvgl", "timer", "lvgl-canvas"]);
+    assert.equal(validation.ok, true, validation.errors.join("\n"));
+    assert.deepEqual(validation.capabilities, ["lvgl", "timer"]);
+    assert.match(source, /Holocubic Matrix Rain/);
+    assert.match(source, /lv_canvas_create/);
+    assert.match(source, /lv_canvas_draw_text/);
+    assert.match(source, /lv_canvas_draw_rect/);
+    assert.match(source, /tmr\.create\(\)/);
+    assert.doesNotMatch(source, /key\.|touch\.|http\.|wifi\.|file\./);
   });
 });

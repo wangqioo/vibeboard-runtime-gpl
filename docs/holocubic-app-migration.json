@@ -42,9 +42,9 @@
       "upstreamId": "MatrixRain",
       "targetId": "holocubic_matrix_rain",
       "phase": 2,
-      "status": "planned",
-      "requiredRuntime": ["lvgl-canvas"],
-      "notes": "Fast visual win after canvas text/rectangle drawing is available."
+      "status": "ported",
+      "requiredRuntime": ["lvgl", "timer", "lvgl-canvas"],
+      "notes": "Phase 2 compat port uses the new minimal canvas surface for text and rectangle drawing."
     },
     {
       "upstreamId": "NixieClock",

@@ -1,0 +1,4 @@
+name = smoke_canvas
+entry = main.lua
+description = Canvas smoke app for the LVGL Lua drawing surface
+capabilities = lvgl,timer

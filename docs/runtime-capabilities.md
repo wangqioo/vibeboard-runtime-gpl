@@ -36,6 +36,7 @@ This document separates implemented API, build verification, and board verificat
 | Asset paths and image object basics | `lv_resolve_asset_path`, `lv_asset_exists`, `lv_img_create`, `lv_img_set_src`, LVGL `S:` filesystem drive | `board-verified` | `apps/smoke_assets` verified `S:/apps/smoke_assets/assets/icon.bin`, `asset fs ok`, and `Lua app ok` on board. |
 | BMP image decoder | `CONFIG_LV_USE_BMP=y`, `lv_extra_init`, BMP through `lv_img_set_src` | `board-verified` | `apps/smoke_visual` started on board, resolved `S:/apps/smoke_visual/assets/icon.bmp`, kept running without Lua/runtime errors, and the physical screen smoke showed the visual app image/progress UI. |
 | Common widgets | `lv_btn_create`, `lv_bar_create`, `lv_bar_set_range`, `lv_bar_set_value`, `LV_ANIM_OFF`, `LV_ANIM_ON` | `board-verified` | `apps/smoke_visual` ran on board and logged timer-driven progress updates from 0 to 100 repeatedly. |
+| Canvas drawing | `lv_canvas_create`, `lv_canvas_fill_bg`, `lv_canvas_draw_rect`, `lv_canvas_draw_text`, `lv_canvas_frame_begin`, `lv_canvas_frame_end`, `lv_obj_invalidate`, `LV_IMG_CF_TRUE_COLOR`, `LV_TEXT_ALIGN_CENTER` | `board-verified` | `apps/smoke_canvas` and `apps/holocubic_matrix_rain` were packaged, staged-uploaded, launched, stopped, and switched back to `demo_digital_clock` on the board. |
 
 ## Network, JSON, And Time
 

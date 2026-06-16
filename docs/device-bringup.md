@@ -2050,3 +2050,84 @@ open http://192.168.1.32:8080/
 ```
 
 Result: the board serves the browser management page from `GET /`, and the page includes the direct browser AI app creator. This verifies page delivery and API reachability from the same runtime HTTP service. A real OpenAI-key prompt-to-running-app smoke is still pending and should be recorded separately after a temporary API key is used.
+
+## 2026-06-16 Phase 2 canvas and MatrixRain board verification
+
+Firmware with the minimal Lua canvas binding was built and flashed to the LCKFB ESP32-S3 board.
+
+Verification commands:
+
+```text
+npm test
+idf.py build
+idf.py -p /dev/cu.usbmodem111301 flash
+```
+
+Build result:
+
+```text
+vibeboard_runtime.bin binary size 0x17cb30 bytes.
+Smallest app partition is 0x400000 bytes.
+0x283510 bytes (63%) free.
+```
+
+Post-flash board status:
+
+```text
+GET /status -> 200 OK
+{"sd":true,"app_count":12,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+```
+
+Canvas smoke app:
+
+```text
+npm run package:app -- apps/smoke_canvas
+packaged smoke_canvas
+
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_canvas smoke_canvas
+uploaded 4 files
+rescan ok; confirmed smoke_canvas in /apps
+
+npm run launch:app -- http://192.168.1.32:8080 smoke_canvas
+launched smoke_canvas
+
+GET /status -> 200 OK
+{"sd":true,"app_count":13,"first_app":"smoke_network","install":"ok","state":"running","running":true,"current_app":"smoke_canvas"}
+```
+
+Holocubic MatrixRain Phase 2 port:
+
+```text
+npm run package:app -- apps/holocubic_matrix_rain
+packaged holocubic_matrix_rain
+
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/holocubic_matrix_rain holocubic_matrix_rain
+uploaded 4 files
+rescan ok; confirmed holocubic_matrix_rain in /apps
+
+npm run launch:app -- http://192.168.1.32:8080 holocubic_matrix_rain
+launched holocubic_matrix_rain
+
+GET /status -> 200 OK
+{"sd":true,"app_count":14,"first_app":"smoke_network","install":"ok","state":"running","running":true,"current_app":"holocubic_matrix_rain"}
+
+Repeated `GET /status` checks after lowering the demo load returned immediately three times with `current_app=holocubic_matrix_rain`. The app uses conservative `COLUMN_W=24`, `TRAIL=6`, and a `180ms` timer so the HTTP service remains responsive while the canvas animation runs.
+```
+
+Lifecycle cleanup and switch check:
+
+```text
+POST /stop -> 200 OK
+{"ok":true,"stopped":true}
+
+GET /status -> 200 OK
+{"sd":true,"app_count":14,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+
+npm run launch:app -- http://192.168.1.32:8080 demo_digital_clock
+launched demo_digital_clock
+
+GET /status -> 200 OK
+{"sd":true,"app_count":14,"first_app":"smoke_network","install":"ok","state":"running","running":true,"current_app":"demo_digital_clock"}
+```
+
+Result: the minimal canvas Runtime surface is board-verified for creation, PSRAM-backed buffer allocation, fill, rectangle drawing, text drawing, invalidation, staged upload, launch, stop, and switching back to a non-canvas app. The first Phase 2 Holocubic canvas screensaver, `MatrixRain`, is installed and launchable on the board.

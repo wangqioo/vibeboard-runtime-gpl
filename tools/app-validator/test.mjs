@@ -16,10 +16,12 @@ const funDemoApps = [
   "demo_digital_clock",
   "holocubic_nixie_clock",
   "holocubic_analog_clock",
+  "holocubic_matrix_rain",
   "demo_terminal_status",
   "demo_neon_dash",
   "demo_night_light",
-  "demo_auto_snake"
+  "demo_auto_snake",
+  "smoke_canvas"
 ];
 
 describe("parseAppInfo", () => {
@@ -93,6 +95,21 @@ describe("fun demo apps", () => {
     assert.match(analog, /object-drawn analog port/);
     assert.match(analog, /hour_hand/);
     assert.doesNotMatch(nixie + analog, /lv_img_|lv_canvas_|key\.|touch\.|http\.|wifi\.|file\./);
+  });
+
+  it("keeps holocubic_matrix_rain as a canvas-only screensaver port", () => {
+    const source = readFileSync(join(repoRoot, "apps/holocubic_matrix_rain/main.lua"), "utf8");
+
+    assert.match(source, /Holocubic Matrix Rain/);
+    assert.match(source, /lv_canvas_create/);
+    assert.match(source, /lv_canvas_fill_bg/);
+    assert.match(source, /lv_canvas_draw_rect/);
+    assert.match(source, /lv_canvas_draw_text/);
+    assert.match(source, /lv_obj_invalidate/);
+    assert.match(source, /COLUMN_W\s*=\s*24/);
+    assert.match(source, /TRAIL\s*=\s*6/);
+    assert.match(source, /rain_timer:alarm\(180,\s*tmr\.ALARM_AUTO/);
+    assert.doesNotMatch(source, /key\.|touch\.|http\.|wifi\.|file\./);
   });
 });
 

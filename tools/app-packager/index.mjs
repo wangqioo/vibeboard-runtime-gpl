@@ -33,10 +33,12 @@ export const DEMO_APP_DIRS = [
   "apps/demo_digital_clock",
   "apps/holocubic_nixie_clock",
   "apps/holocubic_analog_clock",
+  "apps/holocubic_matrix_rain",
   "apps/demo_terminal_status",
   "apps/demo_neon_dash",
   "apps/demo_night_light",
-  "apps/demo_auto_snake"
+  "apps/demo_auto_snake",
+  "apps/smoke_canvas"
 ];
 export const PACKAGE_SCHEMA = "vibeboard-runtime-app-package@1";
 

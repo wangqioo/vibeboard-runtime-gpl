@@ -60,6 +60,8 @@ const smokeFailInfoPath = join(repoRoot, "apps/smoke_fail/app.info");
 const smokeFailSourcePath = join(repoRoot, "apps/smoke_fail/main.lua");
 const smokeTimerInfoPath = join(repoRoot, "apps/smoke_timer/app.info");
 const smokeTimerSourcePath = join(repoRoot, "apps/smoke_timer/main.lua");
+const smokeCanvasInfoPath = join(repoRoot, "apps/smoke_canvas/app.info");
+const smokeCanvasSourcePath = join(repoRoot, "apps/smoke_canvas/main.lua");
 
 function readRequired(path) {
   assert.equal(existsSync(path), true, `${path} should exist`);
@@ -625,6 +627,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /vb_lua_lvgl_widgets_register/);
     assert.match(source, /vb_lua_lvgl_fs_register/);
     assert.match(source, /vb_lua_lvgl_store_object/);
+    assert.match(source, /vb_lua_lvgl_store_object_with_cleanup/);
+    assert.match(source, /vb_lua_lvgl_has_cleanup/);
+    assert.match(source, /vb_lua_lvgl_cleanup/);
     assert.match(source, /register_lvgl_module/);
     assert.match(source, /package/);
     assert.match(source, /loaded/);
@@ -637,6 +642,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(internal, /vb_lua_lvgl_check_object_id/);
     assert.match(internal, /vb_lua_lvgl_resolve_object/);
     assert.match(internal, /vb_lua_lvgl_store_object/);
+    assert.match(internal, /vb_lua_lvgl_store_object_with_cleanup/);
+    assert.match(internal, /vb_lua_lvgl_object_cleanup_t/);
     assert.match(fsSource, /lv_extra_init/);
     assert.match(fsSource, /lv_resolve_asset_path/);
     assert.match(fsSource, /lv_asset_exists/);
@@ -668,6 +675,20 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(widgetSource, /lv_bar_create/);
     assert.match(widgetSource, /lv_bar_set_value/);
     assert.match(widgetSource, /lv_bar_set_range/);
+    assert.match(widgetSource, /esp_heap_caps\.h/);
+    assert.match(widgetSource, /heap_caps_malloc/);
+    assert.match(widgetSource, /heap_caps_free/);
+    assert.match(widgetSource, /lv_canvas_create/);
+    assert.match(widgetSource, /lv_canvas_set_buffer/);
+    assert.match(widgetSource, /LV_IMG_CF_TRUE_COLOR/);
+    assert.match(widgetSource, /lv_canvas_fill_bg/);
+    assert.match(widgetSource, /lv_canvas_draw_rect/);
+    assert.match(widgetSource, /lv_canvas_draw_text/);
+    assert.match(widgetSource, /lv_draw_rect_dsc_init/);
+    assert.match(widgetSource, /lv_draw_label_dsc_init/);
+    assert.match(widgetSource, /lv_obj_invalidate/);
+    assert.match(widgetSource, /lv_canvas_frame_begin/);
+    assert.match(widgetSource, /lv_canvas_frame_end/);
     assert.match(widgetSource, /lv_obj_add_flag/);
     assert.match(widgetSource, /lv_obj_clear_flag/);
     assert.match(widgetSource, /lv_obj_align/);
@@ -682,7 +703,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /LV_LABEL_LONG_SCROLL_CIRCULAR/);
     assert.match(source, /LV_ANIM_OFF/);
     assert.match(source, /LV_ANIM_ON/);
+    assert.match(source, /LV_IMG_CF_TRUE_COLOR/);
+    assert.match(source, /LV_TEXT_ALIGN_CENTER/);
     assert.match(runner, /vb_lua_lvgl_register\(L\)/);
+    assert.match(runner, /vb_lua_lvgl_has_cleanup\(\)/);
+    assert.match(runner, /vb_lua_lvgl_cleanup\(\)/);
   });
 
   it("ships a Lua weather card smoke UI app", () => {
@@ -722,6 +747,21 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /timer:unregister\(\)/);
     assert.match(source, /smoke timer tick/);
     assert.match(source, /smoke timer single/);
+  });
+
+  it("ships a canvas smoke app for the Phase 2 LVGL surface", () => {
+    const info = readRequired(smokeCanvasInfoPath);
+    const source = readRequired(smokeCanvasSourcePath);
+
+    assert.match(info, /name\s*=\s*smoke_canvas/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer/);
+    assert.match(source, /lv_canvas_create\(root,\s*200,\s*120/);
+    assert.match(source, /lv_canvas_fill_bg\(canvas,\s*0x000000,\s*255\)/);
+    assert.match(source, /lv_canvas_draw_rect/);
+    assert.match(source, /lv_canvas_draw_text/);
+    assert.match(source, /lv_obj_invalidate\(canvas\)/);
+    assert.match(source, /canvas_timer:alarm\(500,\s*tmr\.ALARM_AUTO/);
+    assert.match(source, /smoke canvas ok/);
   });
 
   it("ships a file smoke app", () => {

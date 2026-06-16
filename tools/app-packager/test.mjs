@@ -136,8 +136,10 @@ describe("packageDemoApps", () => {
       "demo_space_dash",
       "demo_terminal_status",
       "holocubic_analog_clock",
+      "holocubic_matrix_rain",
       "holocubic_nixie_clock",
       "nesgame",
+      "smoke_canvas",
       "voice_ai",
       "weather"
     ]);

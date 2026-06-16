@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_lvgl_port.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
@@ -18,6 +19,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
+#include "lvgl.h"
 
 static const char *TAG = "app_runner";
 #define VB_LUA_TASK_STACK_SIZE (32 * 1024)
@@ -161,6 +163,18 @@ static void set_result(vb_app_runner_result_t *result, bool ran, esp_err_t error
     strlcpy(result->message, message ? message : "", sizeof(result->message));
 }
 
+static void close_lua_runtime(lua_State *L, vb_lua_runtime_t *runtime)
+{
+    vb_lua_tmr_cleanup(L, &runtime->tmr);
+    if (vb_lua_lvgl_has_cleanup()) {
+        lvgl_port_lock(0);
+        lv_obj_clean(lv_scr_act());
+        lvgl_port_unlock();
+    }
+    vb_lua_lvgl_cleanup();
+    lua_close(L);
+}
+
 typedef struct {
     const vb_app_registry_result_t *app;
     vb_app_runner_result_t *result;
@@ -215,8 +229,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner
         const char *err = lua_tostring(L, -1);
         ESP_LOGE(TAG, "Lua app failed: %s", err ? err : "unknown error");
         set_result(result, true, ESP_FAIL, err ? err : "lua failed");
-        vb_lua_tmr_cleanup(L, &runtime.tmr);
-        lua_close(L);
+        close_lua_runtime(L, &runtime);
         return ESP_FAIL;
     }
 
@@ -224,15 +237,13 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner
     esp_err_t loop_err = vb_lua_tmr_run_loop(L, &runtime.tmr, loop_error, sizeof(loop_error));
     if (loop_err != ESP_OK) {
         set_result(result, true, loop_err, loop_error[0] ? loop_error : "lua timer failed");
-        vb_lua_tmr_cleanup(L, &runtime.tmr);
-        lua_close(L);
+        close_lua_runtime(L, &runtime);
         return loop_err;
     }
 
     ESP_LOGI(TAG, "Lua app ok");
     set_result(result, true, ESP_OK, "ok");
-    vb_lua_tmr_cleanup(L, &runtime.tmr);
-    lua_close(L);
+    close_lua_runtime(L, &runtime);
     return ESP_OK;
 }
 

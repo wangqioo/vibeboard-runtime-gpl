@@ -14,10 +14,12 @@ const demoAppNames = [
   "demo_digital_clock",
   "holocubic_nixie_clock",
   "holocubic_analog_clock",
+  "holocubic_matrix_rain",
   "demo_terminal_status",
   "demo_neon_dash",
   "demo_night_light",
-  "demo_auto_snake"
+  "demo_auto_snake",
+  "smoke_canvas"
 ];
 
 let failed = false;

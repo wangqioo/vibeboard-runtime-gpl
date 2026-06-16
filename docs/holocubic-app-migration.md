@@ -19,22 +19,31 @@
 
 ## Phase 2: Canvas Screensavers
 
+已迁移：
+
+- `MatrixRain` -> `apps/holocubic_matrix_rain`
+
+当前 Runtime 已补最小 canvas 子集：
+
+- `lv_canvas_create`
+- `lv_canvas_fill_bg`
+- `lv_canvas_draw_rect`
+- `lv_canvas_draw_text`
+- `lv_canvas_frame_begin` / `lv_canvas_frame_end`
+- `lv_obj_invalidate`
+
+这个版本仍然是兼容移植版：保留上游矩阵雨的视觉意图和计时器动画，但收敛到当前可验证的 canvas API，不引入输入、网络 callback、图片解码或自由字体加载。
+
 候选：
 
-- `MatrixRain`
 - `ConwayLife`
 - `FluidPendant`
 - `BTC`
 - `hwmon` display-only
 
-需要先补并真机验证：
+后续需要继续补并真机验证：
 
-- `lv_canvas_create`
-- `lv_canvas_fill_bg`
-- `lv_canvas_draw_rect`
 - `lv_canvas_draw_line`
-- `lv_canvas_draw_text`
-- `lv_obj_invalidate`
 - 可能还需要 `time.getlocal`、HTTP callback 兼容。
 
 ## Phase 3: Input Apps
