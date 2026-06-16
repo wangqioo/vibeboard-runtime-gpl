@@ -43,6 +43,8 @@ ESP32-S3 runtime boot
 - Runtime 已增加 `require("lvgl")` 兼容模块表和常用短名别名，能缓解部分模型生成习惯，但这不是自由生成的根本解决方案；
 - SD App registry 从 12 个保存条目扩展到 32 个，适配风格样板库继续增长；
 - 第一批风格样板 App 已上板验证，包括极简数字时钟、复古终端、霓虹仪表盘、像素宠物、暖色夜灯、专注计时、幸运卡片、飞船仪表盘。
+- 新增系统级左右边缘滑动退出：运行任意 Lua App 时，从屏幕左/右边缘横向滑动会请求停止当前 App 并返回 Launcher；
+- Holocubic 上游应用迁移已启动：已建立 20 个上游应用的兼容矩阵，并完成 `NixieClock` / `clock` 的首批安全子集移植。
 
 重要边界：
 
@@ -198,9 +200,19 @@ apps/demo_night_light      暖色床头小夜灯
 apps/demo_focus_timer      专注倒计时
 apps/demo_lucky_card       灵感卡片
 apps/demo_space_dash       飞船仪表盘
+apps/demo_auto_snake       自动游玩的贪吃蛇演示
+apps/holocubic_nixie_clock Holocubic NixieClock 安全子集移植
+apps/holocubic_analog_clock Holocubic clock 安全子集移植
 ```
 
 这些样板刻意只使用已验证的 `lvgl,timer` 子集，不依赖触摸、网络、图片或未验证字体。它们的作用不是堆功能，而是证明同一套安全 Runtime API 可以生成明显不同的视觉风格。
+
+Holocubic 迁移说明：
+
+- 完整兼容矩阵见 `docs/holocubic-app-migration.json`；
+- 人读迁移计划见 `docs/holocubic-app-migration.md`；
+- 首批迁移不是原样复制 PNG/Canvas 版本，而是保留视觉意图、重写到当前已验证的安全 Runtime 子集；
+- 后续按 canvas、input、service/webui、bridge/audio、native module 分阶段推进。
 
 配套更新：
 

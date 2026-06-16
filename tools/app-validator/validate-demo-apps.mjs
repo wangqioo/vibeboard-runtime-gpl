@@ -12,6 +12,8 @@ const demoAppNames = [
   "demo_lucky_card",
   "demo_space_dash",
   "demo_digital_clock",
+  "holocubic_nixie_clock",
+  "holocubic_analog_clock",
   "demo_terminal_status",
   "demo_neon_dash",
   "demo_night_light",

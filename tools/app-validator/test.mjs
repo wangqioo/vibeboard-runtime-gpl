@@ -14,6 +14,8 @@ const funDemoApps = [
   "demo_lucky_card",
   "demo_space_dash",
   "demo_digital_clock",
+  "holocubic_nixie_clock",
+  "holocubic_analog_clock",
   "demo_terminal_status",
   "demo_neon_dash",
   "demo_night_light",
@@ -78,6 +80,19 @@ describe("fun demo apps", () => {
     assert.match(source, /move_snake/);
     assert.match(source, /snake_timer:alarm\(250,\s*tmr\.ALARM_AUTO/);
     assert.doesNotMatch(source, /touch\.|key\./);
+  });
+
+  it("keeps the first Holocubic ports inside the safe runtime subset", () => {
+    const nixie = readFileSync(join(repoRoot, "apps/holocubic_nixie_clock/main.lua"), "utf8");
+    const analog = readFileSync(join(repoRoot, "apps/holocubic_analog_clock/main.lua"), "utf8");
+
+    assert.match(nixie, /Holocubic Nixie/);
+    assert.match(nixie, /TUBE_BG/);
+    assert.match(nixie, /draw_digit/);
+    assert.match(analog, /Holocubic Clock/);
+    assert.match(analog, /object-drawn analog port/);
+    assert.match(analog, /hour_hand/);
+    assert.doesNotMatch(nixie + analog, /lv_img_|lv_canvas_|key\.|touch\.|http\.|wifi\.|file\./);
   });
 });
 

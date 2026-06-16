@@ -1,0 +1,4 @@
+name = Holocubic Analog Clock
+entry = main.lua
+description = Safe runtime port of the Holocubic analog clock style
+capabilities = lvgl,timer

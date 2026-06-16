@@ -31,6 +31,8 @@ export const DEMO_APP_DIRS = [
   "apps/demo_lucky_card",
   "apps/demo_space_dash",
   "apps/demo_digital_clock",
+  "apps/holocubic_nixie_clock",
+  "apps/holocubic_analog_clock",
   "apps/demo_terminal_status",
   "apps/demo_neon_dash",
   "apps/demo_night_light",

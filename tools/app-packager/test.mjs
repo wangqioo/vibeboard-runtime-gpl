@@ -135,6 +135,8 @@ describe("packageDemoApps", () => {
       "demo_pixel_pet",
       "demo_space_dash",
       "demo_terminal_status",
+      "holocubic_analog_clock",
+      "holocubic_nixie_clock",
       "nesgame",
       "voice_ai",
       "weather"

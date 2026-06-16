@@ -1,0 +1,4 @@
+name = Holocubic Nixie Clock
+entry = main.lua
+description = Safe runtime port of the Holocubic Nixie clock style
+capabilities = lvgl,timer

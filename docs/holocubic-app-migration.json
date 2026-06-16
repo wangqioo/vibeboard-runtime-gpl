@@ -1,0 +1,170 @@
+{
+  "schema": "vibeboard-holocubic-migration@1",
+  "source": {
+    "repo": "https://github.com/clocteck/holocubic-apps.git",
+    "commit": "78da33f",
+    "localMirror": "upstream/holocubic-apps"
+  },
+  "apps": [
+    {
+      "upstreamId": "2048",
+      "targetId": "holocubic_2048",
+      "phase": 3,
+      "status": "blocked",
+      "requiredRuntime": ["input", "lvgl-animation", "lvgl-style-extra"],
+      "notes": "Interactive tile game; migrate after Lua key/touch events and animation cleanup exist."
+    },
+    {
+      "upstreamId": "BTC",
+      "targetId": "holocubic_btc",
+      "phase": 2,
+      "status": "planned",
+      "requiredRuntime": ["lvgl-canvas", "http-callback", "time-compat"],
+      "notes": "Start as a display-only price/status screen after canvas and HTTP compatibility work."
+    },
+    {
+      "upstreamId": "ConwayLife",
+      "targetId": "holocubic_conway_life",
+      "phase": 2,
+      "status": "planned",
+      "requiredRuntime": ["lvgl-canvas"],
+      "notes": "Good screensaver candidate once canvas rectangle drawing is board-verified."
+    },
+    {
+      "upstreamId": "FluidPendant",
+      "targetId": "holocubic_fluid_pendant",
+      "phase": 2,
+      "status": "planned",
+      "requiredRuntime": ["lvgl-canvas", "time-compat"],
+      "notes": "Timer-driven visual app; needs canvas before full-fidelity migration."
+    },
+    {
+      "upstreamId": "MatrixRain",
+      "targetId": "holocubic_matrix_rain",
+      "phase": 2,
+      "status": "planned",
+      "requiredRuntime": ["lvgl-canvas"],
+      "notes": "Fast visual win after canvas text/rectangle drawing is available."
+    },
+    {
+      "upstreamId": "NixieClock",
+      "targetId": "holocubic_nixie_clock",
+      "phase": 1,
+      "status": "ported",
+      "requiredRuntime": ["lvgl", "timer"],
+      "notes": "Compat port recreates the Nixie clock style with safe LVGL objects instead of PNG assets."
+    },
+    {
+      "upstreamId": "Spectrum",
+      "targetId": "holocubic_spectrum",
+      "phase": 3,
+      "status": "blocked",
+      "requiredRuntime": ["native-spectrum", "input", "lvgl-extra"],
+      "notes": "Depends on spectrum/audio-style runtime work; defer until input and native policy are stable."
+    },
+    {
+      "upstreamId": "clock",
+      "targetId": "holocubic_analog_clock",
+      "phase": 1,
+      "status": "ported",
+      "requiredRuntime": ["lvgl", "timer"],
+      "notes": "Compat port recreates an analog clock face with safe LVGL objects instead of PNG hands."
+    },
+    {
+      "upstreamId": "codex_buddy",
+      "targetId": "holocubic_codex_buddy",
+      "phase": 5,
+      "status": "blocked",
+      "requiredRuntime": ["http-callback", "key-input", "gif", "bridge-config"],
+      "notes": "Needs host bridge polling, GIF or canvas fallback, and input cleanup on app stop."
+    },
+    {
+      "upstreamId": "devtools",
+      "targetId": "holocubic_devtools",
+      "phase": 4,
+      "status": "blocked",
+      "requiredRuntime": ["app-service", "web-routes", "file-management"],
+      "notes": "Service-style tool; migrate only after sandboxed app-owned routes and file APIs exist."
+    },
+    {
+      "upstreamId": "hwmon",
+      "targetId": "holocubic_hwmon",
+      "phase": 2,
+      "status": "planned",
+      "requiredRuntime": ["http-callback", "lvgl-canvas"],
+      "notes": "Can start display-only, then enable host bridge mode in a later service/network phase."
+    },
+    {
+      "upstreamId": "lv-benchmark",
+      "targetId": "holocubic_lv_benchmark",
+      "phase": 6,
+      "status": "blocked",
+      "requiredRuntime": ["lvgl-broad-surface", "benchmark-metrics"],
+      "notes": "Useful after the runtime intentionally supports the LVGL features it measures."
+    },
+    {
+      "upstreamId": "mini_claw",
+      "targetId": "holocubic_mini_claw",
+      "phase": 5,
+      "status": "blocked",
+      "requiredRuntime": ["app-service", "http-callback", "bridge-config"],
+      "notes": "Bridge app; defer until service and network callback contracts are defined."
+    },
+    {
+      "upstreamId": "nesgame",
+      "targetId": "nesgame",
+      "phase": 6,
+      "status": "blocked",
+      "requiredRuntime": ["native-module", "gamepad-input"],
+      "notes": "Already copied locally, but full upstream behavior depends on native NES and controller support."
+    },
+    {
+      "upstreamId": "photos",
+      "targetId": "holocubic_photos",
+      "phase": 3,
+      "status": "blocked",
+      "requiredRuntime": ["input", "lvgl-canvas", "image-decoders"],
+      "notes": "Needs media decoding, canvas image draw, and key/touch navigation."
+    },
+    {
+      "upstreamId": "plane",
+      "targetId": "holocubic_plane",
+      "phase": 3,
+      "status": "blocked",
+      "requiredRuntime": ["input", "image-decoders", "lvgl-animation"],
+      "notes": "Large game with many assets; start later with simplified controls and strict object budget."
+    },
+    {
+      "upstreamId": "settings",
+      "targetId": "holocubic_settings",
+      "phase": 3,
+      "status": "blocked",
+      "requiredRuntime": ["input", "app-manager"],
+      "notes": "Needs Lua input and app/system APIs before it can be useful."
+    },
+    {
+      "upstreamId": "videos",
+      "targetId": "holocubic_videos",
+      "phase": 3,
+      "status": "blocked",
+      "requiredRuntime": ["input", "gif", "video"],
+      "notes": "Needs GIF/video decode and navigation controls."
+    },
+    {
+      "upstreamId": "voice_ai",
+      "targetId": "voice_ai",
+      "phase": 5,
+      "status": "blocked",
+      "requiredRuntime": ["audio", "http-callback", "bridge-config"],
+      "notes": "Already copied locally; full upstream behavior needs audio/I2S and bridge hardening."
+    },
+    {
+      "upstreamId": "weather",
+      "targetId": "weather",
+      "phase": 1,
+      "status": "planned",
+      "requiredRuntime": ["network", "time-compat", "image-decoders"],
+      "notes": "Already has a curated local port; re-sync after time/image compatibility decisions."
+    }
+  ]
+}
