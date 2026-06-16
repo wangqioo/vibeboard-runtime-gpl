@@ -2203,3 +2203,5 @@ GET /status -> 200 OK
 ```
 
 Result: the expanded registry firmware is board-verified for a 16-app live SD registry, `/apps` JSON parsing, launch of a known style demo, launch of a representative Holocubic placeholder app, switching from one app to another, and stop back to idle without `ESP_ERR_NO_MEM`, connection reset, or `vb_lua_launch` stack overflow.
+
+Next-time runbook: `docs/runtime-troubleshooting.md` records the root cause chain, triage commands, and guardrails for `/apps` truncation, `ESP_ERR_NO_MEM`, and `vb_lua_launch` stack overflow.

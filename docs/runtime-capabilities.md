@@ -28,7 +28,7 @@ This document separates implemented API, build verification, and board verificat
 | --- | --- | --- | --- |
 | Screen and object basics | `lv_scr_act`, `lv_obj_clean`, `lv_obj_create`, `lv_label_create` | `board-verified` | `apps/smoke_ui` displayed weather card. |
 | Sizing and alignment | `lv_obj_set_size`, `lv_obj_set_width`, `lv_obj_set_height`, `lv_obj_align` | `board-verified` | `apps/smoke_ui` layout displayed. |
-| Basic styles | `lv_obj_set_style_bg_color`, `lv_obj_set_style_text_color`, `lv_obj_set_style_radius`, `lv_obj_set_style_pad_all`, `lv_obj_set_style_border_width`, `lv_obj_set_style_border_color` | `board-verified` | `apps/smoke_ui` card displayed. |
+| Basic styles | `lv_obj_set_style_bg_color`, `lv_obj_set_style_bg_opa`, `lv_obj_set_style_text_color`, `lv_obj_set_style_radius`, `lv_obj_set_style_pad_all`, `lv_obj_set_style_border_width`, `lv_obj_set_style_border_color` | `board-verified` | `apps/smoke_ui` card displayed. |
 | Constants | `LV_ALIGN_CENTER`, `LV_ALIGN_TOP_LEFT`, `LV_ALIGN_TOP_MID`, `LV_ALIGN_BOTTOM_LEFT` | `board-verified` | `apps/smoke_ui` layout displayed. |
 | LVGL module compatibility | `require("lvgl")`, global `lvgl`, aliases such as `obj_create`, `label_create`, `ALIGN_CENTER`, `ANIM_ON` | `board-verified` | Firmware with the compatibility table was flashed and used during style demo verification; the change fixes `module 'lvgl' not found` but does not make arbitrary LVGL APIs available. |
 | Positioning and flags | `lv_obj_set_pos`, `lv_obj_set_x`, `lv_obj_set_y`, `lv_obj_add_flag`, `lv_obj_clear_flag`, `LV_OBJ_FLAG_SCROLLABLE`, `LV_OBJ_FLAG_HIDDEN` | `board-verified` | `apps/smoke_assets` ran on board and returned `Lua app ok`. |

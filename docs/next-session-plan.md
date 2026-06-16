@@ -25,6 +25,18 @@ http://192.168.1.32:8080
 
 The repo baseline now raises app registry capacity from 32 to 64 entries so the full Holocubic catalog, style demos, and smoke apps can coexist. Board verification confirmed `/apps` parses correctly with the expanded registry and representative app launches no longer fail with `ESP_ERR_NO_MEM`.
 
+Troubleshooting record:
+
+```text
+docs/runtime-troubleshooting.md
+```
+
+Holocubic full-function port plan:
+
+```text
+docs/holocubic-full-port-plan.md
+```
+
 ## What Is Done
 
 - Base VibeBoard runtime firmware is restored and running from factory app offset `0x10000`.
@@ -35,7 +47,8 @@ The repo baseline now raises app registry capacity from 32 to 64 entries so the 
 - App registry capacity is now `VB_APP_REGISTRY_MAX_APPS 64`, so the full local catalog can grow beyond the earlier 32-entry ceiling.
 - `/apps` now streams chunked JSON instead of using a fixed 1024-byte response buffer.
 - Lua app tasks use a PSRAM-backed stack and a slim app execution context, fixing the expanded-registry `ESP_ERR_NO_MEM` and `vb_lua_launch` stack overflow failure.
-- The Holocubic catalog has local packages for all 20 upstream app targets. `NixieClock`, `clock`, and `MatrixRain` are compatibility ports; unported targets launch explicit `Runtime update required` placeholders.
+- The Holocubic catalog has local packages for all 20 upstream app targets. This is a catalog baseline, not full functional migration. `NixieClock`, `clock`, and `MatrixRain` are compatibility ports; unported targets launch explicit `Runtime update required` placeholders.
+- Full Holocubic app behavior is blocked by shared runtime gaps: Lua input, HTTP callback compatibility, broader LVGL/media APIs, app/httpd service APIs, native/gamepad/audio modules.
 - Style demo apps are package-validated, packaged by `package:demos`, uploaded to the board, and launch-verified:
 
 ```text
@@ -90,27 +103,83 @@ The `require("lvgl")` compatibility patch helps with one class of failures, but 
 
 ## Immediate Next Work
 
-### 1. Commit And Push The Current Baseline
+### 1. Commit And Push The Current Docs
 
-Before starting new feature work, commit the current verified baseline:
+Before starting new feature work, commit the current documentation update:
 
-- style demo apps;
-- package/validator updates;
-- `require("lvgl")` compatibility;
-- app registry capacity increase to 64;
-- full Holocubic local catalog placeholders;
-- development plan updates.
+- runtime troubleshooting runbook;
+- Holocubic full port plan;
+- updated development plan and capability notes.
 
 Recommended verification before commit:
 
 ```bash
-npm test
-npm run validate:apps
-npm run package:demos
 git diff --check
+npm run test:firmware-static
 ```
 
-### 2. Build Safe AI Generation Mode v1
+### 2. Build Holocubic P0 Lua Input
+
+Goal: unblock the largest group of upstream interactive apps by exposing a safe Lua `key` module with cleanup on app stop/switch.
+
+Initial API:
+
+```lua
+key.on(function(code, event_type, ts_ms)
+  print(code, event_type, ts_ms)
+end)
+
+key.off()
+```
+
+Required constants:
+
+```text
+key.LEFT
+key.RIGHT
+key.UP
+key.DOWN
+key.HOME
+key.START
+key.SHORT
+key.LONG_START
+key.LONG_REPEAT
+key.LONG_END
+```
+
+Success criteria:
+
+- `apps/smoke_input` exists;
+- key events update the display;
+- `/stop` clears callbacks;
+- switching to another app does not trigger old callbacks;
+- docs and static tests cover the module.
+
+### 3. Build Holocubic P0 HTTP Callback Compatibility
+
+Goal: make upstream network apps such as `BTC`, `weather`, `hwmon`, `mini_claw`, `codex_buddy`, and `voice_ai` compatible with the expected async HTTP form.
+
+Compatibility target:
+
+```lua
+http.get(url, headers_or_options, function(code, body, headers)
+  print(code, body and #body)
+end)
+
+http.post(url, options, body, function(code, response_body, headers)
+  print(code)
+end)
+```
+
+Success criteria:
+
+- `apps/smoke_http_callback` exists;
+- GET/POST callbacks work;
+- timeout and error paths are visible;
+- stop/switch cancels or safely drops pending callbacks;
+- current synchronous `{status, body}` usage still works.
+
+### 4. Build Safe AI Generation Mode v1
 
 Goal: make browser AI create reliable apps by having AI output structured JSON, not arbitrary Lua.
 
@@ -133,14 +202,6 @@ night_light
 space_dash
 ```
 
-Implementation outline:
-
-- define a browser-side JSON schema for safe app specs;
-- update the AI prompt to request only that JSON;
-- add deterministic template generators that produce `app.info` and `main.lua`;
-- run client-side validation before staged upload;
-- keep free-form Lua generation only as an Advanced/Experimental option.
-
 Success criteria:
 
 - generated Lua uses only known `lvgl,timer` APIs;
@@ -149,7 +210,7 @@ Success criteria:
 - generated app launches without unsupported LVGL API errors;
 - Web Console shows the reason when generation or deployment fails.
 
-### 3. Board-Verify Formal WiFi Configuration
+### 5. Board-Verify Formal WiFi Configuration
 
 Current state: the formal Mac CLI writes `/sdcard/runtime/wifi.json`.
 
@@ -162,7 +223,7 @@ Next slice:
 - confirm `http://<board-ip>:8080/` loads without launching `smoke_network`;
 - then remove, gate, or clearly document the `smoke_network/wifi.json` fallback.
 
-### 4. Real Safe AI Smoke
+### 6. Real Safe AI Smoke
 
 After Safe AI v1 exists:
 
@@ -173,28 +234,8 @@ After Safe AI v1 exists:
 - confirm staged upload and launch;
 - record prompt, generated spec, `/apps`, `/status`, and known limitations in `docs/device-bringup.md`.
 
-### 5. Lua Input Events
-
-Do this after Safe AI v1:
-
-```lua
-touch.on("tap", function(event)
-  print(event.x, event.y)
-end)
-
-key.on("boot", function(event)
-  print(event.action)
-end)
-```
-
-Expected deliverable:
-
-- `apps/smoke_touch`;
-- handler cleanup on app stop/switch;
-- validator and docs updated.
-
 ## Deferred
 
 - Do not expand free-form AI Lua as the main path.
-- Do not implement Lua `app.*` APIs until there is a concrete Lua-side workflow.
-- Do not start native module/NES work until input events and compatibility contracts are stable.
+- Do not mark Holocubic placeholders as full ports until each app has board evidence.
+- Do not start native module/NES work until input, HTTP callback, and compatibility contracts are stable.

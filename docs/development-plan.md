@@ -267,8 +267,10 @@ open http://<board-ip>:8080/
 - Web Console AI 还需要一次“安全模板模式”的真实 API-key prompt 到 running app 人工记录；
 - 浏览器 Console 还没有设备日志流、代码编辑器、版本兼容提示等高级体验；
 - Lua 侧还没有 `touch.on(...)` / `key.on(...)` 输入事件 API；
+- Lua `http.get/post` 还没有上游 Holocubic 需要的 headers/options/callback 兼容签名；
 - Lua 侧还没有 `app.list()` / `app.launch()` / `app.current()` 等 App manager API；
-- LVGL 绑定覆盖仍然有限，只新增了最小 canvas 子集，仍不能直接运行完整上游 HoloCubic App；
+- LVGL 绑定覆盖仍然有限，只新增了最小 canvas 子集，仍不能直接运行完整上游 Holocubic App；
+- Holocubic 20 个目标已经有本地 catalog 包，但完整功能移植只完成了 `NixieClock`、`clock`、`MatrixRain` 的兼容版本；其余 app 需要按 `docs/holocubic-full-port-plan.md` 补 runtime 能力后替换占位入口；
 - Runtime/API/App schema 还没有版本兼容机制；
 - Native `.so` 模块加载 ABI 未做，NES 还不能运行；
 - 音频和完整 Voice AI 仍未进入实现阶段。
@@ -302,27 +304,89 @@ open http://<board-ip>:8080/
 - `docs/device-bringup.md` 记录 HTTP 状态、串口日志和屏幕确认；
 - `docs/runtime-capabilities.md` 把 canvas drawing 从 build-verified 更新为 board-verified。
 
-### Slice 2: 继续迁移 Canvas 类 Holocubic App
+### Slice 2: Holocubic P0 输入事件
 
-目标：复用已验证 canvas API，继续迁移 Phase 2 候选。
+目标：补上上游 Holocubic 大量交互 app 共同依赖的 `key` 输入兼容层，并保证 stop/switch 时不会泄漏回调。
 
-候选顺序：
+建议 API：
 
-```text
-ConwayLife
-FluidPendant
-hwmon display-only
-BTC display-only
+```lua
+key.on(function(code, event_type, ts_ms)
+  print(code, event_type, ts_ms)
+end)
+
+key.off()
+```
+
+首批常量：
+
+- `key.LEFT`
+- `key.RIGHT`
+- `key.UP`
+- `key.DOWN`
+- `key.HOME`
+- `key.START`
+- `key.SHORT`
+- `key.LONG_START`
+- `key.LONG_REPEAT`
+- `key.LONG_END`
+
+验收：
+
+- 新增 `apps/smoke_input`；
+- BOOT 短按/长按和可映射方向事件能更新屏幕；
+- `/stop` 后 Lua input handler 被清理；
+- launch 第二个 app 后旧 handler 不再触发；
+- `docs/runtime-capabilities.md` 和 `docs/device-bringup.md` 更新真机证据。
+
+### Slice 3: Holocubic P0 HTTP Callback Compatibility
+
+目标：让上游 `BTC`、`weather`、`hwmon`、`mini_claw`、`codex_buddy`、`voice_ai` 使用的异步 HTTP 形态能运行。
+
+兼容形式：
+
+```lua
+http.get(url, headers_or_options, function(code, body, headers)
+  print(code, body and #body)
+end)
+
+http.post(url, options, body, function(code, response_body, headers)
+  print(code)
+end)
 ```
 
 验收：
 
-- 每个 App 都有矩阵状态更新；
-- 每个 App 都进入 validator 和 packager；
-- 不引入输入、HTTP callback、自由字体加载或图片解码的新依赖；
+- 新增 `apps/smoke_http_callback`；
+- GET/POST callback、headers、timeout 都有测试；
+- stop/switch 时 pending callback 不触碰已销毁 Lua state；
+- 保留当前同步 `{status, body}` 返回路径；
+- 至少迁移一个 display-only 网络类 app 的第一版，例如 `holocubic_btc` 或 `holocubic_hwmon`。
+
+### Slice 4: Holocubic P1 LVGL/Media Expansion
+
+目标：补完整移植最常见的 LVGL 缺口，先服务 canvas/media 类 app，再服务照片、视频、游戏。
+
+优先 API：
+
+- `lv_canvas_draw_line`
+- `lv_canvas_draw_img`
+- `lv_font_load` / `lv_font_free`
+- `lv_anim_start` / `lv_anim_delete`
+- `lv_obj_remove_style_all`
+- `lv_obj_del` / `lv_obj_del_async`
+- text font/opa/align、shadow、gradient、clip corner 等 style setter
+- PNG/GIF 处理策略：板端 decoder 或 package-time 转换
+
+验收：
+
+- 新增 `apps/smoke_lvgl_style_font_anim`；
+- 新增 `apps/smoke_canvas_media`；
+- 每个新增 API 都进入 `runtime-capabilities`；
+- `ConwayLife`、`FluidPendant`、`BTC display-only`、`hwmon display-only` 中至少两个替换占位入口；
 - 真机按 `validate -> package -> staged upload -> launch -> stop -> switch app` 验证。
 
-### Slice 3: 安全 AI 生成模式 v1
+### Slice 5: 安全 AI 生成模式 v1
 
 目标：停止把“AI 直接生成任意 Lua”作为默认路径，改成 AI 输出安全模板 JSON，浏览器端确定性生成可运行 Lua。
 
@@ -362,7 +426,7 @@ status_screen   终端/仪表盘/夜灯等风格化状态屏
 - 10 次安全生成 + staged upload 不出现 unsupported LVGL API；
 - 失败信息显示在 Web Console，而不是只靠串口。
 
-### Slice 4: 正式 WiFi 配置上板验收
+### Slice 6: 正式 WiFi 配置上板验收
 
 目标：让新用户不依赖 `smoke_network/wifi.json` 也能让板子加入 WiFi。
 
@@ -388,7 +452,7 @@ npm run configure:wifi -- /Volumes/VIBEBOARD --ssid "YOUR_WIFI_SSID" --password 
 - 真机日志显示读取的是 `/sdcard/runtime/wifi.json`；
 - smoke app fallback 被删除、编译开关控制，或明确标成临时兼容。
 
-### Slice 5: Web Console AI 真机 smoke
+### Slice 7: Web Console AI 真机 smoke
 
 目标：把安全 AI Create App 路径用真实 API key 走完，并留下证据。
 
@@ -402,31 +466,7 @@ npm run configure:wifi -- /Volumes/VIBEBOARD --ssid "YOUR_WIFI_SSID" --password 
 - 启动后屏幕显示生成的 UI；
 - `docs/device-bringup.md` 记录 prompt、结果、HTTP 状态和已知限制。
 
-### Slice 6: Lua 输入事件
-
-目标：让 AI 生成的 App 能做真实交互，而不是只靠 timer 刷新。
-
-建议 API：
-
-```lua
-touch.on("tap", function(event)
-  print(event.x, event.y)
-end)
-
-key.on("boot", function(event)
-  print(event.action)
-end)
-```
-
-验收：
-
-- 新增 `apps/smoke_touch`；
-- 屏幕显示当前触摸坐标和 tap 状态；
-- 快速点击不崩；
-- App stop/switch 后 handler 被清理；
-- AI API 白名单和 validator 更新。
-
-### Slice 7: Runtime/API/App 兼容机制
+### Slice 8: Runtime/API/App 兼容机制
 
 目标：让工具和设备能在启动前判断“这个 App 当前 Runtime 能不能跑”。
 

@@ -6,6 +6,16 @@
 
 机器可读矩阵在 `docs/holocubic-app-migration.json`。它记录每个上游 app 的目标 id、迁移阶段、状态和缺失 runtime 能力。
 
+完整功能迁移路线见 `docs/holocubic-full-port-plan.md`。这里先明确口径：
+
+- `upstream/holocubic-apps` 是完整源码镜像；
+- `apps/<target-id>` 是当前 VibeBoard runtime 可安装包；
+- “本地 catalog 已补齐”只表示 20 个目标都有本地目录，能进入验证、打包、展示和启动链路；
+- “完整功能移植”要求上游功能在当前板子上通过 validate、package、staged upload、launch、stop、switch 验证；
+- 目前只有 `NixieClock`、`clock`、`MatrixRain` 是兼容移植完成，大部分目标仍是安全占位入口。
+
+占位入口不是完成状态。它的目的只是避免未支持 API 在板子上崩溃，并把缺失 runtime slice 显示给用户。
+
 ## Full Local Catalog Baseline
 
 现在 20 个上游 Holocubic 目标都已经有本地 `apps/<target-id>` 包，并进入 `validate:apps`、`package:demos` 和迁移矩阵测试。

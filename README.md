@@ -229,6 +229,8 @@ Current split:
 
 See [docs/holocubic-app-migration.md](docs/holocubic-app-migration.md) and [docs/holocubic-app-migration.json](docs/holocubic-app-migration.json) for the migration matrix.
 
+The full-function port plan is tracked in [docs/holocubic-full-port-plan.md](docs/holocubic-full-port-plan.md). Recent expanded-catalog failure notes and next-time troubleshooting commands are in [docs/runtime-troubleshooting.md](docs/runtime-troubleshooting.md).
+
 ## Validate
 
 ```bash
