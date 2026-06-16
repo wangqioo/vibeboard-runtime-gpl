@@ -30,6 +30,8 @@ const luaFileSourcePath = join(firmwareRoot, "main/lua_file.c");
 const luaFileHeaderPath = join(firmwareRoot, "main/lua_file.h");
 const luaHttpSourcePath = join(firmwareRoot, "main/lua_http.c");
 const luaHttpHeaderPath = join(firmwareRoot, "main/lua_http.h");
+const luaKeySourcePath = join(firmwareRoot, "main/lua_key.c");
+const luaKeyHeaderPath = join(firmwareRoot, "main/lua_key.h");
 const luaSjsonSourcePath = join(firmwareRoot, "main/lua_sjson.c");
 const luaSjsonHeaderPath = join(firmwareRoot, "main/lua_sjson.h");
 const luaTmrSourcePath = join(firmwareRoot, "main/lua_tmr.c");
@@ -62,6 +64,8 @@ const smokeTimerInfoPath = join(repoRoot, "apps/smoke_timer/app.info");
 const smokeTimerSourcePath = join(repoRoot, "apps/smoke_timer/main.lua");
 const smokeCanvasInfoPath = join(repoRoot, "apps/smoke_canvas/app.info");
 const smokeCanvasSourcePath = join(repoRoot, "apps/smoke_canvas/main.lua");
+const smokeInputInfoPath = join(repoRoot, "apps/smoke_input/app.info");
+const smokeInputSourcePath = join(repoRoot, "apps/smoke_input/main.lua");
 
 function readRequired(path) {
   assert.equal(existsSync(path), true, `${path} should exist`);
@@ -474,7 +478,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(runner, /vb_lua_tmr_register/);
     assert.match(runner, /vb_lua_tmr_set_stop_flag/);
-    assert.match(runner, /vb_lua_tmr_run_loop/);
+    assert.match(runner, /vb_lua_runtime_run_loop/);
+    assert.match(runner, /vb_lua_tmr_poll/);
+    assert.match(runner, /vb_lua_tmr_has_active/);
     assert.doesNotMatch(runner, /VB_LUA_SMOKE_LOOP_TICKS/);
     const source = readRequired(luaTmrSourcePath);
     const header = readRequired(luaTmrHeaderPath);
@@ -482,6 +488,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /stop_requested/);
     assert.match(source, /Lua tmr loop stop requested/);
     assert.match(header, /vb_lua_tmr_set_stop_flag/);
+    assert.match(header, /vb_lua_tmr_run_loop/);
   });
 
   it("registers a NodeMCU-style tmr module", () => {
@@ -589,6 +596,51 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /vb_lua_http_register\(L\)/);
     assert.match(runner, /vb_lua_sjson_register\(L\)/);
     assert.match(runner, /vb_lua_time_register\(L\)/);
+  });
+
+  it("registers a Lua key input module with stop-safe polling", () => {
+    const header = readRequired(luaKeyHeaderPath);
+    const source = readRequired(luaKeySourcePath);
+    const cmake = readRequired(cmakePath);
+    const runner = readRequired(runnerSourcePath);
+
+    assert.match(cmake, /lua_key\.c/);
+    assert.match(header, /vb_lua_key_state_t/);
+    assert.match(header, /vb_lua_key_init/);
+    assert.match(header, /vb_lua_key_register/);
+    assert.match(header, /vb_lua_key_poll/);
+    assert.match(header, /vb_lua_key_has_handlers/);
+    assert.match(header, /vb_lua_key_cleanup/);
+    assert.match(source, /VB_LUA_KEY_BOOT_GPIO\s+GPIO_NUM_0/);
+    assert.match(source, /VB_LUA_KEY_LONG_START_MS\s+800/);
+    assert.match(source, /VB_LUA_KEY_LONG_REPEAT_MS\s+200/);
+    assert.match(source, /VB_LUA_KEY_HOME\s+5/);
+    assert.match(source, /VB_LUA_KEY_EVENT_START\s+101/);
+    assert.match(source, /VB_LUA_KEY_EVENT_EXIT\s+106/);
+    assert.match(source, /gpio_get_level\(VB_LUA_KEY_BOOT_GPIO\)/);
+    assert.match(source, /key_on/);
+    assert.match(source, /key_off/);
+    assert.match(source, /luaL_ref/);
+    assert.match(source, /luaL_unref/);
+    assert.match(source, /lua_pcall/);
+    assert.match(source, /key/);
+    assert.match(source, /LEFT/);
+    assert.match(source, /RIGHT/);
+    assert.match(source, /UP/);
+    assert.match(source, /DOWN/);
+    assert.match(source, /HOME/);
+    assert.match(source, /START/);
+    assert.match(source, /SHORT/);
+    assert.match(source, /LONG_START/);
+    assert.match(source, /LONG_REPEAT/);
+    assert.match(source, /LONG_END/);
+    assert.match(runner, /#include "lua_key\.h"/);
+    assert.match(runner, /vb_lua_key_init\(&runtime\.key\)/);
+    assert.match(runner, /vb_lua_key_register\(L,\s*&runtime\.key\)/);
+    assert.match(runner, /vb_lua_runtime_run_loop/);
+    assert.match(runner, /vb_lua_key_poll\(L,\s*&runtime->key/);
+    assert.match(runner, /vb_lua_key_has_handlers\(&runtime->key\)/);
+    assert.match(runner, /vb_lua_key_cleanup\(L,\s*&runtime->key\)/);
   });
 
   it("starts optional runtime Wi-Fi from SD before serving installs", () => {
@@ -779,6 +831,22 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /lv_obj_invalidate\(canvas\)/);
     assert.match(source, /canvas_timer:alarm\(500,\s*tmr\.ALARM_AUTO/);
     assert.match(source, /smoke canvas ok/);
+  });
+
+  it("ships an input smoke app for Lua key events", () => {
+    const info = readRequired(smokeInputInfoPath);
+    const source = readRequired(smokeInputSourcePath);
+
+    assert.match(info, /name\s*=\s*smoke_input/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,input/);
+    assert.match(source, /key\.on/);
+    assert.match(source, /key\.off/);
+    assert.match(source, /key\.HOME/);
+    assert.match(source, /key\.START/);
+    assert.match(source, /key\.SHORT/);
+    assert.match(source, /key\.LONG_START/);
+    assert.match(source, /smoke input ready/);
+    assert.match(source, /smoke input event/);
   });
 
   it("ships a file smoke app", () => {

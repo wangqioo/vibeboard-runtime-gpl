@@ -29,6 +29,8 @@ typedef struct {
 void vb_lua_tmr_init(vb_lua_tmr_state_t *state);
 void vb_lua_tmr_set_stop_flag(vb_lua_tmr_state_t *state, volatile bool *stop_requested);
 void vb_lua_tmr_register(lua_State *L, vb_lua_tmr_state_t *state);
+bool vb_lua_tmr_has_active(const vb_lua_tmr_state_t *state);
+esp_err_t vb_lua_tmr_poll(lua_State *L, vb_lua_tmr_state_t *state, char *error, size_t error_size);
 esp_err_t vb_lua_tmr_run_loop(lua_State *L, vb_lua_tmr_state_t *state, char *error, size_t error_size);
 void vb_lua_tmr_cleanup(lua_State *L, vb_lua_tmr_state_t *state);
 

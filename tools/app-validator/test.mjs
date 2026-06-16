@@ -106,6 +106,14 @@ describe("fun demo apps", () => {
     assert.doesNotMatch(source, /touch\.|key\./);
   });
 
+  it("accepts smoke_input as the stable key input smoke app", () => {
+    const result = validateAppDirectory(join(repoRoot, "apps/smoke_input"));
+
+    assert.equal(result.ok, true, result.errors.join("\n"));
+    assert.deepEqual(result.capabilities, ["lvgl", "timer", "input"]);
+    assert.equal(result.relativeEntry, "main.lua");
+  });
+
   it("keeps the first Holocubic ports inside the safe runtime subset", () => {
     const nixie = readFileSync(join(repoRoot, "apps/holocubic_nixie_clock/main.lua"), "utf8");
     const analog = readFileSync(join(repoRoot, "apps/holocubic_analog_clock/main.lua"), "utf8");
@@ -184,6 +192,28 @@ describe("validateAppDirectory", () => {
 
       assert.equal(result.ok, false);
       assert.deepEqual(result.errors, ["Missing capability declaration: timer"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("requires input capability for key usage", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-input-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = Input",
+        "entry = main.lua",
+        "description = Input app",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), "key.on(function() end)\n");
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, ["Missing capability declaration: input"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

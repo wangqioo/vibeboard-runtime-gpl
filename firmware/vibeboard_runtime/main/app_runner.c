@@ -13,6 +13,7 @@
 #include "freertos/task.h"
 #include "lua_file.h"
 #include "lua_http.h"
+#include "lua_key.h"
 #include "lua_lvgl.h"
 #include "lua_sjson.h"
 #include "lua_time.h"
@@ -40,6 +41,7 @@ static vb_app_runner_state_t s_runner_state;
 static portMUX_TYPE s_runner_state_mux = portMUX_INITIALIZER_UNLOCKED;
 
 typedef struct {
+    vb_lua_key_state_t key;
     vb_lua_tmr_state_t tmr;
 } vb_lua_runtime_t;
 
@@ -174,6 +176,7 @@ static void set_result(vb_app_runner_result_t *result, bool ran, esp_err_t error
 static void close_lua_runtime(lua_State *L, vb_lua_runtime_t *runtime)
 {
     vb_lua_tmr_cleanup(L, &runtime->tmr);
+    vb_lua_key_cleanup(L, &runtime->key);
     if (vb_lua_lvgl_has_cleanup()) {
         lvgl_port_lock(0);
         lv_obj_clean(lv_scr_act());
@@ -181,6 +184,45 @@ static void close_lua_runtime(lua_State *L, vb_lua_runtime_t *runtime)
     }
     vb_lua_lvgl_cleanup();
     lua_close(L);
+}
+
+static esp_err_t vb_lua_runtime_run_loop(lua_State *L,
+                                         vb_lua_runtime_t *runtime,
+                                         char *error,
+                                         size_t error_size)
+{
+    int idle_ticks = 0;
+    while (true) {
+        if (s_runner_state.stop_requested) {
+            ESP_LOGI(TAG, "Lua runtime loop stop requested");
+            if (error != NULL && error_size > 0) {
+                strlcpy(error, "stopped", error_size);
+            }
+            return ESP_ERR_INVALID_STATE;
+        }
+
+        esp_err_t key_err = vb_lua_key_poll(L, &runtime->key, error, error_size);
+        if (key_err != ESP_OK) {
+            return key_err;
+        }
+
+        esp_err_t timer_err = vb_lua_tmr_poll(L, &runtime->tmr, error, error_size);
+        if (timer_err != ESP_OK) {
+            return timer_err;
+        }
+
+        if (!vb_lua_tmr_has_active(&runtime->tmr) && !vb_lua_key_has_handlers(&runtime->key)) {
+            idle_ticks++;
+            if (idle_ticks >= 2) {
+                ESP_LOGI(TAG, "Lua runtime loop idle");
+                return ESP_OK;
+            }
+        } else {
+            idle_ticks = 0;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
 }
 
 static BaseType_t create_lua_task(TaskFunction_t task, const char *name, void *arg)
@@ -252,11 +294,13 @@ static esp_err_t run_lua_file(const vb_lua_app_context_t *app, vb_app_runner_res
     luaL_openlibs(L);
     vb_lua_runtime_t runtime = {0};
     vb_lua_tmr_init(&runtime.tmr);
+    vb_lua_key_init(&runtime.key);
     vb_lua_tmr_set_stop_flag(&runtime.tmr, &s_runner_state.stop_requested);
 
     lua_pushcfunction(L, vb_lua_print);
     lua_setglobal(L, "print");
     vb_lua_tmr_register(L, &runtime.tmr);
+    vb_lua_key_register(L, &runtime.key);
     vb_lua_file_register(L, app->dir);
     vb_lua_wifi_register(L);
     vb_lua_http_register(L);
@@ -275,7 +319,7 @@ static esp_err_t run_lua_file(const vb_lua_app_context_t *app, vb_app_runner_res
     }
 
     char loop_error[128] = {0};
-    esp_err_t loop_err = vb_lua_tmr_run_loop(L, &runtime.tmr, loop_error, sizeof(loop_error));
+    esp_err_t loop_err = vb_lua_runtime_run_loop(L, &runtime, loop_error, sizeof(loop_error));
     if (loop_err != ESP_OK) {
         set_result(result, true, loop_err, loop_error[0] ? loop_error : "lua timer failed");
         close_lua_runtime(L, &runtime);

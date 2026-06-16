@@ -6,6 +6,7 @@ const CAPABILITY_USAGE_PATTERNS = [
   { capability: "network", pattern: /\b(?:http|net|mqtt|wifi)\s*\.|\bwebsocket\b/ },
   { capability: "audio", pattern: /\bi2s\s*\./ },
   { capability: "file", pattern: /\bfile\s*\./ },
+  { capability: "input", pattern: /\b(?:key|touch|gamepad)\s*\./ },
   { capability: "module", pattern: /\brequire\s*\(/ }
 ];
 

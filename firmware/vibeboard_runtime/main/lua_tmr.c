@@ -261,6 +261,57 @@ void vb_lua_tmr_register(lua_State *L, vb_lua_tmr_state_t *state)
     lua_setglobal(L, "set_interval");
 }
 
+bool vb_lua_tmr_has_active(const vb_lua_tmr_state_t *state)
+{
+    if (state == NULL) {
+        return false;
+    }
+    for (int i = 0; i < VB_LUA_TMR_MAX; i++) {
+        const vb_lua_timer_t *timer = &state->timers[i];
+        if (timer->allocated && timer->active && timer->callback_ref != LUA_NOREF) {
+            return true;
+        }
+    }
+    return false;
+}
+
+esp_err_t vb_lua_tmr_poll(lua_State *L, vb_lua_tmr_state_t *state, char *error, size_t error_size)
+{
+    if (state == NULL) {
+        return ESP_OK;
+    }
+
+    TickType_t now = xTaskGetTickCount();
+    for (int i = 0; i < VB_LUA_TMR_MAX; i++) {
+        vb_lua_timer_t *timer = &state->timers[i];
+        if (!timer->allocated || !timer->active || timer->callback_ref == LUA_NOREF) {
+            continue;
+        }
+
+        if ((now - timer->last_run) < pdMS_TO_TICKS(timer->period_ms)) {
+            continue;
+        }
+
+        lua_rawgeti(L, LUA_REGISTRYINDEX, timer->callback_ref);
+        if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
+            const char *err = lua_tostring(L, -1);
+            ESP_LOGE(TAG, "Lua timer failed: %s", err ? err : "unknown error");
+            if (error != NULL && error_size > 0) {
+                strlcpy(error, err ? err : "lua timer failed", error_size);
+            }
+            return ESP_FAIL;
+        }
+
+        timer->last_run = now;
+        if (timer->mode == TMR_ALARM_SINGLE) {
+            timer->active = false;
+        } else if (timer->mode == TMR_ALARM_SEMI) {
+            timer->active = false;
+        }
+    }
+    return ESP_OK;
+}
+
 esp_err_t vb_lua_tmr_run_loop(lua_State *L, vb_lua_tmr_state_t *state, char *error, size_t error_size)
 {
     if (state == NULL) {
@@ -278,39 +329,12 @@ esp_err_t vb_lua_tmr_run_loop(lua_State *L, vb_lua_tmr_state_t *state, char *err
             return ESP_ERR_INVALID_STATE;
         }
 
-        bool has_active_timer = false;
-        TickType_t now = xTaskGetTickCount();
-
-        for (int i = 0; i < VB_LUA_TMR_MAX; i++) {
-            vb_lua_timer_t *timer = &state->timers[i];
-            if (!timer->allocated || !timer->active || timer->callback_ref == LUA_NOREF) {
-                continue;
-            }
-
-            has_active_timer = true;
-            if ((now - timer->last_run) < pdMS_TO_TICKS(timer->period_ms)) {
-                continue;
-            }
-
-            lua_rawgeti(L, LUA_REGISTRYINDEX, timer->callback_ref);
-            if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
-                const char *err = lua_tostring(L, -1);
-                ESP_LOGE(TAG, "Lua timer failed: %s", err ? err : "unknown error");
-                if (error != NULL && error_size > 0) {
-                    strlcpy(error, err ? err : "lua timer failed", error_size);
-                }
-                return ESP_FAIL;
-            }
-
-            timer->last_run = now;
-            if (timer->mode == TMR_ALARM_SINGLE) {
-                timer->active = false;
-            } else if (timer->mode == TMR_ALARM_SEMI) {
-                timer->active = false;
-            }
+        esp_err_t poll_err = vb_lua_tmr_poll(L, state, error, error_size);
+        if (poll_err != ESP_OK) {
+            return poll_err;
         }
 
-        if (!has_active_timer) {
+        if (!vb_lua_tmr_has_active(state)) {
             idle_ticks++;
             if (idle_ticks >= VB_LUA_TMR_IDLE_EXIT_TICKS) {
                 ESP_LOGI(TAG, "Lua tmr loop idle");

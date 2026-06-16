@@ -21,6 +21,7 @@ This document separates implemented API, build verification, and board verificat
 | Timer compatibility | `set_interval(ms, callback)` | `board-verified` | Earlier `smoke_ui` ran with interval callback logs. |
 | NodeMCU timers | `tmr.create`, `timer:alarm`, `timer:start`, `timer:stop`, `timer:unregister`, `timer:state`, `timer:interval`, `tmr.now`, `tmr.time` | `board-verified` | `apps/smoke_timer` verified auto timer, single timer, state, unregister, loop idle, and `Lua app ok` on board. |
 | File access | `file.exists`, `file.open`, `file.read`, `file.getcontents`, `file.write`, `file.list`, `file.listdir` | `board-verified` | `apps/smoke_file` verified config read, file handle read, directory listing, app-local write, loop idle, and `Lua app ok` on board. |
+| Key input | `key.on(callback)`, `key.on(code, callback)`, `key.off()`, `key.off(code)`, `key.LEFT`, `key.RIGHT`, `key.UP`, `key.DOWN`, `key.HOME`, `key.START`, `key.SHORT`, `key.LONG_START`, `key.LONG_REPEAT`, `key.LONG_END`, `key.EXIT` | `build-verified` | `apps/smoke_input`, validator coverage for `capabilities = input`, static firmware guardrails, and ESP-IDF build pass. Current hardware event source is BOOT mapped to `key.HOME`; touch/directional mapping and board logs are pending. |
 
 ## LVGL Lua Surface
 
@@ -80,5 +81,5 @@ This document separates implemented API, build verification, and board verificat
 | Capability | Target APIs | Status | Notes |
 | --- | --- | --- | --- |
 | Lua App manager | `app.list`, `app.current`, `app.launch`, `app.rescan`, `app.exiting`, `app.on` | `planned` | Deferred until a Lua-side workflow needs it. The native launcher, Web Console, host CLI, and HTTP lifecycle endpoints currently cover app management. |
-| Input | `touch.on`, `key.on` | `planned` | Hardware touch is usable by the native launcher; Lua input event APIs are a later phase. |
+| Touch and directional input mapping | `touch.on`, directional mapping for `key.LEFT`/`key.RIGHT`/`key.UP`/`key.DOWN` | `planned` | Hardware touch is usable by the native launcher and system edge-swipe exit. The first Lua `key` slice only maps BOOT to `key.HOME`; touch and directional event sources remain planned. |
 | Native modules | `require("/sd/modules/<module>.so")` | `planned` | Deferred until launcher lifecycle and API versioning are stable. |

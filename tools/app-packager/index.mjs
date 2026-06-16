@@ -52,7 +52,8 @@ export const DEMO_APP_DIRS = [
   "apps/demo_neon_dash",
   "apps/demo_night_light",
   "apps/demo_auto_snake",
-  "apps/smoke_canvas"
+  "apps/smoke_canvas",
+  "apps/smoke_input"
 ];
 export const PACKAGE_SCHEMA = "vibeboard-runtime-app-package@1";
 

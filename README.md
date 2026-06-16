@@ -36,6 +36,7 @@ Board-verified networking and install-service work:
 - `POST /delete?app=<id>` and `npm run delete:app` are board-verified, including `409 app is running` protection.
 - The browser Web Console is served directly by the board at `http://192.168.1.32:8080/` and is board-verified for HTML delivery, app list/status APIs, manual upload, launch, stop, and delete controls.
 - The Web Console includes a browser-side AI app creator. It calls OpenAI directly from the user's browser, validates strict JSON package output, writes files through staged upload, commits only after all files are valid, and keeps the API key out of the ESP32 firmware.
+- Lua `key` input has a build-verified first slice: apps can register `key.on(...)` / `key.off(...)`, receive BOOT/HOME short and long events, and rely on runner cleanup when an app stops. Full touch and directional input mapping still need board verification and follow-up work.
 - The uploader command writes a package through the staged path and confirms the app through `/apps`: `npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` uploaded 5 files and confirmed `smoke_visual_remote`.
 - The runtime can launch an installed SD app without rebooting: `POST /launch?app=smoke_visual_remote` returned `200 OK`, and serial logs showed `smoke visual ok S:/apps/smoke_visual_remote/assets/icon.bmp` plus timer-driven progress updates.
 - The local helper command is `npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote`.
@@ -59,7 +60,7 @@ The next productization slice is no longer basic launcher or upload plumbing. Th
 
 - board-verify the formal `configure:wifi` SD setup flow, then remove the smoke-app compatibility fallback;
 - run and record a real AI-generated app smoke from the Web Console with a user-provided API key;
-- expose touch/key input events to Lua apps;
+- board-verify Lua `key` input events and then extend input beyond BOOT/HOME into touch and directional mapping;
 - add runtime/API/app schema compatibility checks;
 - continue expanding the LVGL API whitelist that AI-generated apps are allowed to use.
 

@@ -28,6 +28,8 @@
 - 最小 canvas：fill、rect、text；
 - HTTP 安装/管理服务、native launcher、staged upload、stop/delete。
 
+另外，`key` 输入第一阶段已 build-verified：Lua 现在可注册 `key.on(...)` / `key.off(...)`，BOOT 键映射为 `key.HOME`，并支持短按、长按开始、长按重复和长按结束事件。它还不是完整上游输入层：`key.LEFT/RIGHT/UP/DOWN` 目前只是 API 常量，真实方向事件源和 Lua `touch.on(...)` 仍待实现与板测。
+
 上游完整 app 普遍还依赖：
 
 - `key.on/key.off`、方向键、HOME、短按/长按事件；
@@ -63,14 +65,23 @@ module or native object not found
 
 解锁：`2048`、`photos`、`videos`、`weather`、`BTC`、`settings`、`Spectrum`、`nesgame`、`plane`、`codex_buddy`、`voice_ai`。
 
-需要实现：
+状态：第一阶段已实现并通过构建验证；尚未完成板上输入 smoke、方向键事件源和 Lua touch API。
+
+已实现：
 
 - `key.on(...)`
 - `key.off(...)`
 - `key.LEFT`、`key.RIGHT`、`key.UP`、`key.DOWN`、`key.HOME`
 - `key.START`、`key.SHORT`、`key.LONG_START`、`key.LONG_REPEAT`、`key.LONG_END`
-- 可选 `touch.on(...)`
 - app stop/switch 时自动解绑回调
+- `apps/smoke_input`
+
+仍需实现：
+
+- BOOT/HOME 输入上板验证；
+- 真实方向键事件源，或 touch-to-direction 映射；
+- 可选 `touch.on(...)`；
+- 多次 launch/stop/switch 的串口和 HTTP 证据。
 
 验收 app：
 
@@ -79,7 +90,7 @@ module or native object not found
 验收点：
 
 - 短按/长按能更新 label；
-- 方向键事件能被 Lua 收到；
+- 方向键或 touch-to-direction 事件能被 Lua 收到；
 - `/stop` 后回调不再触发；
 - 启动第二个 app 时没有旧回调泄漏。
 
@@ -325,4 +336,3 @@ board upload/launch/stop/switch evidence
 ```
 
 没有板子证据时，只能标记 `build-verified` 或 `planned`，不能标记为完整功能移植完成。
-

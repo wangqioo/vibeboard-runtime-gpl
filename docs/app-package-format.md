@@ -19,7 +19,7 @@ Required fields:
 
 Optional fields:
 
-- `capabilities`: comma-separated runtime capabilities such as `lvgl`, `timer`, `network`, `audio`, `file`, `module`, or `service`.
+- `capabilities`: comma-separated runtime capabilities such as `lvgl`, `timer`, `network`, `audio`, `file`, `input`, `module`, or `service`.
 - `kind`: app kind. `service` is reserved for background service-style apps.
 
 Apps must declare special capabilities before using restricted runtime APIs in their entry Lua file:
@@ -28,9 +28,51 @@ Apps must declare special capabilities before using restricted runtime APIs in t
 - `timer`: required for `tmr.` or `set_interval(...)` usage.
 - `audio`: required for `i2s.` usage.
 - `file`: required for `file.` usage.
+- `input`: required for `key.`, `touch.`, or `gamepad.` usage.
 - `module`: required for `require(` usage.
 
 Package validation rejects missing metadata, missing entry files, entry paths outside the app directory, and restricted API usage without the matching capability declaration.
+
+## Input
+
+Apps that declare `capabilities = input` can use the build-verified first slice of the Lua `key` module.
+
+Current supported APIs:
+
+```lua
+key.on(function(code, event_type, ts_ms)
+  print(code, event_type, ts_ms)
+end)
+
+key.on(key.HOME, function(event_type, ts_ms)
+  print(event_type, ts_ms)
+end)
+
+key.off()
+key.off(key.HOME)
+```
+
+Current constants:
+
+```lua
+key.LEFT
+key.RIGHT
+key.UP
+key.DOWN
+key.HOME
+key.START
+key.SHORT
+key.LONG_START
+key.LONG_REPEAT
+key.LONG_END
+key.EXIT
+```
+
+Current hardware mapping:
+
+- BOOT is mapped to `key.HOME`;
+- `key.LEFT`, `key.RIGHT`, `key.UP`, and `key.DOWN` are reserved API constants, but real event sources are not mapped yet;
+- Lua `touch.on(...)` is planned, not implemented.
 
 ## File Paths
 

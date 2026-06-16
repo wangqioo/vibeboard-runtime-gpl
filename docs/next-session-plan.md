@@ -14,6 +14,7 @@ runtime WiFi
   -> staged app upload/commit
   -> launch/stop/delete
   -> Lua/LVGL timer-driven demo apps
+  -> build-verified Lua key input first slice
   -> style sample library installed on SD
 ```
 
@@ -44,6 +45,7 @@ docs/holocubic-full-port-plan.md
 - HTTP install service is reachable on port `8080`.
 - Browser Web Console delivery and app management remain in place.
 - `require("lvgl")` now registers a minimal `lvgl` module table and common short aliases such as `obj_create`, `label_create`, `ALIGN_CENTER`, and `ANIM_ON`.
+- Lua `key` input first slice is build-verified: `key.on(...)`, `key.off(...)`, BOOT mapped to `key.HOME`, short/long event constants, and app stop/switch cleanup. Directional event sources and Lua touch input are still pending.
 - App registry capacity is now `VB_APP_REGISTRY_MAX_APPS 64`, so the full local catalog can grow beyond the earlier 32-entry ceiling.
 - `/apps` now streams chunked JSON instead of using a fixed 1024-byte response buffer.
 - Lua app tasks use a PSRAM-backed stack and a slim app execution context, fixing the expanded-registry `ESP_ERR_NO_MEM` and `vb_lua_launch` stack overflow failure.
@@ -67,9 +69,11 @@ demo_auto_snake       self-playing snake demo
 
 ```text
 npm run test:validator
+npm run test:firmware-static
 npm run validate:apps
 npm run test:packager
 npm run package:demos
+idf.py build
 npm test
 git diff --check
 idf.py -p /dev/cu.usbmodem111301 build flash
@@ -103,26 +107,11 @@ The `require("lvgl")` compatibility patch helps with one class of failures, but 
 
 ## Immediate Next Work
 
-### 1. Commit And Push The Current Docs
+### 1. Board-Verify Holocubic P0 Lua Input
 
-Before starting new feature work, commit the current documentation update:
+Goal: move the first Lua `key` slice from build-verified to board-verified.
 
-- runtime troubleshooting runbook;
-- Holocubic full port plan;
-- updated development plan and capability notes.
-
-Recommended verification before commit:
-
-```bash
-git diff --check
-npm run test:firmware-static
-```
-
-### 2. Build Holocubic P0 Lua Input
-
-Goal: unblock the largest group of upstream interactive apps by exposing a safe Lua `key` module with cleanup on app stop/switch.
-
-Initial API:
+Current API:
 
 ```lua
 key.on(function(code, event_type, ts_ms)
@@ -132,7 +121,7 @@ end)
 key.off()
 ```
 
-Required constants:
+Implemented constants:
 
 ```text
 key.LEFT
@@ -150,10 +139,22 @@ key.LONG_END
 Success criteria:
 
 - `apps/smoke_input` exists;
-- key events update the display;
+- package and upload `smoke_input`;
+- BOOT short/long events update the display;
 - `/stop` clears callbacks;
 - switching to another app does not trigger old callbacks;
-- docs and static tests cover the module.
+- `docs/device-bringup.md` records serial, HTTP, and manual screen evidence;
+- `docs/runtime-capabilities.md` upgrades Key input from `build-verified` to `board-verified`.
+
+### 2. Add Directional Or Touch-To-Direction Input
+
+Goal: turn the exposed `key.LEFT/RIGHT/UP/DOWN` constants into real events. Use either physical key source, touch directional gestures, or a small mapping layer consistent with the board hardware.
+
+Success criteria:
+
+- `apps/smoke_input` can show LEFT/RIGHT/UP/DOWN events;
+- system edge swipe still owns app exit and does not conflict with app-level direction gestures;
+- app stop/switch cleanup still holds.
 
 ### 3. Build Holocubic P0 HTTP Callback Compatibility
 

@@ -33,7 +33,8 @@ const demoAppNames = [
   "demo_neon_dash",
   "demo_night_light",
   "demo_auto_snake",
-  "smoke_canvas"
+  "smoke_canvas",
+  "smoke_input"
 ];
 
 let failed = false;

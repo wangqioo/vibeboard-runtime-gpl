@@ -1,0 +1,4 @@
+name = smoke_input
+entry = main.lua
+description = Lua key input smoke test
+capabilities = lvgl,timer,input

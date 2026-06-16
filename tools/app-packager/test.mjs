@@ -154,6 +154,7 @@ describe("packageDemoApps", () => {
       "holocubic_videos",
       "nesgame",
       "smoke_canvas",
+      "smoke_input",
       "voice_ai",
       "weather"
     ]);

@@ -45,6 +45,7 @@ ESP32-S3 runtime boot
 - 第一批风格样板 App 已上板验证，包括极简数字时钟、复古终端、霓虹仪表盘、像素宠物、暖色夜灯、专注计时、幸运卡片、飞船仪表盘。
 - 新增系统级左右边缘滑动退出：运行任意 Lua App 时，从屏幕左/右边缘横向滑动会请求停止当前 App 并返回 Launcher；
 - Holocubic 上游应用迁移已启动：20 个上游目标现在都有本地可验证 app 包，其中 `NixieClock`、`clock`、`MatrixRain` 已完成兼容移植，其余未完成项以 `Runtime update required` 占位入口明确标注缺失 runtime。
+- Holocubic P0 输入第一阶段已实现并通过构建验证：Lua 现在有 `key.on(...)` / `key.off(...)`，BOOT 键映射为 `key.HOME`，支持短按、长按开始、长按重复、长按结束事件，并在 app stop/switch 时清理回调。
 
 重要边界：
 
@@ -80,6 +81,7 @@ apps/smoke_assets
 apps/smoke_visual
 apps/smoke_network
 apps/smoke_fail
+apps/smoke_input
 ```
 
 ### 3. Lua 和 LVGL 能力
@@ -90,6 +92,7 @@ apps/smoke_fail
 - 基础 LVGL 对象、label、container、尺寸、定位、颜色、边框、圆角、padding、对齐已可用；
 - `S:` SD 文件系统、app-local 资源路径解析、`lv_img_*` 最小图片 API 已可用；
 - BMP 解码、button、bar、进度值更新已通过 `smoke_visual` 验证。
+- `key` 输入模块已 build-verified：`apps/smoke_input` 可用于验证 BOOT/HOME 短按和长按事件；方向键事件源、Lua `touch.on(...)` 和真机输入日志仍待后续补齐。
 
 ### 4. Launcher 和生命周期
 
@@ -266,7 +269,7 @@ open http://<board-ip>:8080/
 - Web Console AI 自由 Lua 生成不稳定，已经实测出现 `module 'lvgl' not found` 和缺少具体 LVGL API 的失败；默认路径应改成安全模板生成模式；
 - Web Console AI 还需要一次“安全模板模式”的真实 API-key prompt 到 running app 人工记录；
 - 浏览器 Console 还没有设备日志流、代码编辑器、版本兼容提示等高级体验；
-- Lua 侧还没有 `touch.on(...)` / `key.on(...)` 输入事件 API；
+- Lua `key.on(...)` 输入事件第一阶段已实现但还没有板上验证；当前只把 BOOT 映射到 `key.HOME`，还没有 Lua `touch.on(...)` 和真实方向键/触摸方向映射；
 - Lua `http.get/post` 还没有上游 Holocubic 需要的 headers/options/callback 兼容签名；
 - Lua 侧还没有 `app.list()` / `app.launch()` / `app.current()` 等 App manager API；
 - LVGL 绑定覆盖仍然有限，只新增了最小 canvas 子集，仍不能直接运行完整上游 Holocubic App；
@@ -306,6 +309,8 @@ open http://<board-ip>:8080/
 
 ### Slice 2: Holocubic P0 输入事件
 
+状态：第一阶段已实现并通过 `npm run test:firmware-static`、`npm run test:validator`、`npm run test:packager` 和 ESP-IDF build。下一步是上板验证和补真实方向/触摸映射。
+
 目标：补上上游 Holocubic 大量交互 app 共同依赖的 `key` 输入兼容层，并保证 stop/switch 时不会泄漏回调。
 
 建议 API：
@@ -333,8 +338,9 @@ key.off()
 
 验收：
 
-- 新增 `apps/smoke_input`；
-- BOOT 短按/长按和可映射方向事件能更新屏幕；
+- `apps/smoke_input` 已存在；
+- BOOT 短按/长按能更新屏幕；
+- 后续补真实方向键或 touch-to-direction 事件源；
 - `/stop` 后 Lua input handler 被清理；
 - launch 第二个 app 后旧 handler 不再触发；
 - `docs/runtime-capabilities.md` 和 `docs/device-bringup.md` 更新真机证据。

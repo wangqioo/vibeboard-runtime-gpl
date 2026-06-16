@@ -10,6 +10,7 @@ idf_component_register(
         "web_console.c"
         "lua_file.c"
         "lua_http.c"
+        "lua_key.c"
         "lua_lvgl.c"
         "lua_lvgl_fs.c"
         "lua_lvgl_widgets.c"
