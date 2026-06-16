@@ -55,9 +55,26 @@ describe("packageApp", () => {
 
       assert.equal(result.appId, "weather");
       const manifest = JSON.parse(readFileSync(join(result.outputPath, "manifest.json"), "utf8"));
-      assert.equal(manifest.schema, "vibeboard-runtime-app-package@1");
+      assert.equal(manifest.schema, "vibeboard-runtime-app-package@2");
       assert.equal(manifest.appId, "weather");
       assert.equal(manifest.name, "weather");
+      assert.deepEqual(manifest.app, {
+        id: "weather",
+        name: "weather",
+        version: "0.0.0",
+        kind: "app"
+      });
+      assert.deepEqual(manifest.requires, {
+        runtime: ">=0.1.0",
+        luaApi: ">=0.1.0",
+        lvglApi: ">=0.1.0",
+        packageSchema: "vibeboard-runtime-app-package@2",
+        nativeAbi: null,
+        capabilities: ["network"]
+      });
+      assert.deepEqual(manifest.provides, {
+        services: []
+      });
       assert.deepEqual(manifest.capabilities, ["network"]);
       assert.equal(manifest.install.sdPath, "/sd/apps/weather");
       assert.ok(manifest.files.some((file) => file.path === "app.info" && file.sha256));
@@ -119,12 +136,60 @@ describe("packageApp", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("uses app.info compatibility metadata when present", () => {
+    const root = makeTempRepo();
+    try {
+      const appPath = writeApp(
+        root,
+        "apps/devtools",
+        [
+          "name = devtools",
+          "entry = main.lua",
+          "description = Device tools",
+          "version = 1.2.3",
+          "kind = service",
+          "capabilities = file,service",
+          "requires.runtime = >=0.2.0",
+          "requires.luaApi = >=0.3.0",
+          "requires.lvglApi = >=0.4.0",
+          "requires.nativeAbi = >=2.0.2",
+          "provides.services = devtools,httpd",
+          ""
+        ].join("\n"),
+        "file.listdir('.')\n"
+      );
+
+      const result = packageApp({ repoRoot: root, appDir: appPath });
+      const manifest = JSON.parse(readFileSync(join(result.outputPath, "manifest.json"), "utf8"));
+
+      assert.deepEqual(manifest.app, {
+        id: "devtools",
+        name: "devtools",
+        version: "1.2.3",
+        kind: "service"
+      });
+      assert.deepEqual(manifest.requires, {
+        runtime: ">=0.2.0",
+        luaApi: ">=0.3.0",
+        lvglApi: ">=0.4.0",
+        packageSchema: "vibeboard-runtime-app-package@2",
+        nativeAbi: ">=2.0.2",
+        capabilities: ["file", "service"]
+      });
+      assert.deepEqual(manifest.provides, {
+        services: ["devtools", "httpd"]
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("packageDemoApps", () => {
-  it("packages the three demo apps", () => {
+  it("packages the curated demo and migrated apps", () => {
     const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
     const result = packageDemoApps({ repoRoot });
-    assert.deepEqual(result.map((item) => item.appId).sort(), ["nesgame", "voice_ai", "weather"]);
+    assert.deepEqual(result.map((item) => item.appId).sort(), ["clock", "matrix_rain", "nesgame", "nixie_clock", "voice_ai", "weather"]);
   });
 });

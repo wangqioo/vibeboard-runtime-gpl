@@ -22,8 +22,11 @@ import {
 } from "node:path";
 import { validateAppDirectory } from "../app-validator/index.mjs";
 
-export const DEMO_APP_DIRS = ["apps/weather", "apps/voice_ai", "apps/nesgame"];
-export const PACKAGE_SCHEMA = "vibeboard-runtime-app-package@1";
+export const DEMO_APP_DIRS = ["apps/weather", "apps/voice_ai", "apps/nesgame", "apps/matrix_rain", "apps/nixie_clock", "apps/clock"];
+export const PACKAGE_SCHEMA = "vibeboard-runtime-app-package@2";
+export const DEFAULT_RUNTIME_REQUIREMENT = ">=0.1.0";
+export const DEFAULT_LUA_API_REQUIREMENT = ">=0.1.0";
+export const DEFAULT_LVGL_API_REQUIREMENT = ">=0.1.0";
 
 const SKIP_NAMES = new Set([".DS_Store", "manifest.json"]);
 const SKIP_DIRS = new Set([".cache", "tmp", "dist"]);
@@ -124,6 +127,34 @@ function writeInstallNotes(outputDir, metadata, appId) {
   writeFileSync(join(outputDir, "install-notes.txt"), notes);
 }
 
+function splitList(value) {
+  return value
+    ? value.split(",").map((item) => item.trim()).filter(Boolean)
+    : [];
+}
+
+function buildManifestCompatibility(metadata, appId, capabilities) {
+  return {
+    app: {
+      id: appId,
+      name: metadata.name || appId,
+      version: metadata.version || "0.0.0",
+      kind: metadata.kind || "app"
+    },
+    requires: {
+      runtime: metadata["requires.runtime"] || DEFAULT_RUNTIME_REQUIREMENT,
+      luaApi: metadata["requires.luaApi"] || DEFAULT_LUA_API_REQUIREMENT,
+      lvglApi: metadata["requires.lvglApi"] || DEFAULT_LVGL_API_REQUIREMENT,
+      packageSchema: PACKAGE_SCHEMA,
+      nativeAbi: metadata["requires.nativeAbi"] || null,
+      capabilities
+    },
+    provides: {
+      services: splitList(metadata["provides.services"])
+    }
+  };
+}
+
 function movePackageIntoPlace(tmpPath, outputPath) {
   rmSync(outputPath, { recursive: true, force: true });
   mkdirSync(dirname(outputPath), { recursive: true });
@@ -165,6 +196,7 @@ export function packageApp({ repoRoot = process.cwd(), appDir }) {
   copyAppFiles(absoluteAppDir, tmpPath);
   writeInstallNotes(tmpPath, validation.metadata, appId);
 
+  const compatibility = buildManifestCompatibility(validation.metadata, appId, validation.capabilities);
   const manifest = {
     schema: PACKAGE_SCHEMA,
     appId,
@@ -173,6 +205,7 @@ export function packageApp({ repoRoot = process.cwd(), appDir }) {
     name: validation.metadata.name,
     entry: validation.metadata.entry,
     description: validation.metadata.description,
+    ...compatibility,
     capabilities: validation.capabilities,
     files: listFiles(tmpPath),
     install: {

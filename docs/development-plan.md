@@ -1,6 +1,6 @@
 # VibeBoard Runtime GPL 开发计划
 
-更新时间：2026-06-13
+更新时间：2026-06-17
 
 ## 一句话目标
 
@@ -44,7 +44,7 @@
 - App registry 会过滤缺少入口文件的 App；例如 `raw_upload/main.lua` 不存在时不会进入可启动列表。
 - 网络运行时让固件超过默认 1MB app 分区，当前已切换到自定义 4MB factory app 分区。
 
-当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **30% 到 40%**：核心方向、文件/资源、基础控件、定时器、网络 API、免拔 SD 部署、原生 Launcher 和基础 App 生命周期已经进入可验证阶段；应用生态、Lua 侧 App 管理 API、输入事件 API 和 Native 模块还需要补齐。
+当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **40% 到 50%**：核心方向、文件/资源、基础控件、定时器、网络 API、免拔 SD 部署、原生 Launcher、基础 App 生命周期、manifest v2、staged install/delete、以及首批上游显示类 App 迁移已经进入可验证阶段；应用生态、Lua 侧 App 管理 API、输入事件 API、音频和 Native 模块还需要补齐。
 
 ## 当前完成清单与后续路线
 
@@ -88,6 +88,11 @@ LVGL 能力：
 - `GET /apps` 可列出已安装 App；
 - `POST /rescan` 可重新扫描 SD App；
 - `POST /launch?app=<id>` 可远程启动指定 App；
+- `POST /install?app=<id>&path=<relative>&stage=<stage>` 可写入 staging 目录；
+- `POST /install/commit?app=<id>&stage=<stage>` 可提交 staged App 并替换正式目录；
+- `POST /install/abort?stage=<stage>` 可丢弃 staged 上传；
+- `POST /apps/delete?app=<id>` 可删除未运行的 App；
+- `/status` 已返回 runtime、Lua API、LVGL API、package schema 和 native ABI 版本信息；
 - Mac 工具已支持：
 
 ```bash
@@ -111,6 +116,14 @@ npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote
 - `/dev/cu.usbmodem112301` 已刷入当前 Runtime；
 - `docs/device-bringup.md` 记录了每次真机证据；
 - `docs/runtime-capabilities.md` 维护 Runtime API 的实现/验证状态。
+
+上游 HoloCubic 迁移：
+
+- `apps/matrix_rain` 已从 `upstream/holocubic-apps/MatrixRain/` 迁移，补齐最小 LVGL canvas 绑定和相关常量；
+- `apps/nixie_clock` 已从 `upstream/holocubic-apps/NixieClock/` 迁移，补齐 PNG 解码配置、`time.getlocal()`、图片抗锯齿和样式清理绑定；
+- `apps/clock` 已从 `upstream/holocubic-apps/clock/` 迁移，补齐图片旋转、pivot、zoom 和文本样式绑定；
+- `tools/app-packager` 的 demo 打包列表已包含 `matrix_rain`、`nixie_clock` 和 `clock`；
+- 这些迁移已通过静态测试、packager 测试、总测试、`git diff --check` 和 ESP-IDF build；还需要后续上板做屏幕验证。
 
 ### 现在能用到什么程度
 
@@ -141,14 +154,23 @@ AI 生成一个受限 Lua/LVGL App
 
 ### 下一阶段必须补的核心能力
 
-第一优先级：Phase 5 收尾，而不是重新做 Launcher。
+第一优先级：继续按上游 App 驱动补 Runtime API，而不是一次性盲补所有绑定。
+
+- 每次选择一个上游 App；
+- 先列出 Lua 模块和 `lv_*` API；
+- 先写静态测试锁定缺口；
+- 再补最小 Runtime 绑定和本地 App 包；
+- 最后跑 package、firmware static、总测试、`git diff --check` 和 ESP-IDF build；
+- 有硬件时再补真机屏幕验证记录。
+
+第二优先级：Phase 5 收尾，而不是重新做 Launcher。
 
 - 给原生 Launcher 增加停止当前 App、返回列表、刷新列表和启动失败详情；
 - `/status` 生命周期状态已经完成第一轮真机验证，后续重点是把状态和错误反馈显示到屏幕端；
 - 确认 `tmr` loop、文件句柄、LVGL 对象和事件 handler 在切换时有清晰清理边界；
 - 当前 App 出错时回到 Launcher，而不是只依赖串口或 HTTP 状态。
 
-第二优先级：输入事件。
+第三优先级：输入事件。
 
 - 暴露 FT6336 touch 给 Lua；
 - 增加 `touch.on(...)` 或统一事件 API；
@@ -156,7 +178,7 @@ AI 生成一个受限 Lua/LVGL App
 - 做 `apps/smoke_touch`，显示触摸坐标和点击状态；
 - 验证快速点击不会导致 Lua/LVGL 崩溃。
 
-第三优先级：扩展 LVGL/API 覆盖。
+第四优先级：扩展 LVGL/API 覆盖。
 
 - 补常用控件：list、arc、switch、dropdown、textarea、roller、slider；
 - 补常用样式：font、opacity、shadow、line、flex/grid 基础；
@@ -164,7 +186,7 @@ AI 生成一个受限 Lua/LVGL App
 - 建立 “AI 可以生成的 UI API 白名单”；
 - 让工具在 App 使用未支持 API 时提前报 `Runtime update required`。
 
-第四优先级：设备端 App 管理。
+第五优先级：设备端 App 管理。
 
 - Lua 侧 `app.list()`、`app.current()`、`app.launch(id)`、`app.rescan()`；
 - HTTP 删除 App；
@@ -174,7 +196,7 @@ AI 生成一个受限 Lua/LVGL App
 - Runtime 版本、API 版本、App schema 版本查询；
 - 不兼容 App 拒绝启动并给出原因。
 
-第五优先级：上游兼容和高级能力。
+第六优先级：上游兼容和高级能力。
 
 - 按能力逐个迁移完整 `weather`；
 - 再做 `voice_ai` 的音频路径；
@@ -417,8 +439,8 @@ VibeBoard Runtime ready: sd=ok apps=1 lua=ok
 - `wifi`、`http`、`sjson`、`time` 已真机验证最小路径；
 - 没有 Lua 可用的触摸/按键事件；
 - 原生屏幕 Launcher、触摸选择、BOOT 备用选择和受控 App 切换已经完成 Phase 5A；但还没有返回 Launcher、屏幕停止/刷新和屏幕错误恢复；
-- HTTP 上传、列表、重扫、远程启动、受控停止/切换已完成最小版；还没有浏览器上传、卸载、commit/staging；
-- 没有图片、字体、canvas、动画等完整 LVGL 绑定；
+- HTTP 上传、列表、重扫、远程启动、受控停止/切换、staged install、commit/abort 和 delete 已完成第一版；还没有浏览器管理 UI；
+- 图片、PNG、最小 canvas 和一批常用 LVGL 图片/文本样式绑定已补齐；字体加载、动画和完整控件覆盖仍不足；
 - 没有 Native `.so` 动态模块加载 ABI；
 - `tmr` 事件循环已经从固定 8 秒 smoke loop 改为 timer-driven loop，并支持 stop/switch 停止请求；完整生命周期状态机要等 Phase 5B 补齐。
 
@@ -428,16 +450,16 @@ VibeBoard Runtime ready: sd=ok apps=1 lua=ok
 | --- | --- | --- | --- |
 | SD App 包结构 | 成熟 | 已跑通最小版 | 已完成基础 |
 | Lua VM | 成熟 | 已集成 | 已完成基础 |
-| LVGL 绑定 | 覆盖较广 | 最小控件/样式/图片/按钮/进度条已跑通，覆盖仍远小于上游 | P1 |
+| LVGL 绑定 | 覆盖较广 | 最小控件/样式/图片/按钮/进度条/canvas 已跑通或 build-verified，覆盖仍远小于上游 | P1 |
 | 定时器 | `tmr` | 核心 API 已真机 smoke，生命周期还需 Launcher 补齐 | P0 |
 | 文件模块 | `file` | 最小 API 已真机 smoke；App-local 读写和资源路径已可用 | P0 |
 | 网络 | `wifi/http/net/mqtt` | `wifi`/`http` 最小 API 已 board-verified，`net`/`mqtt` 未做 | P1 |
 | JSON | `sjson` | `decode`/`encode` 已 board-verified | P1 |
-| 时间/NTP | `time` | `get`/`settimezone`/`initntp` 已 board-verified | P1 |
-| App 管理 | `app` 模块 | HTTP `/launch` 已可启动指定 SD App；Lua `app.*` 模块、屏幕 Launcher 和受控切换未做 | P1 |
+| 时间/NTP | `time` | `get`/`getlocal`/`settimezone`/`initntp` 已实现，核心联网路径已 board-verified | P1 |
+| App 管理 | `app` 模块 | HTTP `/launch`、`/stop`、`/rescan`、staged install、delete 已可用；Lua `app.*` 模块未做 | P1 |
 | 输入 | `key`/事件 | touch 初始化但未暴露给 Lua | P1 |
-| 资源 | 图片/字体/资产路径 | App-local 路径和 `lv_img_*` 绑定已编译通过，真机与解码待补 | P1 |
-| Web 安装卸载 | 有路线 | 无 | P2 |
+| 资源 | 图片/字体/资产路径 | App-local 路径、`lv_img_*`、BMP/PNG、最小 canvas 已编译通过；字体加载路线仍弱 | P1 |
+| Web 安装卸载 | 有路线 | HTTP staged install/delete 已实现；浏览器 UI 未做 | P2 |
 | Native 模块 | NES `.so` | 源码吸收，未运行 | P3 |
 
 ## 总体开发原则
@@ -862,19 +884,26 @@ key.on("long", callback)
 
 目标：减少反复拔插 SD 卡，让 App 可以通过网络或 USB 辅助工具安装。
 
-当前状态：第一版最小 HTTP 安装服务和远程启动已完成并真机验证。它不是最终完整 API，但已经证明 Runtime 可以在板端接收文件、写入 SD、重扫 App、并按 app id 启动已安装 App。
+当前状态：HTTP 安装服务、远程启动、staged install/commit/abort、delete 和版本状态字段已完成第一版实现。它不是最终完整 API，但已经证明 Runtime 可以在板端接收文件、写入 staging、提交到正式 App 目录、重扫 App、删除未运行 App，并按 app id 启动已安装 App。
 
 已完成：
 
 - 固件启动 `install_service`，监听 `8080`；
 - `POST /install?app=<id>&path=<relative>` 写入 `/sdcard/apps/<id>/<relative>`；
+- `POST /install?app=<id>&path=<relative>&stage=<stage>` 写入 `/sdcard/.vibeboard-staging/<stage>/<relative>`；
+- `POST /install/commit?app=<id>&stage=<stage>` 将 staged 目录提交到 `/sdcard/apps/<id>/`；
+- `POST /install/abort?stage=<stage>` 删除 staged 目录；
+- `POST /apps/delete?app=<id>` 删除未运行 App；
 - `GET /status` 返回 SD、App 数量、第一个 App 和安装服务状态；
+- `GET /status` 返回 runtime version、Lua API version、LVGL API version、package schema 和 native ABI version；
 - `GET /apps` 返回当前 registry 里保存的 App 列表；
+- `/apps` 返回 manifest v2 派生 metadata，包括 schema、version、kind、capabilities 和 compatible；
 - `POST /rescan` 重新扫描 `/sdcard/apps` 并返回最新 App 数量；
 - `POST /launch?app=<id>` 重新扫描 registry，并异步启动指定 App；
 - 拒绝空路径、绝对路径和 `..` 路径逃逸；
 - 自动创建父目录；
-- `tools/app-uploader` 默认使用 Node 原生 HTTP，并有本地测试；CLI 在当前 Mac 网络路径使用 `nc` transport；
+- `tools/app-uploader` 默认使用 Node 原生 HTTP，并默认走 staged upload + commit；
+- `tools/app-uploader --legacy-direct` 保留旧 direct upload 作为 fallback；
 - `npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` 已上传并确认 `smoke_visual_remote`；
 - `npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote` 已连到板端；同一 App 已运行时会拒绝重复启动，启动另一个 App 时会走受控 stop/switch；
 - 原始 HTTP POST 从 Mac 写入 `raw_upload/app.info` 后，下一次启动日志显示 `app_registry: found 2 apps`。
@@ -882,9 +911,11 @@ key.on("long", callback)
 
 当前限制：
 
-- 还没有 commit/staging、删除或浏览器 UI；
+- 还没有浏览器 UI；
+- staging commit 目前是实用替换流程，不是严格文件系统级原子 rename；
+- 删除运行中 App 会被拒绝；如果需要“先 stop 再 delete”的产品流程，应由工具或 Web Console 编排；
 - `/launch` 已支持受控切换，`/status.state` 已完成 idle/running/failed/stop/recovery 真机验证；屏幕端错误恢复仍需 Phase 5B 收尾；
-- 当前 Mac 到板子 `192.168.1.32:8080` 的上传路径仍需收敛：raw HTTP/curl 可成功上传，`npm run upload:app` 的 `nc` fallback 曾在同一路径失败。
+- staged install/delete 已通过本地测试和固件构建；后续仍需补一轮真机安装中断和删除恢复验证。
 
 需要新增或修改：
 
@@ -906,24 +937,25 @@ docs/deployment-flow.md
 GET  /status       # first slice done
 GET  /apps         # first slice done
 POST /rescan       # first slice done
-POST /api/apps/<id>/files
-POST /api/apps/<id>/commit
-DELETE /api/apps/<id>
+POST /install?app=<id>&path=<path>&stage=<stage>    # done
+POST /install/commit?app=<id>&stage=<stage>         # done
+POST /install/abort?stage=<stage>                   # done
+POST /apps/delete?app=<id>                          # done
 ```
 
-2. 安装采用临时目录：
+2. 安装采用临时目录。**已完成第一版。**
 
 ```text
-/sd/.staging/<app-id>/
+/sdcard/.vibeboard-staging/<stage>/
 ```
 
-3. commit 成功后原子替换：
+3. commit 成功后替换正式目录。**已完成第一版。**
 
 ```text
-/sd/apps/<app-id>/
+/sdcard/apps/<app-id>/
 ```
 
-4. 失败时保留旧 App。
+4. 失败时尽量保留旧 App。**工具默认 staged upload，减少半包被启动风险；严格回滚语义仍需强化。**
 5. Web Console 支持：
 
 - 选择本地 App 包；
@@ -995,13 +1027,23 @@ dist/apps/<app-id>/
 
 目标：逐个让上游 App 在 VibeBoard Runtime 上真实跑通。
 
+当前状态：上游兼容路线已经开始落地。`MatrixRain`、`NixieClock` 和 `clock` 已迁移为本地 App 包并驱动补齐了一批 LVGL/time/PNG/canvas 能力；当前验证层级是 package/static/build，下一步需要上板屏幕验证。
+
 优先顺序：
 
-1. `clock` 或最简单静态 UI；
-2. `weather`；
-3. `voice_ai`；
-4. `2048` 或交互小游戏；
-5. `nesgame`。
+1. `ConwayLife`：继续补 canvas/font 兼容，是下一步最小显示类 App；
+2. `2048` 或其他轻量交互 App：倒逼 touch/key Lua 输入事件；
+3. `weather`：复用已实现的 WiFi/HTTP/JSON/time，补完整 UI 适配；
+4. `voice_ai`：需要音频和 bridge，排在网络 UI 路线稳定之后；
+5. `nesgame`：需要 Native module ABI 和 NES 动态模块，最后做。
+
+已迁移应用：
+
+| 上游 App | 本地路径 | 已补 Runtime 能力 | 当前验证 |
+| --- | --- | --- | --- |
+| `MatrixRain` | `apps/matrix_rain/` | 最小 `lv_canvas_*`、canvas draw rect、canvas frame begin/end、canvas fill bg、常用 LVGL 常量 | package/static/build |
+| `NixieClock` | `apps/nixie_clock/` | PNG 解码配置、`time.getlocal()`、`lv_obj_remove_style_all`、`lv_img_set_antialias` | package/static/build |
+| `clock` | `apps/clock/` | `lv_img_set_angle`、`lv_img_set_pivot`、`lv_img_set_zoom`、文本字体/透明度/对齐/字距样式 | package/static/build |
 
 每个 App 的迁移流程：
 
@@ -1019,7 +1061,8 @@ dist/apps/<app-id>/
 
 - 每个 App 都有独立 bring-up 记录；
 - 每个 App 都明确哪些地方保持上游兼容，哪些地方做了 VibeBoard 适配；
-- 不把“能打包”误写成“能运行”。
+- 不把“能打包”误写成“能运行”；
+- package/static/build 通过后，必须补真机屏幕验证才能标记为 board-verified。
 
 ## Phase 10：Native Module 和 NES
 

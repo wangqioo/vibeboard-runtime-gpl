@@ -21,6 +21,7 @@ const luaLvglSourcePath = join(firmwareRoot, "main/lua_lvgl.c");
 const luaLvglHeaderPath = join(firmwareRoot, "main/lua_lvgl.h");
 const luaLvglInternalHeaderPath = join(firmwareRoot, "main/lua_lvgl_internal.h");
 const luaLvglFsSourcePath = join(firmwareRoot, "main/lua_lvgl_fs.c");
+const luaLvglCanvasSourcePath = join(firmwareRoot, "main/lua_lvgl_canvas.c");
 const luaLvglWidgetsSourcePath = join(firmwareRoot, "main/lua_lvgl_widgets.c");
 const luaFileSourcePath = join(firmwareRoot, "main/lua_file.c");
 const luaFileHeaderPath = join(firmwareRoot, "main/lua_file.h");
@@ -56,6 +57,16 @@ const smokeFailInfoPath = join(repoRoot, "apps/smoke_fail/app.info");
 const smokeFailSourcePath = join(repoRoot, "apps/smoke_fail/main.lua");
 const smokeTimerInfoPath = join(repoRoot, "apps/smoke_timer/app.info");
 const smokeTimerSourcePath = join(repoRoot, "apps/smoke_timer/main.lua");
+const matrixRainInfoPath = join(repoRoot, "apps/matrix_rain/app.info");
+const matrixRainSourcePath = join(repoRoot, "apps/matrix_rain/main.lua");
+const nixieClockInfoPath = join(repoRoot, "apps/nixie_clock/app.info");
+const nixieClockSourcePath = join(repoRoot, "apps/nixie_clock/main.lua");
+const nixieClockDigitPath = join(repoRoot, "apps/nixie_clock/assets/digit_0.png");
+const nixieClockTubePath = join(repoRoot, "apps/nixie_clock/assets/tube_off.png");
+const clockInfoPath = join(repoRoot, "apps/clock/app.info");
+const clockSourcePath = join(repoRoot, "apps/clock/main.lua");
+const clockDialPath = join(repoRoot, "apps/clock/assets/dial.png");
+const clockHourPath = join(repoRoot, "apps/clock/assets/hour.png");
 
 function readRequired(path) {
   assert.equal(existsSync(path), true, `${path} should exist`);
@@ -106,14 +117,41 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const source = readRequired(registrySourcePath);
 
     assert.match(header, /VB_APPS_PATH\s+"\/sdcard\/apps"/);
+    assert.match(header, /VB_APP_MANIFEST_SCHEMA_MAX/);
+    assert.match(header, /VB_APP_VERSION_MAX/);
+    assert.match(header, /VB_APP_KIND_MAX/);
+    assert.match(header, /VB_APP_CAPABILITIES_MAX/);
     assert.match(header, /VB_APP_REGISTRY_MAX_APPS/);
     assert.match(header, /vb_app_registry_entry_t/);
+    assert.match(header, /manifest_schema/);
+    assert.match(header, /version/);
+    assert.match(header, /kind/);
+    assert.match(header, /capabilities/);
+    assert.match(header, /compatible/);
     assert.match(header, /apps\[/);
     assert.match(source, /VB_APPS_PATH/);
     assert.match(source, /app\.info/);
+    assert.match(source, /manifest\.json/);
+    assert.match(source, /read_app_manifest/);
+    assert.match(source, /vibeboard-runtime-app-package@2/);
     assert.match(source, /stat\(app_path,\s*&st\)/);
     assert.match(source, /skip app entry that is missing/);
     assert.match(source, /result->apps/);
+  });
+
+  it("exposes app manifest compatibility metadata through HTTP apps", () => {
+    const source = readRequired(installServiceSourcePath);
+
+    assert.match(source, /manifest_schema/);
+    assert.match(source, /version/);
+    assert.match(source, /kind/);
+    assert.match(source, /capabilities/);
+    assert.match(source, /compatible/);
+    assert.match(source, /\\"schema\\":\\"%s\\"/);
+    assert.match(source, /\\"version\\":\\"%s\\"/);
+    assert.match(source, /\\"kind\\":\\"%s\\"/);
+    assert.match(source, /\\"capabilities\\":\\"%s\\"/);
+    assert.match(source, /\\"compatible\\":%s/);
   });
 
   it("tracks the first app entry path for execution", () => {
@@ -167,6 +205,26 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(main, /static\s+vb_app_registry_result_t\s+s_apps/);
     assert.match(main, /static\s+vb_install_service_context_t\s+s_install_context/);
     assert.match(main, /vb_install_service_start\(&s_install_context\)/);
+  });
+
+  it("supports staged app install commit, abort, and delete operations", () => {
+    const source = readRequired(installServiceSourcePath);
+
+    assert.match(source, /VB_APP_STAGE_PATH/);
+    assert.match(source, /get_query_value\(req,\s*"stage"/);
+    assert.match(source, /build_app_path/);
+    assert.match(source, /build_stage_path/);
+    assert.match(source, /install_commit_handler/);
+    assert.match(source, /install_abort_handler/);
+    assert.match(source, /app_delete_handler/);
+    assert.match(source, /remove_tree/);
+    assert.match(source, /rename\(/);
+    assert.match(source, /"\/install\/commit"/);
+    assert.match(source, /"\/install\/abort"/);
+    assert.match(source, /"\/apps\/delete"/);
+    assert.match(source, /\\"committed\\"/);
+    assert.match(source, /\\"aborted\\"/);
+    assert.match(source, /\\"deleted\\"/);
   });
 
   it("exposes Lua runner lifecycle for launcher and HTTP launch", () => {
@@ -274,10 +332,24 @@ describe("vibeboard runtime firmware static guardrails", () => {
   it("exposes app runner lifecycle state through HTTP status", () => {
     const source = readRequired(installServiceSourcePath);
 
+    assert.match(source, /VB_RUNTIME_VERSION/);
+    assert.match(source, /VB_RUNTIME_LUA_API_VERSION/);
+    assert.match(source, /VB_RUNTIME_LVGL_API_VERSION/);
+    assert.match(source, /VB_RUNTIME_PACKAGE_SCHEMA/);
+    assert.match(source, /VB_RUNTIME_NATIVE_ABI_VERSION/);
     assert.match(source, /vb_app_runner_current_state_name\(\)/);
+    assert.match(source, /vb_app_runner_last_status/);
+    assert.match(source, /vb_app_runner_last_message/);
     assert.match(source, /\\"state\\":\\"%s\\"/);
     assert.match(source, /\\"running\\":%s/);
     assert.match(source, /\\"current_app\\":\\"%s\\"/);
+    assert.match(source, /\\"runtime_version\\":\\"%s\\"/);
+    assert.match(source, /\\"lua_api_version\\":\\"%s\\"/);
+    assert.match(source, /\\"lvgl_api_version\\":\\"%s\\"/);
+    assert.match(source, /\\"package_schema\\":\\"%s\\"/);
+    assert.match(source, /\\"native_abi_version\\":%s/);
+    assert.match(source, /\\"last_status\\":\\"%s\\"/);
+    assert.match(source, /\\"last_message\\":\\"%s\\"/);
   });
 
   it("boots into a native touch launcher", () => {
@@ -416,6 +488,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(sjsonSource, /cJSON_PrintUnformatted/);
     assert.match(timeHeader, /vb_lua_time_register/);
     assert.match(timeSource, /time_get/);
+    assert.match(timeSource, /time_getlocal/);
     assert.match(timeSource, /time_settimezone/);
     assert.match(timeSource, /time_initntp/);
     assert.match(timeSource, /esp_netif_init/);
@@ -486,6 +559,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cmake, /lua_lvgl_fs\.c/);
     assert.match(cmake, /lua_lvgl_widgets\.c/);
     assert.match(defaults, /CONFIG_LV_USE_BMP=y/);
+    assert.match(defaults, /CONFIG_LV_USE_PNG=y/);
     assert.match(source, /vb_lua_lvgl_widgets_register/);
     assert.match(source, /vb_lua_lvgl_fs_register/);
     assert.match(source, /vb_lua_lvgl_store_object/);
@@ -510,15 +584,24 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(widgetSource, /lv_obj_set_y/);
     assert.match(widgetSource, /lv_obj_set_style_bg_color/);
     assert.match(widgetSource, /lv_obj_set_style_text_color/);
+    assert.match(widgetSource, /lv_obj_set_style_text_font/);
+    assert.match(widgetSource, /lv_obj_set_style_text_opa/);
+    assert.match(widgetSource, /lv_obj_set_style_text_align/);
+    assert.match(widgetSource, /lv_obj_set_style_text_letter_space/);
     assert.match(widgetSource, /lv_obj_set_style_radius/);
     assert.match(widgetSource, /lv_obj_set_style_pad_all/);
     assert.match(widgetSource, /lv_obj_set_style_border_width/);
     assert.match(widgetSource, /lv_obj_set_style_border_color/);
+    assert.match(widgetSource, /lv_obj_remove_style_all/);
     assert.match(widgetSource, /lv_label_create/);
     assert.match(widgetSource, /lv_label_set_text/);
     assert.match(widgetSource, /lv_label_set_long_mode/);
     assert.match(widgetSource, /lv_img_create/);
     assert.match(widgetSource, /lv_img_set_src/);
+    assert.match(widgetSource, /lv_img_set_antialias/);
+    assert.match(widgetSource, /lv_img_set_angle/);
+    assert.match(widgetSource, /lv_img_set_pivot/);
+    assert.match(widgetSource, /lv_img_set_zoom/);
     assert.match(widgetSource, /lv_btn_create/);
     assert.match(widgetSource, /lv_bar_create/);
     assert.match(widgetSource, /lv_bar_set_value/);
@@ -538,6 +621,33 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /LV_ANIM_OFF/);
     assert.match(source, /LV_ANIM_ON/);
     assert.match(runner, /vb_lua_lvgl_register\(L\)/);
+  });
+
+  it("registers LVGL canvas drawing for MatrixRain-style apps", () => {
+    const cmake = readRequired(cmakePath);
+    const source = readRequired(luaLvglSourcePath);
+    const header = readRequired(luaLvglInternalHeaderPath);
+    const canvas = readRequired(luaLvglCanvasSourcePath);
+
+    assert.match(cmake, /lua_lvgl_canvas\.c/);
+    assert.match(source, /vb_lua_lvgl_canvas_register\(L\)/);
+    assert.match(header, /vb_lua_lvgl_canvas_register/);
+    assert.match(source, /LV_PART_MAIN/);
+    assert.match(source, /LV_TEXT_ALIGN_CENTER/);
+    assert.match(source, /LV_IMG_CF_TRUE_COLOR/);
+    assert.match(canvas, /VB_LVGL_CANVAS_WIDTH\s+320/);
+    assert.match(canvas, /VB_LVGL_CANVAS_HEIGHT\s+240/);
+    assert.match(canvas, /lv_canvas_create/);
+    assert.match(canvas, /lv_canvas_set_buffer/);
+    assert.match(canvas, /lv_canvas_fill_bg/);
+    assert.match(canvas, /lv_canvas_draw_rect/);
+    assert.match(canvas, /lv_canvas_draw_text/);
+    assert.match(canvas, /lv_obj_invalidate/);
+    assert.match(canvas, /"lv_canvas_create"/);
+    assert.match(canvas, /"lv_canvas_fill_bg"/);
+    assert.match(canvas, /"lv_canvas_draw_rect"/);
+    assert.match(canvas, /"lv_canvas_draw_text"/);
+    assert.match(canvas, /"lv_obj_invalidate"/);
   });
 
   it("ships a Lua weather card smoke UI app", () => {
@@ -636,6 +746,61 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /lv_bar_set_value\(bar,\s*progress,\s*LV_ANIM_ON\)/);
     assert.match(source, /tmr\.create\(\)/);
     assert.match(source, /smoke visual ok/);
+  });
+
+  it("ships MatrixRain as the first upstream display app migration", () => {
+    const info = readRequired(matrixRainInfoPath);
+    const source = readRequired(matrixRainSourcePath);
+
+    assert.match(info, /name = MatrixRain/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,timer/);
+    assert.match(source, /MATRIX_RAIN_APP/);
+    assert.match(source, /lv_canvas_create/);
+    assert.match(source, /lv_canvas_draw_text/);
+    assert.match(source, /tmr\.create/);
+  });
+
+  it("ships NixieClock as an upstream image-clock migration", () => {
+    const info = readRequired(nixieClockInfoPath);
+    const source = readRequired(nixieClockSourcePath);
+    const digit = readFileSync(nixieClockDigitPath);
+    const tube = readFileSync(nixieClockTubePath);
+
+    assert.match(info, /name = Nixie Clock/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,file,timer,network/);
+    assert.match(source, /NIXIE_CLOCK_APP/);
+    assert.match(source, /ASSET_DIR = "\/sd\/apps\/nixie_clock\/assets"/);
+    assert.match(source, /lv_img_create/);
+    assert.match(source, /lv_img_set_src/);
+    assert.match(source, /lv_obj_remove_style_all/);
+    assert.match(source, /lv_img_set_antialias/);
+    assert.match(source, /time_mod\.getlocal/);
+    assert.match(source, /tmr\.create/);
+    assert.deepEqual([...digit.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    assert.deepEqual([...tube.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  });
+
+  it("ships Clock as an upstream analog clock migration", () => {
+    const info = readRequired(clockInfoPath);
+    const source = readRequired(clockSourcePath);
+    const dial = readFileSync(clockDialPath);
+    const hour = readFileSync(clockHourPath);
+
+    assert.match(info, /name = Clock/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,file,timer,network/);
+    assert.match(source, /CLOCK_APP/);
+    assert.match(source, /ASSET_DIR = "\/sd\/apps\/clock\/assets"/);
+    assert.match(source, /lv_img_set_angle/);
+    assert.match(source, /lv_img_set_pivot/);
+    assert.match(source, /lv_img_set_zoom/);
+    assert.match(source, /lv_obj_set_style_text_font/);
+    assert.match(source, /time\.getlocal/);
+    assert.match(source, /tmr\.create/);
+    assert.deepEqual([...dial.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    assert.deepEqual([...hour.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   });
 
   it("ships a network smoke app for WiFi, HTTP, JSON, and NTP", () => {

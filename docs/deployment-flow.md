@@ -59,20 +59,27 @@ npm run upload:app -- --transport nc http://<board-ip>:8080 dist/apps/<app-id> <
 npm run launch:app -- --transport nc http://<board-ip>:8080 <app-id>
 ```
 
-The current firmware endpoint is intentionally small:
+The current firmware endpoint is intentionally small but transactional:
 
 ```text
-POST /install?app=<id>&path=<relative>
+POST /install?app=<id>&path=<relative>&stage=<stage-id>
+POST /install/commit?app=<id>&stage=<stage-id>
+POST /install/abort?stage=<stage-id>
+POST /apps/delete?app=<id>
 POST /rescan
 POST /launch?app=<id>
 ```
 
-`POST /install` writes one file under `/sdcard/apps/<id>/<relative>`, rejects absolute paths and `..`, and creates parent directories as needed. The uploader calls `/rescan` after upload and confirms the app through `/apps`. Apps can then be launched from the native `VibeBoard Apps` screen or through `/launch`.
+By default, the uploader writes files under `/sdcard/.vibeboard-staging/<stage-id>/`, calls `/install/commit` to replace `/sdcard/apps/<id>`, and then confirms the app through `/apps`. If an upload fails before commit, the uploader calls `/install/abort` as best-effort cleanup. Apps can then be launched from the native `VibeBoard Apps` screen or through `/launch`.
+
+For old firmware that only supports direct writes, use:
+
+```bash
+npm run upload:app -- --legacy-direct http://<board-ip>:8080 dist/apps/<app-id> <app-id>
+```
 
 Current limitations:
 
-- no staging/commit step yet, so a half-uploaded package can exist on SD;
-- no delete endpoint yet;
 - no browser management UI yet;
 - compatibility checks still rely on the app validator and documented runtime capabilities.
 

@@ -46,7 +46,7 @@ describe("listUploadFiles", () => {
 });
 
 describe("uploadApp", () => {
-  it("posts each file to the board install endpoint", async () => {
+  it("uploads files into a stage and commits the app by default", async () => {
     const { root, appDir } = makePackage();
     const calls = [];
     try {
@@ -54,6 +54,64 @@ describe("uploadApp", () => {
         appDir,
         appId: "demo",
         boardUrl: "http://192.168.1.32:8080/",
+        stageId: "demo-stage",
+        fetchImpl: async (url, options) => {
+          calls.push({ url, method: options.method, body: options.body.toString("utf8") });
+          if (url.endsWith("/install/commit?app=demo&stage=demo-stage")) return { ok: true, status: 200, text: async () => '{"ok":true,"committed":"demo"}' };
+          if (url.endsWith("/apps")) return { ok: true, status: 200, text: async () => '{"apps":[{"id":"demo"}]}' };
+          return { ok: true, status: 200, text: async () => "ok" };
+        },
+      });
+
+      assert.equal(result.files.length, 3);
+      assert.equal(result.confirmed, true);
+      assert.equal(result.staged, true);
+      assert.equal(calls[0].url, "http://192.168.1.32:8080/install?app=demo&path=app.info&stage=demo-stage");
+      assert.equal(calls[0].method, "POST");
+      assert.match(calls[0].body, /name = demo/);
+      assert.ok(calls.some((call) => call.url.endsWith("path=assets/icon.txt&stage=demo-stage")));
+      assert.ok(calls.some((call) => call.url === "http://192.168.1.32:8080/install/commit?app=demo&stage=demo-stage"));
+      assert.ok(calls.some((call) => call.url === "http://192.168.1.32:8080/apps"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("aborts the stage when a staged upload fails", async () => {
+    const { root, appDir } = makePackage();
+    const calls = [];
+    try {
+      await assert.rejects(
+        uploadApp({
+          appDir,
+          appId: "demo",
+          boardUrl: "http://192.168.1.32:8080",
+          retryAttempts: 1,
+          stageId: "demo-stage",
+          requestImpl: async (url, body, options = {}) => {
+            calls.push({ url, method: options.method, body: body ? body.toString("utf8") : "" });
+            if (url.endsWith("/install/abort?stage=demo-stage")) return { ok: true, status: 200, text: '{"ok":true,"aborted":"demo-stage"}' };
+            if (url.includes("path=assets/icon.txt")) throw new Error("write failed");
+            return { ok: true, status: 200, text: "ok\n" };
+          },
+        }),
+        /write failed/,
+      );
+      assert.ok(calls.some((call) => call.url === "http://192.168.1.32:8080/install/abort?stage=demo-stage"));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("can use the legacy direct install path for old firmware", async () => {
+    const { root, appDir } = makePackage();
+    const calls = [];
+    try {
+      const result = await uploadApp({
+        appDir,
+        appId: "demo",
+        boardUrl: "http://192.168.1.32:8080/",
+        staged: false,
         fetchImpl: async (url, options) => {
           calls.push({ url, method: options.method, body: options.body.toString("utf8") });
           if (url.endsWith("/rescan")) return { ok: true, status: 200, text: async () => '{"ok":true,"app_count":1}' };
@@ -62,14 +120,9 @@ describe("uploadApp", () => {
         },
       });
 
-      assert.equal(result.files.length, 3);
-      assert.equal(result.confirmed, true);
+      assert.equal(result.staged, false);
       assert.equal(calls[0].url, "http://192.168.1.32:8080/install?app=demo&path=app.info");
-      assert.equal(calls[0].method, "POST");
-      assert.match(calls[0].body, /name = demo/);
-      assert.ok(calls.some((call) => call.url.endsWith("path=assets/icon.txt")));
       assert.ok(calls.some((call) => call.url === "http://192.168.1.32:8080/rescan"));
-      assert.ok(calls.some((call) => call.url === "http://192.168.1.32:8080/apps"));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -86,6 +139,7 @@ describe("uploadApp", () => {
         appDir,
         appId: "demo",
         boardUrl: "http://192.168.1.32:8080",
+        staged: false,
         requestImpl: async (url, body, options = {}) => {
           requests.push({ url, method: options.method, body: body ? body.toString("utf8") : "" });
           if (url.endsWith("/rescan")) return { ok: true, status: 200, text: '{"ok":true,"app_count":1}' };
@@ -114,6 +168,7 @@ describe("uploadApp", () => {
         appDir,
         appId: "demo",
         boardUrl: "http://192.168.1.32:8080",
+        staged: false,
         retryDelayMs: 0,
         requestImpl: async (url) => {
           if (url.endsWith("path=app.info")) {
@@ -143,6 +198,7 @@ describe("uploadApp", () => {
           appDir,
           appId: "demo",
           boardUrl: "http://192.168.1.32:8080",
+          staged: false,
           requestImpl: async (url) => {
             if (url.endsWith("/rescan")) return { ok: true, status: 200, text: '{"ok":true,"app_count":1}' };
             if (url.endsWith("/apps")) return { ok: true, status: 200, text: '{"apps":[{"id":"other"}]}' };
@@ -166,6 +222,7 @@ describe("parseUploadCliArgs", () => {
         appDir: "dist/apps/demo",
         appId: "demo",
         transport: "native",
+        staged: true,
       },
     );
   });
@@ -178,11 +235,25 @@ describe("parseUploadCliArgs", () => {
         appDir: "dist/apps/demo",
         appId: undefined,
         transport: "nc",
+        staged: true,
       },
     );
     assert.equal(
       parseUploadCliArgs(["--transport=nc", "http://192.168.1.32:8080", "dist/apps/demo"]).transport,
       "nc",
+    );
+  });
+
+  it("can opt into the legacy direct install workflow", () => {
+    assert.deepEqual(
+      parseUploadCliArgs(["--legacy-direct", "http://192.168.1.32:8080", "dist/apps/demo", "demo"]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        appDir: "dist/apps/demo",
+        appId: "demo",
+        transport: "native",
+        staged: false,
+      },
     );
   });
 

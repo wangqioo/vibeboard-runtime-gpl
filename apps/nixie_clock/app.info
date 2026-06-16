@@ -1,0 +1,4 @@
+name = Nixie Clock
+entry = main.lua
+description = Nixie style retro clock
+capabilities = lvgl,file,timer,network

@@ -32,6 +32,50 @@ Apps must declare special capabilities before using restricted runtime APIs in t
 
 Package validation rejects missing metadata, missing entry files, entry paths outside the app directory, and restricted API usage without the matching capability declaration.
 
+## Package Manifest
+
+`tools/app-packager` writes `manifest.json` beside the packaged app files. The
+current schema is:
+
+```json
+{
+  "schema": "vibeboard-runtime-app-package@2",
+  "app": {
+    "id": "weather",
+    "name": "weather",
+    "version": "0.0.0",
+    "kind": "app"
+  },
+  "requires": {
+    "runtime": ">=0.1.0",
+    "luaApi": ">=0.1.0",
+    "lvglApi": ">=0.1.0",
+    "packageSchema": "vibeboard-runtime-app-package@2",
+    "nativeAbi": null,
+    "capabilities": ["network"]
+  },
+  "provides": {
+    "services": []
+  }
+}
+```
+
+Optional `app.info` fields can override compatibility metadata:
+
+```ini
+version = 1.2.3
+kind = service
+requires.runtime = >=0.2.0
+requires.luaApi = >=0.3.0
+requires.lvglApi = >=0.4.0
+requires.nativeAbi = >=2.0.2
+provides.services = devtools,httpd
+```
+
+The current firmware still launches apps from `app.info`; device-side
+manifest compatibility checks are a later productization step. The v2 manifest
+is the toolchain contract for that runtime work.
+
 ## File Paths
 
 Apps that declare `capabilities = file` can use the runtime `file` module.

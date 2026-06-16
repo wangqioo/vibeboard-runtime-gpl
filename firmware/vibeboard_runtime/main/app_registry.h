@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include "esp_err.h"
 
@@ -10,6 +11,10 @@ extern "C" {
 #define VB_APPS_PATH "/sdcard/apps"
 #define VB_APP_NAME_MAX 64
 #define VB_APP_PATH_MAX 192
+#define VB_APP_MANIFEST_SCHEMA_MAX 48
+#define VB_APP_VERSION_MAX 32
+#define VB_APP_KIND_MAX 16
+#define VB_APP_CAPABILITIES_MAX 128
 #define VB_APP_REGISTRY_MAX_APPS 12
 
 typedef struct {
@@ -18,6 +23,11 @@ typedef struct {
     char entry[VB_APP_NAME_MAX];
     char dir[VB_APP_PATH_MAX];
     char path[VB_APP_PATH_MAX];
+    char manifest_schema[VB_APP_MANIFEST_SCHEMA_MAX];
+    char version[VB_APP_VERSION_MAX];
+    char kind[VB_APP_KIND_MAX];
+    char capabilities[VB_APP_CAPABILITIES_MAX];
+    bool compatible;
 } vb_app_registry_entry_t;
 
 typedef struct {

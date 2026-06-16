@@ -9,6 +9,7 @@ idf_component_register(
         "lua_file.c"
         "lua_http.c"
         "lua_lvgl.c"
+        "lua_lvgl_canvas.c"
         "lua_lvgl_fs.c"
         "lua_lvgl_widgets.c"
         "lua_sjson.c"

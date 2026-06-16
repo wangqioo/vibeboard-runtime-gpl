@@ -85,6 +85,55 @@ static int l_lv_img_set_src(lua_State *L)
     return 1;
 }
 
+static int l_lv_img_set_antialias(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    bool enabled = lua_toboolean(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *image = vb_lua_lvgl_resolve_object(id);
+    lv_img_set_antialias(image, enabled);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_img_set_angle(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    int angle = (int)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *image = vb_lua_lvgl_resolve_object(id);
+    lv_img_set_angle(image, angle);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_img_set_pivot(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    int x = (int)luaL_checkinteger(L, 2);
+    int y = (int)luaL_checkinteger(L, 3);
+
+    lvgl_port_lock(0);
+    lv_obj_t *image = vb_lua_lvgl_resolve_object(id);
+    lv_img_set_pivot(image, x, y);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_img_set_zoom(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    int zoom = (int)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *image = vb_lua_lvgl_resolve_object(id);
+    lv_img_set_zoom(image, zoom);
+    lvgl_port_unlock();
+    return 0;
+}
+
 static int l_lv_obj_set_size(lua_State *L)
 {
     int id = vb_lua_lvgl_check_object_id(L, 1);
@@ -175,10 +224,64 @@ static int l_lv_obj_set_style_text_color(lua_State *L)
 {
     int id = vb_lua_lvgl_check_object_id(L, 1);
     uint32_t color = (uint32_t)luaL_checkinteger(L, 2);
+    lv_style_selector_t selector = (lv_style_selector_t)luaL_optinteger(L, 3, 0);
 
     lvgl_port_lock(0);
     lv_obj_t *object = vb_lua_lvgl_resolve_object(id);
-    lv_obj_set_style_text_color(object, lv_color_hex(color), 0);
+    lv_obj_set_style_text_color(object, lv_color_hex(color), selector);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_style_text_font(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    int font = (int)luaL_checkinteger(L, 2);
+    lv_style_selector_t selector = (lv_style_selector_t)luaL_optinteger(L, 3, 0);
+
+    (void)font;
+    lvgl_port_lock(0);
+    lv_obj_t *object = vb_lua_lvgl_resolve_object(id);
+    lv_obj_set_style_text_font(object, LV_FONT_DEFAULT, selector);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_style_text_opa(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    lv_opa_t opa = (lv_opa_t)luaL_checkinteger(L, 2);
+    lv_style_selector_t selector = (lv_style_selector_t)luaL_optinteger(L, 3, 0);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = vb_lua_lvgl_resolve_object(id);
+    lv_obj_set_style_text_opa(object, opa, selector);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_style_text_align(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    lv_text_align_t align = (lv_text_align_t)luaL_checkinteger(L, 2);
+    lv_style_selector_t selector = (lv_style_selector_t)luaL_optinteger(L, 3, 0);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = vb_lua_lvgl_resolve_object(id);
+    lv_obj_set_style_text_align(object, align, selector);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_set_style_text_letter_space(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    int space = (int)luaL_checkinteger(L, 2);
+    lv_style_selector_t selector = (lv_style_selector_t)luaL_optinteger(L, 3, 0);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = vb_lua_lvgl_resolve_object(id);
+    lv_obj_set_style_text_letter_space(object, space, selector);
     lvgl_port_unlock();
     return 0;
 }
@@ -251,6 +354,17 @@ static int l_lv_obj_clear_flag(lua_State *L)
     lvgl_port_lock(0);
     lv_obj_t *object = vb_lua_lvgl_resolve_object(id);
     lv_obj_clear_flag(object, flag);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_obj_remove_style_all(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+
+    lvgl_port_lock(0);
+    lv_obj_t *object = vb_lua_lvgl_resolve_object(id);
+    lv_obj_remove_style_all(object);
     lvgl_port_unlock();
     return 0;
 }
@@ -333,6 +447,10 @@ void vb_lua_lvgl_widgets_register(lua_State *L)
         { "lv_label_create", l_lv_label_create },
         { "lv_img_create", l_lv_img_create },
         { "lv_img_set_src", l_lv_img_set_src },
+        { "lv_img_set_antialias", l_lv_img_set_antialias },
+        { "lv_img_set_angle", l_lv_img_set_angle },
+        { "lv_img_set_pivot", l_lv_img_set_pivot },
+        { "lv_img_set_zoom", l_lv_img_set_zoom },
         { "lv_btn_create", l_lv_btn_create },
         { "lv_bar_create", l_lv_bar_create },
         { "lv_bar_set_range", l_lv_bar_set_range },
@@ -345,6 +463,10 @@ void vb_lua_lvgl_widgets_register(lua_State *L)
         { "lv_obj_set_y", l_lv_obj_set_y },
         { "lv_obj_set_style_bg_color", l_lv_obj_set_style_bg_color },
         { "lv_obj_set_style_text_color", l_lv_obj_set_style_text_color },
+        { "lv_obj_set_style_text_font", l_lv_obj_set_style_text_font },
+        { "lv_obj_set_style_text_opa", l_lv_obj_set_style_text_opa },
+        { "lv_obj_set_style_text_align", l_lv_obj_set_style_text_align },
+        { "lv_obj_set_style_text_letter_space", l_lv_obj_set_style_text_letter_space },
         { "lv_obj_set_style_radius", l_lv_obj_set_style_radius },
         { "lv_obj_set_style_pad_all", l_lv_obj_set_style_pad_all },
         { "lv_obj_set_style_border_width", l_lv_obj_set_style_border_width },
@@ -353,6 +475,7 @@ void vb_lua_lvgl_widgets_register(lua_State *L)
         { "lv_label_set_long_mode", l_lv_label_set_long_mode },
         { "lv_obj_add_flag", l_lv_obj_add_flag },
         { "lv_obj_clear_flag", l_lv_obj_clear_flag },
+        { "lv_obj_remove_style_all", l_lv_obj_remove_style_all },
         { "lv_obj_align", l_lv_obj_align },
     };
 

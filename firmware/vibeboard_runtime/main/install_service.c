@@ -1,10 +1,12 @@
 #include "install_service.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "app_registry.h"
 #include "app_runner.h"
@@ -17,10 +19,18 @@
 
 static const char *TAG = "install_service";
 #define VB_INSTALL_HTTPD_STACK_SIZE 8192
+#define VB_APP_STAGE_PATH "/sdcard/.vibeboard-staging"
+#define VB_RUNTIME_VERSION "0.1.0"
+#define VB_RUNTIME_LUA_API_VERSION "0.1.0"
+#define VB_RUNTIME_LVGL_API_VERSION "0.1.0"
+#define VB_RUNTIME_PACKAGE_SCHEMA "vibeboard-runtime-app-package@2"
+#define VB_RUNTIME_NATIVE_ABI_VERSION NULL
 
 static httpd_handle_t s_server;
 static bool s_netif_ready;
 static vb_install_service_context_t *s_context;
+
+static void send_json(httpd_req_t *req, const char *json);
 
 static void note_launcher_async_launch(void *user_data)
 {
@@ -47,7 +57,7 @@ static esp_err_t ensure_parent_dirs(const char *path)
     char buffer[VB_APP_PATH_MAX];
     strlcpy(buffer, path, sizeof(buffer));
 
-    for (char *cursor = buffer + strlen(VB_APPS_PATH) + 1; *cursor != '\0'; cursor++) {
+    for (char *cursor = buffer + 1; *cursor != '\0'; cursor++) {
         if (*cursor != '/') {
             continue;
         }
@@ -59,6 +69,64 @@ static esp_err_t ensure_parent_dirs(const char *path)
         }
     }
     return ESP_OK;
+}
+
+static esp_err_t build_storage_path(char *dest, size_t dest_size, const char *root, const char *name, const char *path)
+{
+    int written;
+    if (path == NULL || path[0] == '\0') {
+        written = snprintf(dest, dest_size, "%s/%s", root, name);
+    } else {
+        written = snprintf(dest, dest_size, "%s/%s/%s", root, name, path);
+    }
+    return (written < 0 || written >= (int)dest_size) ? ESP_ERR_INVALID_SIZE : ESP_OK;
+}
+
+static esp_err_t build_app_path(char *dest, size_t dest_size, const char *app, const char *path)
+{
+    return build_storage_path(dest, dest_size, VB_APPS_PATH, app, path);
+}
+
+static esp_err_t build_stage_path(char *dest, size_t dest_size, const char *stage, const char *path)
+{
+    return build_storage_path(dest, dest_size, VB_APP_STAGE_PATH, stage, path);
+}
+
+static esp_err_t remove_tree(const char *path)
+{
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return errno == ENOENT ? ESP_OK : ESP_FAIL;
+    }
+
+    if (S_ISDIR(st.st_mode)) {
+        DIR *dir = opendir(path);
+        if (dir == NULL) {
+            return ESP_FAIL;
+        }
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+
+            char child[VB_APP_PATH_MAX];
+            if (build_storage_path(child, sizeof(child), path, entry->d_name, NULL) != ESP_OK) {
+                closedir(dir);
+                return ESP_ERR_INVALID_SIZE;
+            }
+            esp_err_t err = remove_tree(child);
+            if (err != ESP_OK) {
+                closedir(dir);
+                return err;
+            }
+        }
+        closedir(dir);
+        return rmdir(path) == 0 ? ESP_OK : ESP_FAIL;
+    }
+
+    return unlink(path) == 0 ? ESP_OK : ESP_FAIL;
 }
 
 static esp_err_t get_query_value(httpd_req_t *req, const char *key, char *value, size_t value_size)
@@ -97,6 +165,7 @@ static esp_err_t install_handler(httpd_req_t *req)
 {
     char app[64] = {0};
     char path[128] = {0};
+    char stage[64] = {0};
     if (get_query_value(req, "app", app, sizeof(app)) != ESP_OK ||
         get_query_value(req, "path", path, sizeof(path)) != ESP_OK ||
         reject_unsafe_path(app) ||
@@ -104,10 +173,16 @@ static esp_err_t install_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing app/path");
         return ESP_FAIL;
     }
+    bool staged = get_query_value(req, "stage", stage, sizeof(stage)) == ESP_OK && stage[0] != '\0';
+    if (staged && reject_unsafe_path(stage)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe stage");
+        return ESP_FAIL;
+    }
 
     char full_path[VB_APP_PATH_MAX];
-    int written = snprintf(full_path, sizeof(full_path), "%s/%s/%s", VB_APPS_PATH, app, path);
-    if (written < 0 || written >= (int)sizeof(full_path)) {
+    esp_err_t path_err = staged ? build_stage_path(full_path, sizeof(full_path), stage, path)
+                                : build_app_path(full_path, sizeof(full_path), app, path);
+    if (path_err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
         return ESP_FAIL;
     }
@@ -147,10 +222,78 @@ static esp_err_t install_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t install_commit_handler(httpd_req_t *req)
+{
+    char app[64] = {0};
+    char stage[64] = {0};
+    if (get_query_value(req, "app", app, sizeof(app)) != ESP_OK ||
+        get_query_value(req, "stage", stage, sizeof(stage)) != ESP_OK ||
+        reject_unsafe_path(app) ||
+        reject_unsafe_path(stage)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing app/stage");
+        return ESP_FAIL;
+    }
+
+    char app_path[VB_APP_PATH_MAX];
+    char stage_path[VB_APP_PATH_MAX];
+    if (build_app_path(app_path, sizeof(app_path), app, NULL) != ESP_OK ||
+        build_stage_path(stage_path, sizeof(stage_path), stage, NULL) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+
+    struct stat st;
+    if (stat(stage_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "stage not found");
+        return ESP_FAIL;
+    }
+    if (remove_tree(app_path) != ESP_OK || ensure_parent_dirs(app_path) != ESP_OK || rename(stage_path, app_path) != 0) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "commit failed");
+        return ESP_FAIL;
+    }
+    if (s_context != NULL && s_context->registry != NULL && s_context->sd_ok) {
+        vb_app_registry_scan(s_context->registry);
+    }
+
+    char body[128];
+    snprintf(body, sizeof(body), "{\"ok\":true,\"committed\":\"%s\"}\n", app);
+    send_json(req, body);
+    return ESP_OK;
+}
+
+static esp_err_t install_abort_handler(httpd_req_t *req)
+{
+    char stage[64] = {0};
+    if (get_query_value(req, "stage", stage, sizeof(stage)) != ESP_OK || reject_unsafe_path(stage)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing stage");
+        return ESP_FAIL;
+    }
+
+    char stage_path[VB_APP_PATH_MAX];
+    if (build_stage_path(stage_path, sizeof(stage_path), stage, NULL) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+    if (remove_tree(stage_path) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "abort failed");
+        return ESP_FAIL;
+    }
+
+    char body[128];
+    snprintf(body, sizeof(body), "{\"ok\":true,\"aborted\":\"%s\"}\n", stage);
+    send_json(req, body);
+    return ESP_OK;
+}
+
 static void send_json(httpd_req_t *req, const char *json)
 {
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, json);
+}
+
+static const char *json_string_or_null(const char *value)
+{
+    return value != NULL ? value : "null";
 }
 
 static const vb_app_registry_entry_t *find_app_by_id(const vb_app_registry_result_t *registry, const char *id)
@@ -170,7 +313,7 @@ static const vb_app_registry_entry_t *find_app_by_id(const vb_app_registry_resul
 
 static esp_err_t status_handler(httpd_req_t *req)
 {
-    char body[384];
+    char body[768];
     const vb_app_registry_result_t *registry = s_context ? s_context->registry : NULL;
     int app_count = 0;
     char first_app[VB_APP_NAME_MAX];
@@ -186,15 +329,24 @@ static esp_err_t status_handler(httpd_req_t *req)
     bool running = vb_app_runner_is_running();
     const char *state = vb_app_runner_current_state_name();
     const char *current_app = running ? vb_app_runner_current_id() : "";
+    const char *last_message = vb_app_runner_last_message();
+    const char *last_status = esp_err_to_name(vb_app_runner_last_status());
     snprintf(body,
              sizeof(body),
-             "{\"sd\":%s,\"app_count\":%d,\"first_app\":\"%s\",\"install\":\"ok\",\"state\":\"%s\",\"running\":%s,\"current_app\":\"%s\"}\n",
+             "{\"sd\":%s,\"app_count\":%d,\"first_app\":\"%s\",\"install\":\"ok\",\"state\":\"%s\",\"running\":%s,\"current_app\":\"%s\",\"runtime_version\":\"%s\",\"lua_api_version\":\"%s\",\"lvgl_api_version\":\"%s\",\"package_schema\":\"%s\",\"native_abi_version\":%s,\"last_status\":\"%s\",\"last_message\":\"%s\"}\n",
              (s_context && s_context->sd_ok) ? "true" : "false",
              app_count,
              first_app,
              state,
              running ? "true" : "false",
-             current_app);
+             current_app,
+             VB_RUNTIME_VERSION,
+             VB_RUNTIME_LUA_API_VERSION,
+             VB_RUNTIME_LVGL_API_VERSION,
+             VB_RUNTIME_PACKAGE_SCHEMA,
+             json_string_or_null(VB_RUNTIME_NATIVE_ABI_VERSION),
+             last_status,
+             last_message);
     send_json(req, body);
     return ESP_OK;
 }
@@ -212,11 +364,16 @@ static esp_err_t apps_handler(httpd_req_t *req)
         const vb_app_registry_entry_t *app = &registry->apps[i];
         used += snprintf(body + used,
                          sizeof(body) - used,
-                         "%s{\"id\":\"%s\",\"name\":\"%s\",\"entry\":\"%s\"}",
+                         "%s{\"id\":\"%s\",\"name\":\"%s\",\"entry\":\"%s\",\"schema\":\"%s\",\"version\":\"%s\",\"kind\":\"%s\",\"capabilities\":\"%s\",\"compatible\":%s}",
                          i == 0 ? "" : ",",
                          app->id,
                          app->name,
-                         app->entry);
+                         app->entry,
+                         app->manifest_schema,
+                         app->version,
+                         app->kind,
+                         app->capabilities,
+                         app->compatible ? "true" : "false");
     }
     vb_app_registry_unlock();
     if (used < sizeof(body)) {
@@ -338,6 +495,37 @@ static esp_err_t stop_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t app_delete_handler(httpd_req_t *req)
+{
+    char app[64] = {0};
+    if (get_query_value(req, "app", app, sizeof(app)) != ESP_OK || reject_unsafe_path(app)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing app");
+        return ESP_FAIL;
+    }
+    if (vb_app_runner_is_running() && strcmp(vb_app_runner_current_id(), app) == 0) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "app is running");
+        return ESP_FAIL;
+    }
+
+    char app_path[VB_APP_PATH_MAX];
+    if (build_app_path(app_path, sizeof(app_path), app, NULL) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+    if (remove_tree(app_path) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "delete failed");
+        return ESP_FAIL;
+    }
+    if (s_context != NULL && s_context->registry != NULL && s_context->sd_ok) {
+        vb_app_registry_scan(s_context->registry);
+    }
+
+    char body[128];
+    snprintf(body, sizeof(body), "{\"ok\":true,\"deleted\":\"%s\"}\n", app);
+    send_json(req, body);
+    return ESP_OK;
+}
+
 static esp_err_t register_handler(const char *uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *req))
 {
     const httpd_uri_t http_uri = {
@@ -381,6 +569,14 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     if (err != ESP_OK) {
         return err;
     }
+    err = register_handler("/install/commit", HTTP_POST, install_commit_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/install/abort", HTTP_POST, install_abort_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
     err = register_handler("/status", HTTP_GET, status_handler);
     if (err != ESP_OK) {
         return err;
@@ -398,6 +594,10 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
         return err;
     }
     err = register_handler("/stop", HTTP_POST, stop_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/apps/delete", HTTP_POST, app_delete_handler);
     if (err != ESP_OK) {
         return err;
     }

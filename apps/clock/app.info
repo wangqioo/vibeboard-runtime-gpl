@@ -1,0 +1,4 @@
+name = Clock
+entry = main.lua
+description = Minimal analog clock
+capabilities = lvgl,file,timer,network

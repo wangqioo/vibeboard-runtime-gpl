@@ -15,6 +15,15 @@
 | Voice AI | `upstream/holocubic-apps/voice_ai/` | `apps/voice_ai/` |
 | NES game | `upstream/holocubic-apps/nesgame/` | `apps/nesgame/` |
 | NES module | `upstream/holocubic-nes-esp32/` | `modules/nes/` |
+| Matrix Rain | `upstream/holocubic-apps/MatrixRain/` | `apps/matrix_rain/` |
+| Nixie Clock | `upstream/holocubic-apps/NixieClock/` | `apps/nixie_clock/` |
+| Clock | `upstream/holocubic-apps/clock/` | `apps/clock/` |
+
+## Current Migration Queue
+
+| Upstream app | Target local path | Notes |
+| --- | --- | --- |
+| ConwayLife | `apps/conway_life/` | Next planned display-app slice; expected to need font compatibility and canvas verification. |
 
 ## License
 

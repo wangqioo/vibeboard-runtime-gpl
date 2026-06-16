@@ -130,6 +130,11 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function makeStageId(appId) {
+  const suffix = Date.now().toString(36);
+  return `${appId}-${suffix}`;
+}
+
 async function withRetries(operation, { attempts, delayMs, label }) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -186,6 +191,8 @@ export async function uploadApp({
   retryAttempts = 3,
   retryDelayMs = 250,
   confirm = true,
+  staged = true,
+  stageId = makeStageId(appId),
 }) {
   if (!boardUrl) {
     throw new Error("boardUrl is required");
@@ -194,32 +201,65 @@ export async function uploadApp({
 
   const base = boardUrl.replace(/\/+$/, "");
   const files = listUploadFiles(appDir);
-  for (const file of files) {
-    const url = `${base}/install?app=${encodeURIComponent(appId)}&path=${encodePath(file.relativePath)}`;
-    const body = readFileSync(file.fullPath);
-    await sendBoardRequest({
-      url,
-      body,
-      method: "POST",
-      fetchImpl,
-      requestImpl,
-      retryAttempts,
-      retryDelayMs,
-      label: `Upload ${file.relativePath}`,
-    });
+  try {
+    for (const file of files) {
+      const stageQuery = staged ? `&stage=${encodeURIComponent(stageId)}` : "";
+      const url = `${base}/install?app=${encodeURIComponent(appId)}&path=${encodePath(file.relativePath)}${stageQuery}`;
+      const body = readFileSync(file.fullPath);
+      await sendBoardRequest({
+        url,
+        body,
+        method: "POST",
+        fetchImpl,
+        requestImpl,
+        retryAttempts,
+        retryDelayMs,
+        label: `Upload ${file.relativePath}`,
+      });
+    }
+  } catch (error) {
+    if (staged) {
+      try {
+        await sendBoardRequest({
+          url: `${base}/install/abort?stage=${encodeURIComponent(stageId)}`,
+          body: Buffer.alloc(0),
+          method: "POST",
+          fetchImpl,
+          requestImpl,
+          retryAttempts: 1,
+          retryDelayMs: 0,
+          label: `Abort stage ${stageId}`,
+        });
+      } catch {
+        // Preserve the original upload failure; abort is best-effort cleanup.
+      }
+    }
+    throw error;
   }
 
   let apps = null;
   if (confirm) {
-    await requestJson({
-      url: `${base}/rescan`,
-      method: "POST",
-      fetchImpl,
-      requestImpl,
-      retryAttempts,
-      retryDelayMs,
-      label: "Rescan",
-    });
+    if (staged) {
+      await requestJson({
+        url: `${base}/install/commit?app=${encodeURIComponent(appId)}&stage=${encodeURIComponent(stageId)}`,
+        method: "POST",
+        fetchImpl,
+        requestImpl,
+        retryAttempts,
+        retryDelayMs,
+        label: `Commit ${appId}`,
+      });
+    } else {
+      await requestJson({
+        url: `${base}/rescan`,
+        method: "POST",
+        fetchImpl,
+        requestImpl,
+        retryAttempts,
+        retryDelayMs,
+        label: "Rescan",
+      });
+    }
     apps = await requestJson({
       url: `${base}/apps`,
       method: "GET",
@@ -235,7 +275,7 @@ export async function uploadApp({
     }
   }
 
-  return { appId, files, confirmed: confirm, apps };
+  return { appId, files, confirmed: confirm, apps, staged, stageId: staged ? stageId : null };
 }
 
 export async function launchApp({

@@ -1,15 +1,14 @@
 # Next Session Plan
 
-Date: 2026-06-15
+Date: 2026-06-17
 
 ## Current Baseline
 
 ```text
-eafbf7b docs: add next session plan
+origin/main plus local uncommitted migration work
 ```
 
-The local work after this baseline fixes a launcher BOOT-after-launch crash found during board verification.
-The current branch also implements Phase 5B launcher lifecycle controls, runtime WiFi autoconnect, and the native HTTP uploader/launch board check.
+The local work after the previous baseline implements deployment productization and starts the Phase 9 upstream app compatibility migration. The worktree is intentionally dirty; do not reset it.
 
 ## What Is Done
 
@@ -47,45 +46,99 @@ The current branch also implements Phase 5B launcher lifecycle controls, runtime
   - `/rescan` and `/apps` confirmed it;
   - launched `smoke_visual_native`, `smoke_fail`, and `smoke_network`.
 - Launch verification exposed a board-side HTTPD stack overflow in `/launch`; the install service now sets `config.stack_size = 8192`, and the post-fix board launch check passed.
+- App package manifest v2 is implemented:
+  - `tools/app-packager` emits `schema = vibeboard-runtime-app-package@2`;
+  - manifests include structured `app`, `requires`, and `provides` sections while preserving existing top-level fields;
+  - app registry exposes manifest-derived schema/version/kind/capabilities/compatible metadata through `/apps`.
+- Runtime version metadata is exposed through `/status`:
+  - runtime version;
+  - Lua API version;
+  - LVGL API version;
+  - package schema;
+  - native ABI version;
+  - last status/message.
+- Deployment productization first slice is implemented:
+  - staged file upload using `/sdcard/.vibeboard-staging/<stage>`;
+  - `/install/commit`;
+  - `/install/abort`;
+  - `/apps/delete`;
+  - uploader defaults to staged upload + commit;
+  - `--legacy-direct` keeps the old direct install flow available.
+- Upstream display apps migrated so far:
+  - `apps/matrix_rain` from upstream `MatrixRain`;
+  - `apps/nixie_clock` from upstream `NixieClock`;
+  - `apps/clock` from upstream `clock`.
+- Runtime compatibility added during these app migrations:
+  - minimal LVGL canvas binding;
+  - PNG decoder enabled;
+  - `time.getlocal()`;
+  - image antialias, angle, pivot, zoom helpers;
+  - common text style helpers and LVGL constants.
 
 ## Last Verified Commands
 
 ```text
 npm run test:firmware-static
+npm run test:packager
 npm test
 git diff --check
 idf.py build
-esptool write_flash
 ```
 
-The BOOT-after-launch crash fix, lifecycle `state` checks, runtime WiFi autoconnect, native HTTP upload/launch path, and Phase 5B lifecycle controls are board-verified. Verification includes HTTP status checks, serial logs, and manual physical screen smoke for Stop, Refresh, return-to-launcher, readable failure feedback, and BOOT long-press stop.
+The latest full verification for today's migration work passed through package/static/test/build layers. The newly migrated `matrix_rain`, `nixie_clock`, and `clock` apps still need board screen verification before they can be marked board-verified.
 
 ## Immediate Next Work
 
-### 1. Deployment productization
+### 1. Continue Phase 9 with `ConwayLife`
 
-Turn the now-verified upload/launch path into a more complete app deployment workflow:
+Use the same TDD migration slice as the previous apps:
 
-- define app delete/uninstall semantics;
-- add a staging/commit model for multi-file upload failures;
-- consider a small browser UI on top of `/apps`, `/install`, `/rescan`, `/launch`, and `/stop`;
-- decide where persistent runtime WiFi config should live outside the current compatibility fallback.
+- add RED static tests for `apps/conway_life` and any missing runtime API;
+- import `upstream/holocubic-apps/ConwayLife/main.lua`;
+- copy `font/time_46.bin`;
+- adapt the hardcoded font path to `/sd/apps/conway_life/font/time_46.bin`;
+- add `apps/conway_life/app.info`;
+- implement minimal `lv_font_load`/`lv_font_free` compatibility if needed;
+- add `conway_life` to demo packaging.
 
 Suggested ownership:
 
 ```text
-tools/app-uploader/
-firmware/vibeboard_runtime/main/install_service.c
-docs/app-package-format.md
+apps/conway_life/
+firmware/vibeboard_runtime/main/lua_lvgl_widgets.c
+tools/firmware-static-check/test.mjs
+tools/app-packager/
 ```
 
-Expected result: make deployment reliable enough for repeated app iteration without SD-card removal and without relying on manual recovery steps.
+Expected result: `npm run package:app -- apps/conway_life`, `npm run test:firmware-static`, `npm run test:packager`, `npm test`, `git diff --check`, and `idf.py build` all pass.
+
+### 2. Board verification for migrated display apps
+
+Once the codebase is green, install and launch these apps on the board:
+
+- `matrix_rain`;
+- `nixie_clock`;
+- `clock`;
+- `conway_life` if completed.
+
+Record serial logs and screen observations in `docs/device-bringup.md`.
+
+### 3. Remaining deployment productization
+
+Deployment now has staged upload/delete, but still lacks:
+
+- browser UI on top of `/apps`, `/install`, `/install/commit`, `/rescan`, `/launch`, `/stop`, and `/apps/delete`;
+- interrupted-upload board test;
+- stop-then-delete orchestration in tooling;
+- persistent runtime WiFi config location outside compatibility fallback.
 
 ## Parallelization Guidance
 
 Safe parallel tracks now:
 
-- Deployment productization planning: delete, staging/commit, browser UI.
+- `ConwayLife` migration and static/runtime API compatibility.
+- Board verification of already migrated display apps.
+- Browser UI design for deployment management.
 - Lua input-event design: `touch.on`, `key.on`.
 
 ## Deferred

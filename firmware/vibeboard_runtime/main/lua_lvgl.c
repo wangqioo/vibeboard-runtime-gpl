@@ -47,7 +47,26 @@ void vb_lua_lvgl_register(lua_State *L)
     s_object_count = 0;
 
     vb_lua_lvgl_fs_register(L);
+    vb_lua_lvgl_canvas_register(L);
     vb_lua_lvgl_widgets_register(L);
+
+    lua_pushinteger(L, LV_PART_MAIN);
+    lua_setglobal(L, "LV_PART_MAIN");
+
+    lua_pushinteger(L, LV_STATE_DEFAULT);
+    lua_setglobal(L, "LV_STATE_DEFAULT");
+
+    lua_pushinteger(L, LV_TEXT_ALIGN_CENTER);
+    lua_setglobal(L, "LV_TEXT_ALIGN_CENTER");
+
+    lua_pushinteger(L, LV_IMG_CF_TRUE_COLOR);
+    lua_setglobal(L, "LV_IMG_CF_TRUE_COLOR");
+
+    lua_pushinteger(L, LV_OPA_COVER);
+    lua_setglobal(L, "LV_OPA_COVER");
+
+    lua_pushinteger(L, LV_OPA_TRANSP);
+    lua_setglobal(L, "LV_OPA_TRANSP");
 
     lua_pushinteger(L, LV_ALIGN_CENTER);
     lua_setglobal(L, "LV_ALIGN_CENTER");

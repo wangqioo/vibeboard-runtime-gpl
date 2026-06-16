@@ -18,4 +18,5 @@ bool vb_lua_lvgl_can_store_object(void);
 bool vb_lua_lvgl_resolve_asset_path(const char *path, char *resolved, size_t resolved_size);
 
 void vb_lua_lvgl_fs_register(lua_State *L);
+void vb_lua_lvgl_canvas_register(lua_State *L);
 void vb_lua_lvgl_widgets_register(lua_State *L);

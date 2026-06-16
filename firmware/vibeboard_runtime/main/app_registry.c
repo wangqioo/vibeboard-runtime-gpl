@@ -101,6 +101,128 @@ static bool read_app_info(const char *info_path, char *name, size_t name_size, c
     return found_name;
 }
 
+static void read_json_string_field(const char *json,
+                                   const char *key,
+                                   char *dest,
+                                   size_t dest_size)
+{
+    if (json == NULL || key == NULL || dest == NULL || dest_size == 0) {
+        return;
+    }
+
+    char pattern[48];
+    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+    const char *cursor = strstr(json, pattern);
+    if (cursor == NULL) {
+        return;
+    }
+    cursor += strlen(pattern);
+    cursor = strchr(cursor, ':');
+    if (cursor == NULL) {
+        return;
+    }
+    cursor++;
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+        cursor++;
+    }
+    if (*cursor != '"') {
+        return;
+    }
+    cursor++;
+
+    size_t len = 0;
+    while (cursor[len] != '\0' && cursor[len] != '"' && len + 1 < dest_size) {
+        len++;
+    }
+    memcpy(dest, cursor, len);
+    dest[len] = '\0';
+}
+
+static void read_json_array_strings(const char *json,
+                                    const char *key,
+                                    char *dest,
+                                    size_t dest_size)
+{
+    if (json == NULL || key == NULL || dest == NULL || dest_size == 0) {
+        return;
+    }
+
+    char pattern[48];
+    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+    const char *cursor = strstr(json, pattern);
+    if (cursor == NULL) {
+        return;
+    }
+    cursor += strlen(pattern);
+    cursor = strchr(cursor, ':');
+    if (cursor == NULL) {
+        return;
+    }
+    cursor = strchr(cursor, '[');
+    if (cursor == NULL) {
+        return;
+    }
+    cursor++;
+
+    size_t used = 0;
+    dest[0] = '\0';
+    while (*cursor != '\0' && *cursor != ']') {
+        while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n' || *cursor == ',') {
+            cursor++;
+        }
+        if (*cursor != '"') {
+            break;
+        }
+        cursor++;
+        const char *start = cursor;
+        while (*cursor != '\0' && *cursor != '"') {
+            cursor++;
+        }
+        size_t len = cursor - start;
+        if (used != 0 && used + 1 < dest_size) {
+            dest[used++] = ',';
+        }
+        if (used + len >= dest_size) {
+            len = dest_size - used - 1;
+        }
+        memcpy(dest + used, start, len);
+        used += len;
+        dest[used] = '\0';
+        if (*cursor == '"') {
+            cursor++;
+        }
+    }
+}
+
+static void read_app_manifest(const char *manifest_path, vb_app_registry_entry_t *app)
+{
+    strlcpy(app->manifest_schema, "", sizeof(app->manifest_schema));
+    strlcpy(app->version, "0.0.0", sizeof(app->version));
+    strlcpy(app->kind, "app", sizeof(app->kind));
+    strlcpy(app->capabilities, "", sizeof(app->capabilities));
+    app->compatible = true;
+
+    FILE *file = fopen(manifest_path, "r");
+    if (file == NULL) {
+        return;
+    }
+
+    char json[1024];
+    size_t got = fread(json, 1, sizeof(json) - 1, file);
+    fclose(file);
+    json[got] = '\0';
+
+    read_json_string_field(json, "schema", app->manifest_schema, sizeof(app->manifest_schema));
+    read_json_string_field(json, "version", app->version, sizeof(app->version));
+    read_json_string_field(json, "kind", app->kind, sizeof(app->kind));
+    read_json_array_strings(json, "capabilities", app->capabilities, sizeof(app->capabilities));
+
+    if (app->manifest_schema[0] != '\0' &&
+        strcmp(app->manifest_schema, "vibeboard-runtime-app-package@2") != 0) {
+        app->compatible = false;
+    }
+}
+
 esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result)
 {
     if (result == NULL) {
@@ -173,6 +295,11 @@ esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result)
             strlcpy(app->entry, app_entry, sizeof(app->entry));
             strlcpy(app->dir, app_dir, sizeof(app->dir));
             strlcpy(app->path, app_path, sizeof(app->path));
+
+            char manifest_path[VB_APP_PATH_MAX] = {0};
+            if (build_path(manifest_path, sizeof(manifest_path), app_dir, "manifest.json")) {
+                read_app_manifest(manifest_path, app);
+            }
         }
 
         if (result->app_count == 1) {

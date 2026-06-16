@@ -50,6 +50,32 @@ static int time_get(lua_State *L)
     return 1;
 }
 
+static int time_getlocal(lua_State *L)
+{
+    time_t now = 0;
+    struct tm local_time;
+    time(&now);
+    if (localtime_r(&now, &local_time) == NULL) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_newtable(L);
+    lua_pushinteger(L, local_time.tm_year + 1900);
+    lua_setfield(L, -2, "year");
+    lua_pushinteger(L, local_time.tm_mon + 1);
+    lua_setfield(L, -2, "mon");
+    lua_pushinteger(L, local_time.tm_mday);
+    lua_setfield(L, -2, "day");
+    lua_pushinteger(L, local_time.tm_hour);
+    lua_setfield(L, -2, "hour");
+    lua_pushinteger(L, local_time.tm_min);
+    lua_setfield(L, -2, "min");
+    lua_pushinteger(L, local_time.tm_sec);
+    lua_setfield(L, -2, "sec");
+    return 1;
+}
+
 static int time_settimezone(lua_State *L)
 {
     const char *timezone = luaL_checkstring(L, 1);
@@ -82,6 +108,7 @@ void vb_lua_time_register(lua_State *L)
 {
     static const luaL_Reg time_functions[] = {
         {"get", time_get},
+        {"getlocal", time_getlocal},
         {"settimezone", time_settimezone},
         {"initntp", time_initntp},
         {NULL, NULL},
