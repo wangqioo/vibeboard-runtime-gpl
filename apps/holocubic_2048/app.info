@@ -1,0 +1,4 @@
+name = Holocubic 2048
+entry = main.lua
+description = Runtime update placeholder for the Holocubic 2048 app
+capabilities = lvgl,timer

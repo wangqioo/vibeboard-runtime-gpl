@@ -23,6 +23,28 @@ const funDemoApps = [
   "demo_auto_snake",
   "smoke_canvas"
 ];
+const holocubicCatalogApps = [
+  "holocubic_2048",
+  "holocubic_analog_clock",
+  "holocubic_btc",
+  "holocubic_codex_buddy",
+  "holocubic_conway_life",
+  "holocubic_devtools",
+  "holocubic_fluid_pendant",
+  "holocubic_hwmon",
+  "holocubic_lv_benchmark",
+  "holocubic_matrix_rain",
+  "holocubic_mini_claw",
+  "holocubic_nixie_clock",
+  "holocubic_photos",
+  "holocubic_plane",
+  "holocubic_settings",
+  "holocubic_spectrum",
+  "holocubic_videos",
+  "nesgame",
+  "voice_ai",
+  "weather"
+];
 
 describe("parseAppInfo", () => {
   it("parses key value metadata", () => {
@@ -111,6 +133,17 @@ describe("fun demo apps", () => {
     assert.match(source, /rain_timer:alarm\(180,\s*tmr\.ALARM_AUTO/);
     assert.doesNotMatch(source, /key\.|touch\.|http\.|wifi\.|file\./);
   });
+});
+
+describe("Holocubic app catalog", () => {
+  for (const appId of holocubicCatalogApps) {
+    it(`accepts ${appId} as a local catalog package`, () => {
+      const result = validateAppDirectory(join(repoRoot, "apps", appId));
+
+      assert.equal(result.ok, true, result.errors.join("\n"));
+      assert.equal(result.relativeEntry, "main.lua");
+    });
+  }
 });
 
 describe("validateAppDirectory", () => {

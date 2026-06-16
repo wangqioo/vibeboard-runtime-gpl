@@ -217,6 +217,18 @@ The product idea is not just "ESP32 can run Lua." The useful idea is turning ESP
 - `apps/voice_ai`: device voice app plus desktop AI bridge.
 - `apps/nesgame`: Lua app backed by native NES module.
 
+## Holocubic App Catalog
+
+The repo includes a local VibeBoard-facing catalog entry for every app in `upstream/holocubic-apps` at commit `78da33f`.
+
+Current split:
+
+- `apps/holocubic_nixie_clock`, `apps/holocubic_analog_clock`, and `apps/holocubic_matrix_rain` are compatibility ports that run on the current Lua/LVGL runtime subset.
+- `apps/weather`, `apps/voice_ai`, and `apps/nesgame` are existing local packages whose full upstream behavior still depends on later runtime work.
+- The remaining Holocubic targets are explicit placeholder apps. They launch to a `Runtime update required` screen that names the missing runtime slice instead of failing with unsupported APIs.
+
+See [docs/holocubic-app-migration.md](docs/holocubic-app-migration.md) and [docs/holocubic-app-migration.json](docs/holocubic-app-migration.json) for the migration matrix.
+
 ## Validate
 
 ```bash

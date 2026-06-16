@@ -2131,3 +2131,75 @@ GET /status -> 200 OK
 ```
 
 Result: the minimal canvas Runtime surface is board-verified for creation, PSRAM-backed buffer allocation, fill, rectangle drawing, text drawing, invalidation, staged upload, launch, stop, and switching back to a non-canvas app. The first Phase 2 Holocubic canvas screensaver, `MatrixRain`, is installed and launchable on the board.
+
+## 2026-06-16 expanded Holocubic catalog and registry capacity board verification
+
+Firmware with the 64-entry app registry, chunked `/apps` response, PSRAM-backed Lua task stack, and slim Lua app execution context was built and flashed to the LCKFB ESP32-S3 board.
+
+Initial failure evidence before the fix:
+
+```text
+GET /apps returned truncated JSON when the SD card had the expanded app list.
+Root cause: apps_handler used a fixed char body[1024].
+
+npm run launch:app -- http://192.168.1.32:8080 demo_digital_clock
+Launch demo_digital_clock failed after 3 attempts: 500 ESP_ERR_NO_MEM
+
+After moving the Lua task stack to PSRAM, serial monitor exposed the remaining root cause:
+***ERROR*** A stack overflow in task vb_lua_launch has been detected.
+
+Root cause: lua_async_task still constructed a full vb_app_registry_result_t on the Lua task stack.
+```
+
+Fixes verified:
+
+```text
+GET /apps is streamed as chunked JSON instead of a fixed 1024-byte buffer.
+Lua app tasks are created with xTaskCreatePinnedToCoreWithCaps and MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT.
+The Lua runner now keeps only name, dir, and path in vb_lua_app_context_t while launching an app.
+```
+
+Build and flash:
+
+```text
+npm run test:firmware-static
+idf.py -p /dev/cu.usbmodem111301 build flash
+
+vibeboard_runtime.bin binary size 0x17ce30 bytes.
+Smallest app partition is 0x400000 bytes.
+0x2831d0 bytes (63%) free.
+```
+
+Board HTTP checks:
+
+```text
+GET /status -> 200 OK
+{"sd":true,"app_count":16,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+
+GET /apps -> JSON parse OK
+{"count":16,"has2048":true,"hasBtc":true}
+```
+
+Launch checks:
+
+```text
+npm run launch:app -- http://192.168.1.32:8080 demo_digital_clock
+launched demo_digital_clock
+
+GET /status -> 200 OK
+{"sd":true,"app_count":16,"first_app":"smoke_network","install":"ok","state":"running","running":true,"current_app":"demo_digital_clock"}
+
+npm run launch:app -- http://192.168.1.32:8080 holocubic_2048
+launched holocubic_2048
+
+GET /status -> 200 OK
+{"sd":true,"app_count":16,"first_app":"smoke_network","install":"ok","state":"running","running":true,"current_app":"holocubic_2048"}
+
+POST /stop -> 200 OK
+{"ok":true,"stopped":true}
+
+GET /status -> 200 OK
+{"sd":true,"app_count":16,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
+```
+
+Result: the expanded registry firmware is board-verified for a 16-app live SD registry, `/apps` JSON parsing, launch of a known style demo, launch of a representative Holocubic placeholder app, switching from one app to another, and stop back to idle without `ESP_ERR_NO_MEM`, connection reset, or `vb_lua_launch` stack overflow.

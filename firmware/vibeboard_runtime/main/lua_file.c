@@ -272,10 +272,10 @@ static int file_open(lua_State *L)
     return 1;
 }
 
-void vb_lua_file_register(lua_State *L, const vb_app_registry_result_t *app)
+void vb_lua_file_register(lua_State *L, const char *app_dir)
 {
-    const char *app_dir = (app != NULL && app->first_app_dir[0] != '\0') ? app->first_app_dir : VB_APPS_PATH;
-    lua_pushstring(L, app_dir);
+    const char *sandbox_dir = (app_dir != NULL && app_dir[0] != '\0') ? app_dir : VB_APPS_PATH;
+    lua_pushstring(L, sandbox_dir);
     lua_setfield(L, LUA_REGISTRYINDEX, VB_LUA_FILE_APP_DIR_REGISTRY_KEY);
 
     if (luaL_newmetatable(L, VB_LUA_FILE_HANDLE_META)) {
@@ -303,8 +303,8 @@ void vb_lua_file_register(lua_State *L, const vb_app_registry_result_t *app)
     };
 
     luaL_newlib(L, file_functions);
-    lua_pushstring(L, app_dir);
+    lua_pushstring(L, sandbox_dir);
     lua_setfield(L, -2, "APP_DIR");
     lua_setglobal(L, "file");
-    ESP_LOGI(TAG, "file module app dir: %s", app_dir);
+    ESP_LOGI(TAG, "file module app dir: %s", sandbox_dir);
 }

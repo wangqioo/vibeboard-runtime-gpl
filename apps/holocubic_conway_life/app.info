@@ -1,0 +1,4 @@
+name = Holocubic Conway Life
+entry = main.lua
+description = Runtime update placeholder for the Holocubic ConwayLife app
+capabilities = lvgl,timer

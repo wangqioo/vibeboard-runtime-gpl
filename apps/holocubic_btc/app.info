@@ -1,0 +1,4 @@
+name = Holocubic BTC
+entry = main.lua
+description = Runtime update placeholder for the Holocubic BTC app
+capabilities = lvgl,timer

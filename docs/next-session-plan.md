@@ -23,7 +23,7 @@ Latest board IP used during verification:
 http://192.168.1.32:8080
 ```
 
-The board firmware was rebuilt and flashed after increasing the app registry capacity from 12 to 32 entries. `/apps` has been verified with 13 app entries.
+The repo baseline now raises app registry capacity from 32 to 64 entries so the full Holocubic catalog, style demos, and smoke apps can coexist. Board verification confirmed `/apps` parses correctly with the expanded registry and representative app launches no longer fail with `ESP_ERR_NO_MEM`.
 
 ## What Is Done
 
@@ -32,7 +32,10 @@ The board firmware was rebuilt and flashed after increasing the app registry cap
 - HTTP install service is reachable on port `8080`.
 - Browser Web Console delivery and app management remain in place.
 - `require("lvgl")` now registers a minimal `lvgl` module table and common short aliases such as `obj_create`, `label_create`, `ALIGN_CENTER`, and `ANIM_ON`.
-- App registry capacity is now `VB_APP_REGISTRY_MAX_APPS 32`, so the demo library can grow beyond 12 entries.
+- App registry capacity is now `VB_APP_REGISTRY_MAX_APPS 64`, so the full local catalog can grow beyond the earlier 32-entry ceiling.
+- `/apps` now streams chunked JSON instead of using a fixed 1024-byte response buffer.
+- Lua app tasks use a PSRAM-backed stack and a slim app execution context, fixing the expanded-registry `ESP_ERR_NO_MEM` and `vb_lua_launch` stack overflow failure.
+- The Holocubic catalog has local packages for all 20 upstream app targets. `NixieClock`, `clock`, and `MatrixRain` are compatibility ports; unported targets launch explicit `Runtime update required` placeholders.
 - Style demo apps are package-validated, packaged by `package:demos`, uploaded to the board, and launch-verified:
 
 ```text
@@ -44,6 +47,7 @@ demo_night_light      warm bedside night light
 demo_focus_timer      focus countdown
 demo_lucky_card       rotating inspiration card
 demo_space_dash       spaceship dashboard
+demo_auto_snake       self-playing snake demo
 ```
 
 ## Last Verified Commands
@@ -60,12 +64,15 @@ curl -s http://192.168.1.32:8080/status
 curl -s http://192.168.1.32:8080/apps
 npm run upload:app -- http://192.168.1.32:8080 dist/apps/<app-id> <app-id>
 npm run launch:app -- http://192.168.1.32:8080 <app-id>
+npm run launch:app -- http://192.168.1.32:8080 demo_digital_clock
+npm run launch:app -- http://192.168.1.32:8080 holocubic_2048
+curl -s -X POST http://192.168.1.32:8080/stop
 ```
 
 Final board status from the last verification:
 
 ```json
-{"sd":true,"app_count":13,"first_app":"smoke_network","install":"ok","state":"running","running":true,"current_app":"demo_night_light"}
+{"sd":true,"app_count":16,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":""}
 ```
 
 ## Important Lesson
@@ -90,7 +97,8 @@ Before starting new feature work, commit the current verified baseline:
 - style demo apps;
 - package/validator updates;
 - `require("lvgl")` compatibility;
-- app registry capacity increase to 32;
+- app registry capacity increase to 64;
+- full Holocubic local catalog placeholders;
 - development plan updates.
 
 Recommended verification before commit:

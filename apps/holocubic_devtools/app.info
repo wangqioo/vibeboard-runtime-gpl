@@ -1,0 +1,4 @@
+name = Holocubic Devtools
+entry = main.lua
+description = Runtime update placeholder for the Holocubic devtools app
+capabilities = lvgl,timer

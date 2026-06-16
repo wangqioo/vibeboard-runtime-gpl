@@ -1,0 +1,4 @@
+name = Holocubic Videos
+entry = main.lua
+description = Runtime update placeholder for the Holocubic videos app
+capabilities = lvgl,timer

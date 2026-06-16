@@ -1,0 +1,4 @@
+name = Holocubic LV Benchmark
+entry = main.lua
+description = Runtime update placeholder for the Holocubic lv-benchmark app
+capabilities = lvgl,timer

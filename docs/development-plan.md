@@ -18,7 +18,7 @@
 
 ## 当前真实阶段
 
-项目已经进入 **Runtime 产品化闭环 + 风格样板库已跑通** 阶段。
+项目已经进入 **Runtime 产品化闭环 + Holocubic 全量本地目录基线** 阶段。
 
 这已经不是单纯的 GPL 源码吸收或文件打包项目。当前在立创 ESP32-S3 小屏设备上已经验证了核心链路：
 
@@ -41,10 +41,10 @@ ESP32-S3 runtime boot
 - 板子现在直接提供浏览器 Web Console；
 - Web Console 里已经有浏览器直连 OpenAI 的 AI App Creator，能把模型输出的严格 JSON App 文件通过 staged commit 安装到设备。
 - Runtime 已增加 `require("lvgl")` 兼容模块表和常用短名别名，能缓解部分模型生成习惯，但这不是自由生成的根本解决方案；
-- SD App registry 从 12 个保存条目扩展到 32 个，适配风格样板库继续增长；
+- SD App registry 从 32 个保存条目扩展到 64 个，适配 Holocubic 全量目录、风格样板库和 smoke app 同时存在；
 - 第一批风格样板 App 已上板验证，包括极简数字时钟、复古终端、霓虹仪表盘、像素宠物、暖色夜灯、专注计时、幸运卡片、飞船仪表盘。
 - 新增系统级左右边缘滑动退出：运行任意 Lua App 时，从屏幕左/右边缘横向滑动会请求停止当前 App 并返回 Launcher；
-- Holocubic 上游应用迁移已启动：已建立 20 个上游应用的兼容矩阵，并完成 `NixieClock` / `clock` 的首批安全子集移植。
+- Holocubic 上游应用迁移已启动：20 个上游目标现在都有本地可验证 app 包，其中 `NixieClock`、`clock`、`MatrixRain` 已完成兼容移植，其余未完成项以 `Runtime update required` 占位入口明确标注缺失 runtime。
 
 重要边界：
 
@@ -213,8 +213,10 @@ Holocubic 迁移说明：
 
 - 完整兼容矩阵见 `docs/holocubic-app-migration.json`；
 - 人读迁移计划见 `docs/holocubic-app-migration.md`；
+- 20 个上游目标现在都有本地 `apps/<target-id>` 包，并进入 `validate:apps` 和 `package:demos`；
 - 首批迁移不是原样复制 PNG/Canvas 版本，而是保留视觉意图、重写到当前已验证的安全 Runtime 子集；
 - Phase 2 已开始补最小 canvas Runtime：`lv_canvas_create`、`lv_canvas_fill_bg`、`lv_canvas_draw_rect`、`lv_canvas_draw_text`、`lv_obj_invalidate`，并用 `MatrixRain` 做第一个 canvas 类迁移；
+- 尚未完整移植的 Holocubic 目标以可启动占位 app 呈现，屏幕明确显示 `Runtime update required` 和缺失 runtime 切片；
 - 后续按 canvas、input、service/webui、bridge/audio、native module 分阶段推进。
 
 配套更新：
@@ -222,7 +224,7 @@ Holocubic 迁移说明：
 - `npm run validate:apps` 会校验这些 demo；
 - `npm run package:demos` 会打包这些 demo；
 - validator 中加入了风格断言，避免电子钟和风格样板退回成同质化卡片；
-- Runtime `VB_APP_REGISTRY_MAX_APPS` 已提高到 32，真机 `/apps` 已能列出 13 个 app。
+- Runtime `VB_APP_REGISTRY_MAX_APPS` 已提高到 64，足够承载 Holocubic 全量目录、风格样板和 smoke app。
 
 ## 当前主流程
 
@@ -273,9 +275,9 @@ open http://<board-ip>:8080/
 
 ## 下一阶段路线图
 
-### Slice 0: 当前样板库基线收口
+### Slice 0: 当前全量目录基线收口
 
-目标：把已经完成并上板验证的 demo 样板库、`require("lvgl")` 兼容、32 app registry 上限整理成一个可恢复基线。
+目标：把已经完成并上板验证的 demo 样板库、Holocubic 20 个本地目录、`require("lvgl")` 兼容、64 app registry 上限整理成一个可恢复基线。
 
 验收：
 
@@ -283,8 +285,9 @@ open http://<board-ip>:8080/
 - `npm run validate:apps` 通过；
 - `npm run package:demos` 通过；
 - `git diff --check` 通过；
-- 板子 `/apps` 能列出所有 demo；
+- 板子 `/apps` 能列出所有 demo 和 Holocubic catalog 入口；
 - 至少启动验证 `demo_digital_clock`、`demo_terminal_status`、`demo_neon_dash`、`demo_pixel_pet`、`demo_night_light`；
+- 至少启动验证一个未完整移植的 Holocubic 占位 app，确认屏幕显示 `Runtime update required`；
 - 更新 README 或能力文档后提交并推送。
 
 ### Slice 1: Holocubic Phase 2 Canvas 真机验收

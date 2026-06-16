@@ -12,7 +12,7 @@
       "phase": 3,
       "status": "blocked",
       "requiredRuntime": ["input", "lvgl-animation", "lvgl-style-extra"],
-      "notes": "Interactive tile game; migrate after Lua key/touch events and animation cleanup exist."
+      "notes": "Local placeholder exists. Interactive tile game; migrate after Lua key/touch events and animation cleanup exist."
     },
     {
       "upstreamId": "BTC",
@@ -20,7 +20,7 @@
       "phase": 2,
       "status": "planned",
       "requiredRuntime": ["lvgl-canvas", "http-callback", "time-compat"],
-      "notes": "Start as a display-only price/status screen after canvas and HTTP compatibility work."
+      "notes": "Local placeholder exists. Start as a display-only price/status screen after canvas and HTTP compatibility work."
     },
     {
       "upstreamId": "ConwayLife",
@@ -28,7 +28,7 @@
       "phase": 2,
       "status": "planned",
       "requiredRuntime": ["lvgl-canvas"],
-      "notes": "Good screensaver candidate once canvas rectangle drawing is board-verified."
+      "notes": "Local placeholder exists. Good screensaver candidate once canvas rectangle drawing is board-verified."
     },
     {
       "upstreamId": "FluidPendant",
@@ -36,7 +36,7 @@
       "phase": 2,
       "status": "planned",
       "requiredRuntime": ["lvgl-canvas", "time-compat"],
-      "notes": "Timer-driven visual app; needs canvas before full-fidelity migration."
+      "notes": "Local placeholder exists. Timer-driven visual app; needs canvas and timing compatibility before full-fidelity migration."
     },
     {
       "upstreamId": "MatrixRain",
@@ -60,7 +60,7 @@
       "phase": 3,
       "status": "blocked",
       "requiredRuntime": ["native-spectrum", "input", "lvgl-extra"],
-      "notes": "Depends on spectrum/audio-style runtime work; defer until input and native policy are stable."
+      "notes": "Local placeholder exists. Depends on spectrum/audio-style runtime work; defer until input and native policy are stable."
     },
     {
       "upstreamId": "clock",
@@ -76,7 +76,7 @@
       "phase": 5,
       "status": "blocked",
       "requiredRuntime": ["http-callback", "key-input", "gif", "bridge-config"],
-      "notes": "Needs host bridge polling, GIF or canvas fallback, and input cleanup on app stop."
+      "notes": "Local placeholder exists. Needs host bridge polling, GIF or canvas fallback, and input cleanup on app stop."
     },
     {
       "upstreamId": "devtools",
@@ -84,7 +84,7 @@
       "phase": 4,
       "status": "blocked",
       "requiredRuntime": ["app-service", "web-routes", "file-management"],
-      "notes": "Service-style tool; migrate only after sandboxed app-owned routes and file APIs exist."
+      "notes": "Local placeholder exists. Service-style tool; migrate only after sandboxed app-owned routes and file APIs exist."
     },
     {
       "upstreamId": "hwmon",
@@ -92,7 +92,7 @@
       "phase": 2,
       "status": "planned",
       "requiredRuntime": ["http-callback", "lvgl-canvas"],
-      "notes": "Can start display-only, then enable host bridge mode in a later service/network phase."
+      "notes": "Local placeholder exists. Can start display-only, then enable host bridge mode in a later service/network phase."
     },
     {
       "upstreamId": "lv-benchmark",
@@ -100,7 +100,7 @@
       "phase": 6,
       "status": "blocked",
       "requiredRuntime": ["lvgl-broad-surface", "benchmark-metrics"],
-      "notes": "Useful after the runtime intentionally supports the LVGL features it measures."
+      "notes": "Local placeholder exists. Useful after the runtime intentionally supports the LVGL features it measures."
     },
     {
       "upstreamId": "mini_claw",
@@ -108,7 +108,7 @@
       "phase": 5,
       "status": "blocked",
       "requiredRuntime": ["app-service", "http-callback", "bridge-config"],
-      "notes": "Bridge app; defer until service and network callback contracts are defined."
+      "notes": "Local placeholder exists. Bridge app; defer until service and network callback contracts are defined."
     },
     {
       "upstreamId": "nesgame",
@@ -124,7 +124,7 @@
       "phase": 3,
       "status": "blocked",
       "requiredRuntime": ["input", "lvgl-canvas", "image-decoders"],
-      "notes": "Needs media decoding, canvas image draw, and key/touch navigation."
+      "notes": "Local placeholder exists. Needs media decoding, canvas image draw, and key/touch navigation."
     },
     {
       "upstreamId": "plane",
@@ -132,7 +132,7 @@
       "phase": 3,
       "status": "blocked",
       "requiredRuntime": ["input", "image-decoders", "lvgl-animation"],
-      "notes": "Large game with many assets; start later with simplified controls and strict object budget."
+      "notes": "Local placeholder exists. Large game with many assets; start later with simplified controls and strict object budget."
     },
     {
       "upstreamId": "settings",
@@ -140,7 +140,7 @@
       "phase": 3,
       "status": "blocked",
       "requiredRuntime": ["input", "app-manager"],
-      "notes": "Needs Lua input and app/system APIs before it can be useful."
+      "notes": "Local placeholder exists. Needs Lua input and app/system APIs before it can be useful."
     },
     {
       "upstreamId": "videos",
@@ -148,7 +148,7 @@
       "phase": 3,
       "status": "blocked",
       "requiredRuntime": ["input", "gif", "video"],
-      "notes": "Needs GIF/video decode and navigation controls."
+      "notes": "Local placeholder exists. Needs GIF/video decode and navigation controls."
     },
     {
       "upstreamId": "voice_ai",

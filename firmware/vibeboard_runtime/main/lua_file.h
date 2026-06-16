@@ -1,13 +1,12 @@
 #pragma once
 
-#include "app_registry.h"
 #include "lua.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void vb_lua_file_register(lua_State *L, const vb_app_registry_result_t *app);
+void vb_lua_file_register(lua_State *L, const char *app_dir);
 
 #ifdef __cplusplus
 }

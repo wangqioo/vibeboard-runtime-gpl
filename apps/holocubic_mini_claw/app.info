@@ -1,0 +1,4 @@
+name = Holocubic Mini Claw
+entry = main.lua
+description = Runtime update placeholder for the Holocubic mini_claw app
+capabilities = lvgl,timer

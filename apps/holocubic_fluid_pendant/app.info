@@ -1,0 +1,4 @@
+name = Holocubic Fluid Pendant
+entry = main.lua
+description = Runtime update placeholder for the Holocubic FluidPendant app
+capabilities = lvgl,timer

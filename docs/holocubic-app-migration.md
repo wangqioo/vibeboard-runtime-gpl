@@ -6,6 +6,25 @@
 
 机器可读矩阵在 `docs/holocubic-app-migration.json`。它记录每个上游 app 的目标 id、迁移阶段、状态和缺失 runtime 能力。
 
+## Full Local Catalog Baseline
+
+现在 20 个上游 Holocubic 目标都已经有本地 `apps/<target-id>` 包，并进入 `validate:apps`、`package:demos` 和迁移矩阵测试。
+
+当前分层：
+
+- 完整兼容移植：`holocubic_nixie_clock`、`holocubic_analog_clock`、`holocubic_matrix_rain`
+- 已有本地包但上游完整行为仍依赖后续 runtime：`weather`、`voice_ai`、`nesgame`
+- 显式占位入口：`holocubic_2048`、`holocubic_btc`、`holocubic_conway_life`、`holocubic_fluid_pendant`、`holocubic_spectrum`、`holocubic_codex_buddy`、`holocubic_devtools`、`holocubic_hwmon`、`holocubic_lv_benchmark`、`holocubic_mini_claw`、`holocubic_photos`、`holocubic_plane`、`holocubic_settings`、`holocubic_videos`
+
+占位入口不是伪装成已移植应用。它们启动后会显示：
+
+```text
+Runtime update required
+Missing runtime: <required slice>
+```
+
+这样全量目录可以被浏览、打包、上传和启动，同时不会把缺 input、HTTP callback、media decode、native module 或完整 LVGL surface 的应用误标成完成。
+
 ## Phase 1: Safe Visual Ports
 
 首批迁移只使用已经真机验证过的 `lvgl,timer` 子集，不依赖 PNG/GIF、canvas、输入、网络 callback 或 native module。

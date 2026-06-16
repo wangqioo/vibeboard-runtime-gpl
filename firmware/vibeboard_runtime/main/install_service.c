@@ -405,31 +405,44 @@ static esp_err_t status_handler(httpd_req_t *req)
 
 static esp_err_t apps_handler(httpd_req_t *req)
 {
-    char body[1024];
-    size_t used = 0;
     const vb_app_registry_result_t *registry = s_context ? s_context->registry : NULL;
 
-    used += snprintf(body + used, sizeof(body) - used, "{\"apps\":[");
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t err = httpd_resp_send_chunk(req, "{\"apps\":[", HTTPD_RESP_USE_STRLEN);
+    if (err != ESP_OK) {
+        return err;
+    }
+
     vb_app_registry_lock();
     int stored = registry ? registry->stored_app_count : 0;
-    for (int i = 0; i < stored && used < sizeof(body); i++) {
+    for (int i = 0; i < stored; i++) {
         const vb_app_registry_entry_t *app = &registry->apps[i];
-        used += snprintf(body + used,
-                         sizeof(body) - used,
-                         "%s{\"id\":\"%s\",\"name\":\"%s\",\"entry\":\"%s\"}",
-                         i == 0 ? "" : ",",
-                         app->id,
-                         app->name,
-                         app->entry);
+        char item[256];
+        int written = snprintf(item,
+                               sizeof(item),
+                               "%s{\"id\":\"%s\",\"name\":\"%s\",\"entry\":\"%s\"}",
+                               i == 0 ? "" : ",",
+                               app->id,
+                               app->name,
+                               app->entry);
+        if (written < 0 || written >= (int)sizeof(item)) {
+            vb_app_registry_unlock();
+            httpd_resp_send_chunk(req, NULL, 0);
+            return ESP_ERR_INVALID_SIZE;
+        }
+        err = httpd_resp_send_chunk(req, item, HTTPD_RESP_USE_STRLEN);
+        if (err != ESP_OK) {
+            vb_app_registry_unlock();
+            return err;
+        }
     }
     vb_app_registry_unlock();
-    if (used < sizeof(body)) {
-        snprintf(body + used, sizeof(body) - used, "]}\n");
-    } else {
-        strlcpy(body + sizeof(body) - 4, "]}\n", 4);
+
+    err = httpd_resp_send_chunk(req, "]}\n", HTTPD_RESP_USE_STRLEN);
+    if (err != ESP_OK) {
+        return err;
     }
-    send_json(req, body);
-    return ESP_OK;
+    return httpd_resp_send_chunk(req, NULL, 0);
 }
 
 static esp_err_t rescan_handler(httpd_req_t *req)

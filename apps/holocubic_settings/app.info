@@ -1,0 +1,4 @@
+name = Holocubic Settings
+entry = main.lua
+description = Runtime update placeholder for the Holocubic settings app
+capabilities = lvgl,timer

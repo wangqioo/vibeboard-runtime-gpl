@@ -113,7 +113,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(header, /VB_APPS_PATH\s+"\/sdcard\/apps"/);
     assert.match(header, /VB_APP_REGISTRY_MAX_APPS/);
-    assert.match(header, /VB_APP_REGISTRY_MAX_APPS\s+32/);
+    assert.match(header, /VB_APP_REGISTRY_MAX_APPS\s+64/);
     assert.match(header, /vb_app_registry_entry_t/);
     assert.match(header, /apps\[/);
     assert.match(source, /VB_APPS_PATH/);
@@ -153,6 +153,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /config\.max_uri_handlers\s*=\s*VB_INSTALL_HTTPD_MAX_HANDLERS/);
     assert.match(source, /status_handler/);
     assert.match(source, /apps_handler/);
+    assert.doesNotMatch(source, /static esp_err_t apps_handler[\s\S]*?char body\[1024\]/);
+    assert.match(source, /httpd_resp_send_chunk\(req,\s*"\{\\"apps\\":\["/);
+    assert.match(source, /httpd_resp_send_chunk\(req,\s*"\]\}\\n"/);
+    assert.match(source, /httpd_resp_send_chunk\(req,\s*NULL,\s*0\)/);
     assert.match(source, /rescan_handler/);
     assert.match(source, /launch_handler/);
     assert.match(source, /stop_handler/);
@@ -307,8 +311,20 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /vb_app_runner_run[\s\S]*reserve_runner_start/);
     assert.match(runner, /VB_LUA_TASK_STACK_SIZE/);
     assert.match(runner, /xTaskCreatePinnedToCore/);
+    assert.match(runner, /freertos\/idf_additions\.h/);
+    assert.match(runner, /esp_heap_caps\.h/);
+    assert.match(runner, /xTaskCreatePinnedToCoreWithCaps/);
+    assert.match(runner, /MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT/);
+    assert.match(runner, /MALLOC_CAP_INTERNAL\s*\|\s*MALLOC_CAP_8BIT/);
+    assert.doesNotMatch(runner, /xTaskCreatePinnedToCore\(/);
+    assert.match(runner, /vTaskDeleteWithCaps\(NULL\)/);
     assert.match(runner, /vb_app_registry_entry_t/);
-    assert.match(runner, /entry_to_registry/);
+    assert.match(runner, /entry_to_lua_context/);
+    assert.match(runner, /typedef struct \{\s*vb_lua_app_context_t app;\s*vb_app_runner_result_t result;\s*\} vb_lua_async_context_t;/);
+    assert.doesNotMatch(runner, /typedef struct \{\s*vb_app_registry_result_t app;\s*vb_app_runner_result_t result;\s*\} vb_lua_async_context_t;/);
+    assert.match(runner, /typedef struct \{\s*char name\[VB_APP_NAME_MAX\];\s*char dir\[VB_APP_PATH_MAX\];\s*char path\[VB_APP_PATH_MAX\];\s*\} vb_lua_app_context_t;/);
+    assert.doesNotMatch(runner, /static void entry_to_registry/);
+    assert.doesNotMatch(runner, /vb_app_registry_result_t app;/);
     assert.match(runner, /s_runner_state/);
     assert.match(runner, /stop_requested/);
     assert.match(runner, /vb_lua_tmr_set_stop_flag/);
@@ -512,7 +528,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /listdir/);
     assert.match(source, /VB_SD_MOUNT_POINT/);
     assert.match(source, /VB_APPS_PATH/);
-    assert.match(runner, /vb_lua_file_register\(L,\s*app\)/);
+    assert.match(header, /vb_lua_file_register\(lua_State \*L,\s*const char \*app_dir\)/);
+    assert.match(runner, /vb_lua_file_register\(L,\s*app->dir\)/);
   });
 
   it("registers network, json, and time Lua modules", () => {

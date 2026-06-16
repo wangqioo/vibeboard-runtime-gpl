@@ -1,0 +1,4 @@
+name = Holocubic Plane
+entry = main.lua
+description = Runtime update placeholder for the Holocubic plane app
+capabilities = lvgl,timer

@@ -1,0 +1,4 @@
+name = Holocubic Codex Buddy
+entry = main.lua
+description = Runtime update placeholder for the Holocubic codex_buddy app
+capabilities = lvgl,timer

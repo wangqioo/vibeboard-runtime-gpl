@@ -1,0 +1,4 @@
+name = Holocubic Spectrum
+entry = main.lua
+description = Runtime update placeholder for the Holocubic Spectrum app
+capabilities = lvgl,timer

@@ -32,9 +32,19 @@ const upstreamAppIds = [
   "weather"
 ].sort();
 
+const curatedLegacyTargetIds = new Set([
+  "nesgame",
+  "voice_ai",
+  "weather"
+]);
+
 function readJson(path) {
   assert.equal(existsSync(path), true, `${path} should exist`);
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 describe("holocubic app migration plan", () => {
@@ -108,5 +118,40 @@ describe("holocubic app migration plan", () => {
     assert.match(source, /lv_canvas_draw_rect/);
     assert.match(source, /tmr\.create\(\)/);
     assert.doesNotMatch(source, /key\.|touch\.|http\.|wifi\.|file\./);
+  });
+
+  it("keeps a local app package for every Holocubic migration target", () => {
+    const matrix = readJson(matrixPath);
+
+    for (const app of matrix.apps) {
+      const appDir = join(repoRoot, "apps", app.targetId);
+      const validation = validateAppDirectory(appDir);
+
+      assert.equal(existsSync(appDir), true, `${app.targetId} should exist under apps/`);
+      assert.equal(validation.ok, true, `${app.targetId}: ${validation.errors.join("\n")}`);
+      assert.equal(validation.relativeEntry, "main.lua");
+    }
+  });
+
+  it("marks unported Holocubic-only local packages as explicit runtime-update placeholders", () => {
+    const matrix = readJson(matrixPath);
+
+    for (const app of matrix.apps) {
+      if (app.status === "ported" || curatedLegacyTargetIds.has(app.targetId)) continue;
+
+      const source = readFileSync(join(repoRoot, "apps", app.targetId, "main.lua"), "utf8");
+
+      assert.match(source, /Runtime update required/, `${app.targetId} should tell users it is not fully ported yet`);
+      assert.match(source, /Missing runtime/, `${app.targetId} should list the missing runtime slice`);
+      for (const runtime of app.requiredRuntime) {
+        assert.match(
+          source,
+          new RegExp(escapeRegex(runtime)),
+          `${app.targetId} placeholder should mention required runtime slice ${runtime}`
+        );
+      }
+      assert.match(source, /tmr\.create\(\)/, `${app.targetId} should stay alive as a visible placeholder`);
+      assert.doesNotMatch(source, /key\.|touch\.|http\.|wifi\.|file\.|require\(/);
+    }
   });
 });
