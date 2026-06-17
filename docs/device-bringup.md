@@ -1867,3 +1867,90 @@ Checklist result:
 - BOOT long-press stop worked while a Lua app owned the screen.
 
 Result: the Phase 5B launcher lifecycle controls are board-verified through HTTP, serial logs, and manual physical screen evidence.
+
+## 2026-06-17 upstream display migration firmware reflash
+
+Context: after migrating `ConwayLife` and `FluidPendant`, the connected board needed a fresh firmware flash before display-app board verification could continue.
+
+Local verification before flashing:
+
+```text
+npm test passed.
+npm run test:firmware-static passed with 37 tests.
+idf.py build passed.
+```
+
+The first reflashed firmware still rebooted during startup. Serial showed the board reached SD card mount, then crashed before registry/WiFi/HTTP startup:
+
+```text
+I vibeboard_runtime: VibeBoard Runtime start
+I board_lckfb: VibeBoard Runtime board start
+I LVGL: Starting LVGL task
+Name: SD64G
+***ERROR*** A stack overflow in task main has been detected.
+Rebooting...
+```
+
+Root cause: the generated local `sdkconfig` still had the default main task stack even after `sdkconfig.defaults` was updated. The effective build config was changed to:
+
+```text
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_MAIN_TASK_STACK_SIZE=8192
+```
+
+Post-reconfigure evidence:
+
+```text
+build/config/sdkconfig.h:#define CONFIG_ESP_MAIN_TASK_STACK_SIZE 8192
+```
+
+After reflashing that build, the main-task stack overflow was gone. The board scanned SD apps and WiFi associated:
+
+```text
+I app_registry: found 16 apps
+I runtime_wifi: runtime WiFi autoconnect using /sdcard/runtime/wifi.json
+I vibeboard_runtime: VibeBoard Runtime ready: sd=ok apps=16 launcher=ok
+I runtime_wifi: runtime sta got ip 192.168.1.32
+```
+
+That boot also exposed an HTTP handler capacity issue:
+
+```text
+W httpd_uri: httpd_register_uri_handler: no slots left for registering handler
+W install_service: register /apps/delete handler failed: ESP_ERR_HTTPD_HANDLERS_FULL
+```
+
+Fix:
+
+```text
+config.max_uri_handlers = 12;
+```
+
+The next run exposed LVGL task watchdog reports while LVGL waited inside the display refresh path:
+
+```text
+E task_wdt: Task watchdog got triggered.
+Tasks currently running:
+CPU 0: LVGL task
+Backtrace resolved to:
+lv_timer_handler -> _lv_disp_refr_timer -> refr_area_part
+```
+
+Fix:
+
+```text
+disp_ctx->disp_drv.wait_cb = lvgl_port_wait_callback;
+lvgl_port_wait_callback -> vTaskDelay(pdMS_TO_TICKS(1))
+```
+
+Post-fix runtime observation:
+
+```text
+I SystemInfo: free sram: 106787 minimal sram: 102751
+I SystemInfo: free sram: 107303 minimal sram: 102751
+I SystemInfo: free sram: 106787 minimal sram: 102751
+```
+
+No `main` stack overflow and no LVGL task watchdog appeared in the final captured runtime log window. However, `curl http://192.168.1.32:8080/status` returned connection failure after this last flash, even though ARP still mapped `192.168.1.32` to board MAC `10:51:db:80:e2:e8`. The board was running an existing SD app that printed `SystemInfo` memory logs.
+
+Result: the firmware was reflashed and the startup crash path is fixed. Main stack size, HTTP handler count, and LVGL wait-yield behavior are regression-guarded by static tests. The migrated display apps are still not board-verified because the final HTTP upload/launch path was unreachable; next session should first recover HTTP/WiFi service visibility, then upload and launch `matrix_rain`, `nixie_clock`, `clock`, `conway_life`, and `fluid_pendant`.

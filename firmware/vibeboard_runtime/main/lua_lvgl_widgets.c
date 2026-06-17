@@ -433,6 +433,19 @@ static int l_lv_bar_set_value(lua_State *L)
     return 0;
 }
 
+static int l_lv_font_load(lua_State *L)
+{
+    (void)luaL_checkstring(L, 1);
+    lua_pushinteger(L, 0);
+    return 1;
+}
+
+static int l_lv_font_free(lua_State *L)
+{
+    (void)luaL_optinteger(L, 1, 0);
+    return 0;
+}
+
 typedef struct {
     const char *name;
     lua_CFunction function;
@@ -455,6 +468,8 @@ void vb_lua_lvgl_widgets_register(lua_State *L)
         { "lv_bar_create", l_lv_bar_create },
         { "lv_bar_set_range", l_lv_bar_set_range },
         { "lv_bar_set_value", l_lv_bar_set_value },
+        { "lv_font_load", l_lv_font_load },
+        { "lv_font_free", l_lv_font_free },
         { "lv_obj_set_size", l_lv_obj_set_size },
         { "lv_obj_set_width", l_lv_obj_set_width },
         { "lv_obj_set_height", l_lv_obj_set_height },

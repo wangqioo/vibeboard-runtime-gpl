@@ -190,6 +190,6 @@ describe("packageDemoApps", () => {
   it("packages the curated demo and migrated apps", () => {
     const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
     const result = packageDemoApps({ repoRoot });
-    assert.deepEqual(result.map((item) => item.appId).sort(), ["clock", "matrix_rain", "nesgame", "nixie_clock", "voice_ai", "weather"]);
+    assert.deepEqual(result.map((item) => item.appId).sort(), ["clock", "conway_life", "fluid_pendant", "matrix_rain", "nesgame", "nixie_clock", "voice_ai", "weather"]);
   });
 });

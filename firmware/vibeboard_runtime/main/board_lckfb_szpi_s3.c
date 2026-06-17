@@ -183,6 +183,12 @@ static esp_err_t touch_init(lv_disp_t *disp)
     return ESP_OK;
 }
 
+static void lvgl_flush_wait_callback(lv_disp_drv_t *drv)
+{
+    (void)drv;
+    vTaskDelay(pdMS_TO_TICKS(1));
+}
+
 static esp_err_t lvgl_init(vb_board_status_t *status)
 {
     const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
@@ -211,6 +217,7 @@ static esp_err_t lvgl_init(vb_board_status_t *status)
     if (disp == NULL) {
         return ESP_FAIL;
     }
+    disp->driver->wait_cb = lvgl_flush_wait_callback;
     status->display_ok = true;
 
     esp_err_t touch_err = touch_init(disp);

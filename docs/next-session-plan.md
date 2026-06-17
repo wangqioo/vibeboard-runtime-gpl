@@ -68,12 +68,19 @@ The local work after the previous baseline implements deployment productization 
   - `apps/matrix_rain` from upstream `MatrixRain`;
   - `apps/nixie_clock` from upstream `NixieClock`;
   - `apps/clock` from upstream `clock`.
+  - `apps/conway_life` from upstream `ConwayLife`.
+  - `apps/fluid_pendant` from upstream `FluidPendant`.
 - Runtime compatibility added during these app migrations:
   - minimal LVGL canvas binding;
   - PNG decoder enabled;
   - `time.getlocal()`;
   - image antialias, angle, pivot, zoom helpers;
+  - `lv_font_load`/`lv_font_free` fallback compatibility;
   - common text style helpers and LVGL constants.
+- Firmware bring-up fixes from the 2026-06-17 board reflash:
+  - main task stack increased to 8192 so SD app scanning no longer overflows `main`;
+  - install service `max_uri_handlers` raised to 12 so all current HTTP endpoints can register;
+  - LVGL display driver now yields in `wait_cb` while waiting for flush completion, avoiding task watchdog starvation in the observed refresh path.
 
 ## Last Verified Commands
 
@@ -83,47 +90,67 @@ npm run test:packager
 npm test
 git diff --check
 idf.py build
+idf.py -p /dev/cu.usbmodem112301 build flash
 ```
 
-The latest full verification for today's migration work passed through package/static/test/build layers. The newly migrated `matrix_rain`, `nixie_clock`, and `clock` apps still need board screen verification before they can be marked board-verified.
+The latest full verification for migration work passed through package/static/test/build layers. The board was reflashed after fixing the `main` stack overflow, HTTP handler capacity, and LVGL watchdog starvation path. The final captured serial window showed the board still running and printing `SystemInfo` memory logs without stack overflow or watchdog output, but `http://192.168.1.32:8080/status` was not reachable. Treat HTTP/WiFi visibility as the first blocker to clear before uploaded-app screen verification.
 
 ## Immediate Next Work
 
-### 1. Continue Phase 9 with `ConwayLife`
+### 1. Recover board HTTP/WiFi visibility
 
-Use the same TDD migration slice as the previous apps:
+Before uploading apps, confirm the board is serving HTTP again.
 
-- add RED static tests for `apps/conway_life` and any missing runtime API;
-- import `upstream/holocubic-apps/ConwayLife/main.lua`;
-- copy `font/time_46.bin`;
-- adapt the hardcoded font path to `/sd/apps/conway_life/font/time_46.bin`;
-- add `apps/conway_life/app.info`;
-- implement minimal `lv_font_load`/`lv_font_free` compatibility if needed;
-- add `conway_life` to demo packaging.
-
-Suggested ownership:
+Suggested checks:
 
 ```text
-apps/conway_life/
-firmware/vibeboard_runtime/main/lua_lvgl_widgets.c
-tools/firmware-static-check/test.mjs
-tools/app-packager/
+ls /dev/cu.usbmodem*
+curl -s --max-time 5 http://192.168.1.32:8080/status
+arp -a | grep 10:51:db:80:e2:e8
+serial log on /dev/cu.usbmodem112301
 ```
 
-Expected result: `npm run package:app -- apps/conway_life`, `npm run test:firmware-static`, `npm run test:packager`, `npm test`, `git diff --check`, and `idf.py build` all pass.
+Expected result:
+
+- serial boot or runtime logs show runtime WiFi autoconnect;
+- `/status` returns JSON from the install service;
+- no `stack overflow in task main`;
+- no repeated `task_wdt` report from `LVGL task`;
+- no `ESP_ERR_HTTPD_HANDLERS_FULL`.
+
+If `/status` is still unreachable but serial shows the board is alive, inspect runtime WiFi state and whether an existing SD app is interfering with the launcher/install-service path.
 
 ### 2. Board verification for migrated display apps
 
-Once the codebase is green, install and launch these apps on the board:
+Install and launch these apps on the board:
 
 - `matrix_rain`;
 - `nixie_clock`;
 - `clock`;
-- `conway_life` if completed.
+- `conway_life`.
+- `fluid_pendant`.
 
-Record serial logs and screen observations in `docs/device-bringup.md`.
+Suggested ownership:
 
-### 3. Remaining deployment productization
+```text
+docs/device-bringup.md
+tools/app-uploader/
+dist/apps/
+```
+
+Expected result: each app has serial logs and screen observations recorded. Keep the status as package/static/build until this hardware check is done.
+
+### 3. Choose the next upstream migration slice
+
+After display-app board verification, choose one:
+
+- `2048` or another light interactive app to drive Lua touch/key input;
+- `weather` to harden network UI compatibility;
+- a smaller non-interactive display app if the board verification exposes LVGL stability issues.
+
+Use the same TDD migration slice: API inventory, RED static test, minimal Runtime binding, local app package, package/static/test/build verification.
+
+### 4. Remaining deployment productization
 
 Deployment now has staged upload/delete, but still lacks:
 
@@ -136,8 +163,8 @@ Deployment now has staged upload/delete, but still lacks:
 
 Safe parallel tracks now:
 
-- `ConwayLife` migration and static/runtime API compatibility.
 - Board verification of already migrated display apps.
+- Next app API inventory and RED static tests.
 - Browser UI design for deployment management.
 - Lua input-event design: `touch.on`, `key.on`.
 

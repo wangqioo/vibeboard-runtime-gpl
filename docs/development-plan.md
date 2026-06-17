@@ -122,8 +122,10 @@ npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote
 - `apps/matrix_rain` 已从 `upstream/holocubic-apps/MatrixRain/` 迁移，补齐最小 LVGL canvas 绑定和相关常量；
 - `apps/nixie_clock` 已从 `upstream/holocubic-apps/NixieClock/` 迁移，补齐 PNG 解码配置、`time.getlocal()`、图片抗锯齿和样式清理绑定；
 - `apps/clock` 已从 `upstream/holocubic-apps/clock/` 迁移，补齐图片旋转、pivot、zoom 和文本样式绑定；
-- `tools/app-packager` 的 demo 打包列表已包含 `matrix_rain`、`nixie_clock` 和 `clock`；
-- 这些迁移已通过静态测试、packager 测试、总测试、`git diff --check` 和 ESP-IDF build；还需要后续上板做屏幕验证。
+- `apps/conway_life` 已从 `upstream/holocubic-apps/ConwayLife/` 迁移，补齐 font fallback 兼容和本地字体资源路径适配；
+- `apps/fluid_pendant` 已从 `upstream/holocubic-apps/FluidPendant/` 迁移，复用 canvas/time/timer 兼容路径；
+- `tools/app-packager` 的 demo 打包列表已包含 `matrix_rain`、`nixie_clock`、`clock`、`conway_life` 和 `fluid_pendant`；
+- 这些迁移已通过静态测试、packager 测试、总测试、`git diff --check` 和 ESP-IDF build；2026-06-17 已重新烧录固件并修复启动期 `main` 栈溢出、HTTP handler 数量不足和 LVGL flush 等待触发 watchdog 的问题；还需要先恢复当前板子的 HTTP/WiFi 可见性，再做迁移 App 的上板屏幕验证。
 
 ### 现在能用到什么程度
 
@@ -1027,11 +1029,11 @@ dist/apps/<app-id>/
 
 目标：逐个让上游 App 在 VibeBoard Runtime 上真实跑通。
 
-当前状态：上游兼容路线已经开始落地。`MatrixRain`、`NixieClock` 和 `clock` 已迁移为本地 App 包并驱动补齐了一批 LVGL/time/PNG/canvas 能力；当前验证层级是 package/static/build，下一步需要上板屏幕验证。
+当前状态：上游兼容路线已经开始落地。`MatrixRain`、`NixieClock`、`clock`、`ConwayLife` 和 `FluidPendant` 已迁移为本地 App 包并驱动补齐了一批 LVGL/time/PNG/canvas/font-fallback 能力；当前验证层级是 package/static/build + 固件重烧后的启动稳定性修复，下一步需要先恢复板端 HTTP/WiFi 可见性，再上板屏幕验证这些 App。
 
 优先顺序：
 
-1. `ConwayLife`：继续补 canvas/font 兼容，是下一步最小显示类 App；
+1. 上板验证 `matrix_rain`、`nixie_clock`、`clock`、`conway_life` 和 `fluid_pendant`；
 2. `2048` 或其他轻量交互 App：倒逼 touch/key Lua 输入事件；
 3. `weather`：复用已实现的 WiFi/HTTP/JSON/time，补完整 UI 适配；
 4. `voice_ai`：需要音频和 bridge，排在网络 UI 路线稳定之后；
@@ -1044,6 +1046,8 @@ dist/apps/<app-id>/
 | `MatrixRain` | `apps/matrix_rain/` | 最小 `lv_canvas_*`、canvas draw rect、canvas frame begin/end、canvas fill bg、常用 LVGL 常量 | package/static/build |
 | `NixieClock` | `apps/nixie_clock/` | PNG 解码配置、`time.getlocal()`、`lv_obj_remove_style_all`、`lv_img_set_antialias` | package/static/build |
 | `clock` | `apps/clock/` | `lv_img_set_angle`、`lv_img_set_pivot`、`lv_img_set_zoom`、文本字体/透明度/对齐/字距样式 | package/static/build |
+| `ConwayLife` | `apps/conway_life/` | canvas draw rect、time label、`time.getlocal()`、`lv_font_load`/`lv_font_free` fallback、字体资源路径适配 | package/static/build |
+| `FluidPendant` | `apps/fluid_pendant/` | canvas draw rect、time label、`time.getlocal()`、timer loop、Viper 缺失时 Lua fallback | package/static/build |
 
 每个 App 的迁移流程：
 

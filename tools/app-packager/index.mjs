@@ -22,7 +22,16 @@ import {
 } from "node:path";
 import { validateAppDirectory } from "../app-validator/index.mjs";
 
-export const DEMO_APP_DIRS = ["apps/weather", "apps/voice_ai", "apps/nesgame", "apps/matrix_rain", "apps/nixie_clock", "apps/clock"];
+export const DEMO_APP_DIRS = [
+  "apps/weather",
+  "apps/voice_ai",
+  "apps/nesgame",
+  "apps/matrix_rain",
+  "apps/nixie_clock",
+  "apps/clock",
+  "apps/conway_life",
+  "apps/fluid_pendant"
+];
 export const PACKAGE_SCHEMA = "vibeboard-runtime-app-package@2";
 export const DEFAULT_RUNTIME_REQUIREMENT = ">=0.1.0";
 export const DEFAULT_LUA_API_REQUIREMENT = ">=0.1.0";

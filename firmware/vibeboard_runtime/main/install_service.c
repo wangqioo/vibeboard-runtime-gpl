@@ -556,6 +556,7 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
     config.stack_size = VB_INSTALL_HTTPD_STACK_SIZE;
+    config.max_uri_handlers = 12;
     config.uri_match_fn = httpd_uri_match_wildcard;
 
     err = httpd_start(&s_server, &config);

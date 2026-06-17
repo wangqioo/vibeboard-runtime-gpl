@@ -67,6 +67,12 @@ const clockInfoPath = join(repoRoot, "apps/clock/app.info");
 const clockSourcePath = join(repoRoot, "apps/clock/main.lua");
 const clockDialPath = join(repoRoot, "apps/clock/assets/dial.png");
 const clockHourPath = join(repoRoot, "apps/clock/assets/hour.png");
+const conwayLifeInfoPath = join(repoRoot, "apps/conway_life/app.info");
+const conwayLifeSourcePath = join(repoRoot, "apps/conway_life/main.lua");
+const conwayLifeFontPath = join(repoRoot, "apps/conway_life/font/time_46.bin");
+const fluidPendantInfoPath = join(repoRoot, "apps/fluid_pendant/app.info");
+const fluidPendantSourcePath = join(repoRoot, "apps/fluid_pendant/main.lua");
+const fluidPendantFontPath = join(repoRoot, "apps/fluid_pendant/font/time_46.bin");
 
 function readRequired(path) {
   assert.equal(existsSync(path), true, `${path} should exist`);
@@ -104,6 +110,21 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(defaults, /CONFIG_PARTITION_TABLE_CUSTOM=y/);
     assert.match(defaults, /CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions\.csv"/);
     assert.match(partitions, /factory,\s+app,\s+factory,\s+0x10000,\s+0x400000/);
+  });
+
+  it("keeps the main task stack large enough for SD app scanning", () => {
+    const defaults = readRequired(sdkconfigDefaultsPath);
+
+    assert.match(defaults, /CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192/);
+    assert.match(defaults, /CONFIG_FATFS_LFN_STACK=y/);
+  });
+
+  it("lets the LVGL flush wait loop yield to the scheduler", () => {
+    const source = readRequired(boardSourcePath);
+
+    assert.match(source, /lvgl_flush_wait_callback/);
+    assert.match(source, /disp->driver->wait_cb\s*=\s*lvgl_flush_wait_callback/);
+    assert.match(source, /vTaskDelay\(pdMS_TO_TICKS\(1\)\)/);
   });
 
   it("does not format SD cards during mount", () => {
@@ -180,6 +201,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /httpd_start/);
     assert.match(source, /VB_INSTALL_HTTPD_STACK_SIZE\s+8192/);
     assert.match(source, /config\.stack_size\s*=\s*VB_INSTALL_HTTPD_STACK_SIZE/);
+    assert.match(source, /config\.max_uri_handlers\s*=\s*12/);
     assert.match(source, /status_handler/);
     assert.match(source, /apps_handler/);
     assert.match(source, /rescan_handler/);
@@ -602,6 +624,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(widgetSource, /lv_img_set_angle/);
     assert.match(widgetSource, /lv_img_set_pivot/);
     assert.match(widgetSource, /lv_img_set_zoom/);
+    assert.match(widgetSource, /lv_font_load/);
+    assert.match(widgetSource, /lv_font_free/);
     assert.match(widgetSource, /lv_btn_create/);
     assert.match(widgetSource, /lv_bar_create/);
     assert.match(widgetSource, /lv_bar_set_value/);
@@ -801,6 +825,43 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /tmr\.create/);
     assert.deepEqual([...dial.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     assert.deepEqual([...hour.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  });
+
+  it("ships ConwayLife as an upstream canvas and time migration", () => {
+    const info = readRequired(conwayLifeInfoPath);
+    const source = readRequired(conwayLifeSourcePath);
+    const font = readFileSync(conwayLifeFontPath);
+
+    assert.match(info, /name = ConwayLife/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,file,timer/);
+    assert.match(source, /CONWAY_LIFE_APP/);
+    assert.match(source, /\/sd\/apps\/conway_life\/font\/time_46\.bin/);
+    assert.match(source, /lv_canvas_create/);
+    assert.match(source, /lv_canvas_draw_rect/);
+    assert.match(source, /lv_label_create/);
+    assert.match(source, /time_getlocal_fn/);
+    assert.match(source, /tmr\.create/);
+    assert.match(source, /PERIODIC_INJECT_MS/);
+    assert.ok(font.length > 0);
+  });
+
+  it("ships FluidPendant as an upstream liquid canvas migration", () => {
+    const info = readRequired(fluidPendantInfoPath);
+    const source = readRequired(fluidPendantSourcePath);
+    const font = readFileSync(fluidPendantFontPath);
+
+    assert.match(info, /name = FluidPendant/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,file,timer/);
+    assert.match(source, /FLUID_PENDANT_APP/);
+    assert.match(source, /lv_canvas_create/);
+    assert.match(source, /lv_canvas_draw_rect/);
+    assert.match(source, /lv_label_create/);
+    assert.match(source, /time_getlocal_fn/);
+    assert.match(source, /tmr\.create/);
+    assert.match(source, /APP\.init_viper_engine/);
+    assert.ok(font.length > 0);
   });
 
   it("ships a network smoke app for WiFi, HTTP, JSON, and NTP", () => {

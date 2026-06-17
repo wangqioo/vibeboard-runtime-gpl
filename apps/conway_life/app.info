@@ -1,0 +1,6 @@
+name = ConwayLife
+entry = main.lua
+description = Game of Life screensaver
+capabilities = lvgl,file,timer
+version = 0.1.0
+kind = app
