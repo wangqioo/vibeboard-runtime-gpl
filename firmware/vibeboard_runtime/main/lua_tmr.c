@@ -65,6 +65,12 @@ static int tmr_time(lua_State *L)
     return 1;
 }
 
+static int millis(lua_State *L)
+{
+    lua_pushinteger(L, (lua_Integer)(xTaskGetTickCount() * 1000 / configTICK_RATE_HZ));
+    return 1;
+}
+
 static int tmr_create(lua_State *L)
 {
     vb_lua_tmr_state_t *state = get_state(L);
@@ -259,6 +265,9 @@ void vb_lua_tmr_register(lua_State *L, vb_lua_tmr_state_t *state)
 
     lua_pushcfunction(L, set_interval);
     lua_setglobal(L, "set_interval");
+
+    lua_pushcfunction(L, millis);
+    lua_setglobal(L, "millis");
 }
 
 esp_err_t vb_lua_tmr_run_loop(lua_State *L, vb_lua_tmr_state_t *state, char *error, size_t error_size)

@@ -10,8 +10,10 @@
 
 #include "app_registry.h"
 #include "app_runner.h"
+#include "esp_check.h"
 #include "esp_err.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -25,6 +27,8 @@ static const char *TAG = "install_service";
 #define VB_RUNTIME_LVGL_API_VERSION "0.1.0"
 #define VB_RUNTIME_PACKAGE_SCHEMA "vibeboard-runtime-app-package@2"
 #define VB_RUNTIME_NATIVE_ABI_VERSION NULL
+#define VB_RUNTIME_CUBICSERVER_CONFIG_PATH "/sdcard/runtime/cubicserver.json"
+#define VB_RUNTIME_CONFIG_MAX_BYTES 512
 
 static httpd_handle_t s_server;
 static bool s_netif_ready;
@@ -285,6 +289,52 @@ static esp_err_t install_abort_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t runtime_config_handler(httpd_req_t *req)
+{
+    char name[32] = {0};
+    if (get_query_value(req, "name", name, sizeof(name)) != ESP_OK || strcmp(name, "cubicserver") != 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsupported config");
+        return ESP_FAIL;
+    }
+    if (req->content_len <= 0 || req->content_len > VB_RUNTIME_CONFIG_MAX_BYTES) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "config too large");
+        return ESP_FAIL;
+    }
+    if (ensure_parent_dirs(VB_RUNTIME_CUBICSERVER_CONFIG_PATH) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "mkdir failed");
+        return ESP_FAIL;
+    }
+
+    FILE *file = fopen(VB_RUNTIME_CUBICSERVER_CONFIG_PATH, "wb");
+    if (file == NULL) {
+        ESP_LOGE(TAG, "open failed %s errno=%d", VB_RUNTIME_CUBICSERVER_CONFIG_PATH, errno);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "open failed");
+        return ESP_FAIL;
+    }
+
+    char buffer[128];
+    int remaining = req->content_len;
+    while (remaining > 0) {
+        int received = httpd_req_recv(req, buffer, remaining < (int)sizeof(buffer) ? remaining : (int)sizeof(buffer));
+        if (received <= 0) {
+            fclose(file);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "recv failed");
+            return ESP_FAIL;
+        }
+        if (fwrite(buffer, 1, (size_t)received, file) != (size_t)received) {
+            fclose(file);
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "write failed");
+            return ESP_FAIL;
+        }
+        remaining -= received;
+    }
+
+    fclose(file);
+    ESP_LOGI(TAG, "runtime config %s bytes=%d", name, req->content_len);
+    send_json(req, "{\"ok\":true,\"config\":\"cubicserver\"}\n");
+    return ESP_OK;
+}
+
 static void send_json(httpd_req_t *req, const char *json)
 {
     httpd_resp_set_type(req, "application/json");
@@ -353,36 +403,41 @@ static esp_err_t status_handler(httpd_req_t *req)
 
 static esp_err_t apps_handler(httpd_req_t *req)
 {
-    char body[1024];
-    size_t used = 0;
     const vb_app_registry_result_t *registry = s_context ? s_context->registry : NULL;
+    char item[384];
 
-    used += snprintf(body + used, sizeof(body) - used, "{\"apps\":[");
+    httpd_resp_set_type(req, "application/json");
+    ESP_RETURN_ON_ERROR(httpd_resp_sendstr_chunk(req, "{\"apps\":["), TAG, "apps chunk start failed");
     vb_app_registry_lock();
     int stored = registry ? registry->stored_app_count : 0;
-    for (int i = 0; i < stored && used < sizeof(body); i++) {
+    for (int i = 0; i < stored; i++) {
         const vb_app_registry_entry_t *app = &registry->apps[i];
-        used += snprintf(body + used,
-                         sizeof(body) - used,
-                         "%s{\"id\":\"%s\",\"name\":\"%s\",\"entry\":\"%s\",\"schema\":\"%s\",\"version\":\"%s\",\"kind\":\"%s\",\"capabilities\":\"%s\",\"compatible\":%s}",
-                         i == 0 ? "" : ",",
-                         app->id,
-                         app->name,
-                         app->entry,
-                         app->manifest_schema,
-                         app->version,
-                         app->kind,
-                         app->capabilities,
-                         app->compatible ? "true" : "false");
+        int written = snprintf(item,
+                               sizeof(item),
+                               "%s{\"id\":\"%s\",\"name\":\"%s\",\"entry\":\"%s\",\"schema\":\"%s\",\"version\":\"%s\",\"kind\":\"%s\",\"capabilities\":\"%s\",\"compatible\":%s}",
+                               i == 0 ? "" : ",",
+                               app->id,
+                               app->name,
+                               app->entry,
+                               app->manifest_schema,
+                               app->version,
+                               app->kind,
+                               app->capabilities,
+                               app->compatible ? "true" : "false");
+        if (written < 0 || written >= (int)sizeof(item)) {
+            vb_app_registry_unlock();
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "app entry too long");
+            return ESP_FAIL;
+        }
+        esp_err_t err = httpd_resp_sendstr_chunk(req, item);
+        if (err != ESP_OK) {
+            vb_app_registry_unlock();
+            return err;
+        }
     }
     vb_app_registry_unlock();
-    if (used < sizeof(body)) {
-        snprintf(body + used, sizeof(body) - used, "]}\n");
-    } else {
-        strlcpy(body + sizeof(body) - 4, "]}\n", 4);
-    }
-    send_json(req, body);
-    return ESP_OK;
+    ESP_RETURN_ON_ERROR(httpd_resp_sendstr_chunk(req, "]}\n"), TAG, "apps chunk end failed");
+    return httpd_resp_sendstr_chunk(req, NULL);
 }
 
 static esp_err_t rescan_handler(httpd_req_t *req)
@@ -437,6 +492,10 @@ static esp_err_t launch_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "app not found");
         return ESP_FAIL;
     }
+    if (!selected_app.compatible) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "app incompatible");
+        return ESP_FAIL;
+    }
 
     if (vb_app_runner_is_running()) {
         const char *current_id = vb_app_runner_current_id();
@@ -450,7 +509,7 @@ static esp_err_t launch_handler(httpd_req_t *req)
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
             return ESP_FAIL;
         }
-        err = vb_app_runner_wait_stopped(1500);
+        err = vb_app_runner_wait_stopped(VB_APP_RUNNER_STOP_TIMEOUT_MS);
         if (err != ESP_OK) {
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "app stop timeout");
             return ESP_FAIL;
@@ -485,7 +544,7 @@ static esp_err_t stop_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
         return ESP_FAIL;
     }
-    err = vb_app_runner_wait_stopped(1500);
+    err = vb_app_runner_wait_stopped(VB_APP_RUNNER_STOP_TIMEOUT_MS);
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "app stop timeout");
         return ESP_FAIL;
@@ -556,6 +615,7 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
     config.stack_size = VB_INSTALL_HTTPD_STACK_SIZE;
+    config.task_caps = (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     config.max_uri_handlers = 12;
     config.uri_match_fn = httpd_uri_match_wildcard;
 
@@ -575,6 +635,10 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
         return err;
     }
     err = register_handler("/install/abort", HTTP_POST, install_abort_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/runtime/config", HTTP_POST, runtime_config_handler);
     if (err != ESP_OK) {
         return err;
     }

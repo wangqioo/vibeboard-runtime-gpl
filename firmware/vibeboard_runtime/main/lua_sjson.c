@@ -180,5 +180,7 @@ void vb_lua_sjson_register(lua_State *L)
         {NULL, NULL},
     };
     luaL_newlib(L, sjson_functions);
+    lua_pushvalue(L, -1);
+    lua_setglobal(L, "json");
     lua_setglobal(L, "sjson");
 }

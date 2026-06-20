@@ -17,6 +17,7 @@
 #include "esp_lvgl_port.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lua_key.h"
 #include "lvgl.h"
 #include "sdmmc_cmd.h"
 
@@ -26,6 +27,13 @@ static esp_lcd_panel_handle_t lcd_panel;
 static esp_lcd_panel_io_handle_t lcd_io;
 static esp_lcd_touch_handle_t touch;
 static sdmmc_card_t *sd_card;
+static TaskHandle_t input_task;
+static volatile bool input_stop_requested;
+static vb_board_input_callback_t input_callback;
+static void *input_user_data;
+
+#define VB_BOARD_INPUT_POLL_MS 20
+#define VB_BOARD_TOUCH_SWIPE_MIN_PX 28
 
 static esp_err_t i2c_init(void)
 {
@@ -208,8 +216,8 @@ static esp_err_t lvgl_init(vb_board_status_t *status)
             .mirror_y = false,
         },
         .flags = {
-            .buff_dma = false,
-            .buff_spiram = true,
+            .buff_dma = true,
+            .buff_spiram = false,
         },
     };
 
@@ -238,6 +246,7 @@ esp_err_t vb_board_mount_sd(vb_board_status_t *status)
         .allocation_unit_size = 16 * 1024,
     };
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.flags |= SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF;
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     slot_config.width = 1;
     slot_config.clk = VB_SD_CLK;
@@ -257,6 +266,123 @@ esp_err_t vb_board_mount_sd(vb_board_status_t *status)
 
     sdmmc_card_print_info(stdout, sd_card);
     return ESP_OK;
+}
+
+static int board_now_ms(void)
+{
+    return (int)(xTaskGetTickCount() * 1000 / configTICK_RATE_HZ);
+}
+
+static void emit_swipe(uint16_t start_x, uint16_t start_y, uint16_t end_x, uint16_t end_y)
+{
+    vb_board_input_callback_t callback = input_callback;
+    if (callback == NULL) {
+        return;
+    }
+
+    int dx = (int)end_x - (int)start_x;
+    int dy = (int)end_y - (int)start_y;
+    int abs_dx = dx < 0 ? -dx : dx;
+    int abs_dy = dy < 0 ? -dy : dy;
+    if (abs_dx < VB_BOARD_TOUCH_SWIPE_MIN_PX && abs_dy < VB_BOARD_TOUCH_SWIPE_MIN_PX) {
+        return;
+    }
+
+    int code = 0;
+    if (abs_dx >= abs_dy) {
+        code = dx < 0 ? VB_LUA_KEY_LEFT : VB_LUA_KEY_RIGHT;
+    } else {
+        code = dy < 0 ? VB_LUA_KEY_UP : VB_LUA_KEY_DOWN;
+    }
+
+    callback(code, VB_LUA_KEY_START, board_now_ms(), input_user_data);
+}
+
+static void board_input_task(void *arg)
+{
+    (void)arg;
+    bool tracking = false;
+    uint16_t start_x = 0;
+    uint16_t start_y = 0;
+    uint16_t last_x = 0;
+    uint16_t last_y = 0;
+
+    while (!input_stop_requested) {
+        if (touch != NULL && lvgl_port_lock(0)) {
+            uint16_t x[1] = {0};
+            uint16_t y[1] = {0};
+            uint8_t count = 0;
+            esp_lcd_touch_read_data(touch);
+            bool pressed = esp_lcd_touch_get_coordinates(touch, x, y, NULL, &count, 1);
+            if (pressed && count > 0) {
+                if (!tracking) {
+                    start_x = x[0];
+                    start_y = y[0];
+                    tracking = true;
+                }
+                last_x = x[0];
+                last_y = y[0];
+            } else if (tracking) {
+                emit_swipe(start_x, start_y, last_x, last_y);
+                tracking = false;
+            }
+            lvgl_port_unlock();
+        }
+        vTaskDelay(pdMS_TO_TICKS(VB_BOARD_INPUT_POLL_MS));
+    }
+
+    input_task = NULL;
+    vTaskDelete(NULL);
+}
+
+esp_err_t vb_board_input_start(vb_board_input_callback_t callback, void *user_data)
+{
+    if (callback == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (touch == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (input_task != NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    input_callback = callback;
+    input_user_data = user_data;
+    input_stop_requested = false;
+
+    BaseType_t created = xTaskCreatePinnedToCoreWithCaps(board_input_task,
+                                                         "vb_input",
+                                                         3072,
+                                                         NULL,
+                                                         4,
+                                                         &input_task,
+                                                         tskNO_AFFINITY,
+                                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (created != pdPASS) {
+        input_task = NULL;
+        input_callback = NULL;
+        input_user_data = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+void vb_board_input_stop(void)
+{
+    TaskHandle_t task = input_task;
+    if (task == NULL) {
+        input_callback = NULL;
+        input_user_data = NULL;
+        return;
+    }
+
+    input_stop_requested = true;
+    for (int i = 0; i < 25 && input_task != NULL; i++) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    input_callback = NULL;
+    input_user_data = NULL;
 }
 
 esp_err_t vb_board_start(vb_board_status_t *status)

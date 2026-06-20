@@ -15,7 +15,7 @@ int vb_lua_lvgl_check_object_id(lua_State *L, int index)
     if (id == 0) {
         return id;
     }
-    if (id < 0 || id > s_object_count || s_objects[id - 1] == NULL) {
+    if (id < 0 || id > VB_LVGL_OBJECT_MAX || s_objects[id - 1] == NULL) {
         luaL_error(L, "invalid lvgl object id: %d", id);
     }
     return id;
@@ -31,14 +31,55 @@ lv_obj_t *vb_lua_lvgl_resolve_object(int id)
 
 bool vb_lua_lvgl_can_store_object(void)
 {
-    return s_object_count < VB_LVGL_OBJECT_MAX;
+    for (int i = 0; i < VB_LVGL_OBJECT_MAX; i++) {
+        if (s_objects[i] == NULL) {
+            return true;
+        }
+    }
+    return false;
 }
 
 int vb_lua_lvgl_store_object(lv_obj_t *object)
 {
-    s_objects[s_object_count] = object;
-    s_object_count++;
-    return s_object_count;
+    for (int i = 0; i < VB_LVGL_OBJECT_MAX; i++) {
+        if (s_objects[i] == NULL) {
+            s_objects[i] = object;
+            if (i + 1 > s_object_count) {
+                s_object_count = i + 1;
+            }
+            return i + 1;
+        }
+    }
+    return 0;
+}
+
+void vb_lua_lvgl_forget_object(int id)
+{
+    if (id > 0 && id <= s_object_count) {
+        s_objects[id - 1] = NULL;
+    }
+}
+
+static void forget_object_pointer(lv_obj_t *object)
+{
+    for (int i = 0; i < s_object_count; i++) {
+        if (s_objects[i] == object) {
+            s_objects[i] = NULL;
+        }
+    }
+}
+
+void vb_lua_lvgl_forget_object_tree(lv_obj_t *object)
+{
+    if (object == NULL) {
+        return;
+    }
+
+    uint32_t child_count = lv_obj_get_child_cnt(object);
+    for (uint32_t i = 0; i < child_count; i++) {
+        vb_lua_lvgl_forget_object_tree(lv_obj_get_child(object, i));
+    }
+    forget_object_pointer(object);
 }
 
 void vb_lua_lvgl_register(lua_State *L)
@@ -100,4 +141,25 @@ void vb_lua_lvgl_register(lua_State *L)
 
     lua_pushinteger(L, LV_ANIM_ON);
     lua_setglobal(L, "LV_ANIM_ON");
+
+    lua_pushinteger(L, 1);
+    lua_setglobal(L, "ANIM_X");
+
+    lua_pushinteger(L, 2);
+    lua_setglobal(L, "ANIM_Y");
+
+    lua_pushinteger(L, 3);
+    lua_setglobal(L, "ANIM_W");
+
+    lua_pushinteger(L, 4);
+    lua_setglobal(L, "ANIM_H");
+
+    lua_pushinteger(L, 5);
+    lua_setglobal(L, "ANIM_OPA");
+
+    lua_pushinteger(L, 1);
+    lua_setglobal(L, "ANIM_PATH_EASE_OUT");
+
+    lua_pushinteger(L, LV_GRAD_DIR_VER);
+    lua_setglobal(L, "LV_GRAD_DIR_VER");
 }

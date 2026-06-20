@@ -7,6 +7,7 @@
 #include "app_runner.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "freertos/FreeRTOS.h"
@@ -30,7 +31,7 @@ static esp_err_t s_scan_err;
 static char s_pending_status[96];
 static int s_selected_index;
 static lv_obj_t *s_app_buttons[VB_APP_REGISTRY_MAX_APPS];
-static vb_app_registry_entry_t s_rendered_apps[VB_APP_REGISTRY_MAX_APPS];
+static vb_app_registry_entry_t *s_rendered_apps;
 static int s_rendered_app_count;
 static bool s_boot_key_task_started;
 static bool s_launcher_active;
@@ -49,6 +50,7 @@ static void refresh_launcher_from_task(const char *status);
 static void note_async_launch_before_start(void *user_data);
 static void refresh_button_event_cb(lv_event_t *event);
 static void stop_button_event_cb(lv_event_t *event);
+static bool ensure_rendered_apps_allocated(void);
 static void refresh_rendered_apps(vb_app_registry_result_t *apps, esp_err_t scan_err);
 static void rebuild_launcher_unlocked(vb_app_registry_result_t *apps, esp_err_t scan_err);
 
@@ -177,7 +179,7 @@ static void launch_app(const vb_app_registry_entry_t *app, bool from_task)
             return;
         }
 
-        err = vb_app_runner_wait_stopped(1500);
+        err = vb_app_runner_wait_stopped(VB_APP_RUNNER_STOP_TIMEOUT_MS);
         if (err != ESP_OK) {
             if (from_task) {
                 set_status_from_task("Stop timeout");
@@ -457,7 +459,7 @@ static void refresh_launcher_task(void *arg)
 static void stop_launcher_task(void *arg)
 {
     (void)arg;
-    esp_err_t err = vb_app_runner_wait_stopped(1500);
+    esp_err_t err = vb_app_runner_wait_stopped(VB_APP_RUNNER_STOP_TIMEOUT_MS);
     if (err == ESP_OK) {
         refresh_launcher_from_task("Stopped");
     } else {
@@ -487,7 +489,14 @@ static void start_return_to_launcher_task(void)
         return;
     }
 
-    BaseType_t created = xTaskCreate(return_to_launcher_task, "vb_return", 4096, NULL, 4, NULL);
+    BaseType_t created = xTaskCreatePinnedToCoreWithCaps(return_to_launcher_task,
+                                                         "vb_return",
+                                                         8192,
+                                                         NULL,
+                                                         4,
+                                                         NULL,
+                                                         tskNO_AFFINITY,
+                                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (created != pdPASS) {
         clear_task_running(&s_return_task_running);
         ESP_LOGW(TAG, "Return task failed");
@@ -534,10 +543,29 @@ static void stop_button_event_cb(lv_event_t *event)
     }
 }
 
+static bool ensure_rendered_apps_allocated(void)
+{
+    if (s_rendered_apps != NULL) {
+        return true;
+    }
+
+    s_rendered_apps = heap_caps_calloc(VB_APP_REGISTRY_MAX_APPS,
+                                       sizeof(*s_rendered_apps),
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (s_rendered_apps == NULL) {
+        ESP_LOGE(TAG, "failed to allocate rendered app list");
+        return false;
+    }
+    return true;
+}
+
 static void refresh_rendered_apps(vb_app_registry_result_t *apps, esp_err_t scan_err)
 {
-    memset(s_rendered_apps, 0, sizeof(s_rendered_apps));
     s_rendered_app_count = 0;
+    if (!ensure_rendered_apps_allocated()) {
+        return;
+    }
+    memset(s_rendered_apps, 0, sizeof(*s_rendered_apps) * VB_APP_REGISTRY_MAX_APPS);
     if (scan_err != ESP_OK || apps == NULL) {
         return;
     }
@@ -548,9 +576,11 @@ static void refresh_rendered_apps(vb_app_registry_result_t *apps, esp_err_t scan
         stored_app_count = VB_APP_REGISTRY_MAX_APPS;
     }
     for (int i = 0; i < stored_app_count; i++) {
-        s_rendered_apps[i] = apps->apps[i];
+        if (!apps->apps[i].compatible) {
+            continue;
+        }
+        s_rendered_apps[s_rendered_app_count++] = apps->apps[i];
     }
-    s_rendered_app_count = stored_app_count;
     vb_app_registry_unlock();
 }
 

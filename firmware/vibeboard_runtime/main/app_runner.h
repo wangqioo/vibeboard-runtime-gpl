@@ -6,6 +6,8 @@
 #include "app_registry.h"
 #include "esp_err.h"
 
+#define VB_APP_RUNNER_STOP_TIMEOUT_MS 5000
+
 #ifdef __cplusplus
 extern "C" {
 #endif

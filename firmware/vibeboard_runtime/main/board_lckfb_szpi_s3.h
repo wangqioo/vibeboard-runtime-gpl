@@ -27,7 +27,7 @@ extern "C" {
 #define VB_LCD_BACKLIGHT GPIO_NUM_42
 #define VB_LCD_H_RES 320
 #define VB_LCD_V_RES 240
-#define VB_LCD_DRAW_BUF_HEIGHT 20
+#define VB_LCD_DRAW_BUF_HEIGHT 5
 
 #define VB_SD_MOUNT_POINT "/sdcard"
 #define VB_SD_CLK GPIO_NUM_47
@@ -41,8 +41,12 @@ typedef struct {
     esp_err_t sd_error;
 } vb_board_status_t;
 
+typedef void (*vb_board_input_callback_t)(int code, int event, int timestamp_ms, void *user_data);
+
 esp_err_t vb_board_start(vb_board_status_t *status);
 esp_err_t vb_board_mount_sd(vb_board_status_t *status);
+esp_err_t vb_board_input_start(vb_board_input_callback_t callback, void *user_data);
+void vb_board_input_stop(void);
 
 #ifdef __cplusplus
 }

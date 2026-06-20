@@ -8,6 +8,7 @@ idf_component_register(
         "runtime_wifi.c"
         "lua_file.c"
         "lua_http.c"
+        "lua_key.c"
         "lua_lvgl.c"
         "lua_lvgl_canvas.c"
         "lua_lvgl_fs.c"
