@@ -603,6 +603,19 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /\\"deleted\\"/);
   });
 
+  it("validates staged package manifest file hashes before commit", () => {
+    const source = readRequired(installServiceSourcePath);
+
+    assert.match(source, /validate_stage_manifest/);
+    assert.match(source, /"manifest\.json"/);
+    assert.match(source, /mbedtls_sha256_starts/);
+    assert.match(source, /mbedtls_sha256_update/);
+    assert.match(source, /mbedtls_sha256_finish/);
+    assert.match(source, /sha256 mismatch/);
+    assert.match(source, /manifest validation failed/);
+    assert.match(source, /validate_stage_manifest\(stage_path\)[\s\S]*rename\(stage_path,\s*app_path\)/);
+  });
+
   it("exposes Lua runner lifecycle for launcher and HTTP launch", () => {
     const header = readRequired(join(firmwareRoot, "main/app_runner.h"));
     const runner = readRequired(runnerSourcePath);

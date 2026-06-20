@@ -77,16 +77,21 @@ requires.nativeAbi = >=2.0.2
 provides.services = devtools,httpd
 ```
 
-The current firmware still launches apps from `app.info`; device-side
-manifest compatibility checks are a later productization step. The v2 manifest
+The current firmware still launches apps from `app.info`; full device-side
+version compatibility checks are a later productization step. The v2 manifest
 is the toolchain contract for that runtime work.
 
 `files[]` lists each packaged file with `path`, `size`, and `sha256`. The
 `integrity.filesDigest` value is a sha256 over the canonical `files[]` list.
 `tools/app-uploader` verifies these hashes before sending a packaged app to the
 board, so a locally modified `dist/apps/<id>` package fails before staged upload
-or commit. Direct uploads of ad-hoc directories without `manifest.json` remain
-supported for development, but do not get this preflight.
+or commit. On the board, staged installs that include `manifest.json` also
+validate every listed file's `size` and `sha256` before
+`POST /install/commit` renames the staged directory into `/sdcard/apps/<id>`.
+Missing files, size mismatches, malformed entries, or sha256 mismatches reject
+the commit and preserve the previously installed app. Direct uploads of ad-hoc
+directories without `manifest.json` remain supported for development, but do
+not get this integrity gate.
 
 ## File Paths
 

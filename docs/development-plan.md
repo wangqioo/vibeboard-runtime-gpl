@@ -1,6 +1,6 @@
 # VibeBoard Runtime GPL 开发计划
 
-更新时间：2026-06-20
+更新时间：2026-06-21
 
 ## 一句话目标
 
@@ -45,7 +45,7 @@
 - App registry 会过滤缺少入口文件的 App；例如 `raw_upload/main.lua` 不存在时不会进入可启动列表。
 - 网络运行时让固件超过默认 1MB app 分区，当前已切换到自定义 4MB factory app 分区。
 
-当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **65% 到 75%**：核心方向、文件/资源、基础控件、定时器、网络 API、免拔 SD 部署、原生 Launcher、基础 App 生命周期、manifest v2、staged install/delete、浏览器管理 UI、Weather 迁移、首批上游显示类 App 迁移、第一轮 key-driven App 迁移、Lua App manager 只读/退出 API、Voice AI 桥接骨架、以及 NES native/core 首个可执行路径已经进入可验证阶段；完整应用生态、更多 LVGL 覆盖、真机视觉 QA、真实麦克风/音频输出、真实 AI 服务商接入、NES ROM 上板验证和 native gamepad/audio 仍需补齐。
+当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **65% 到 75%**：核心方向、文件/资源、基础控件、定时器、网络 API、免拔 SD 部署、原生 Launcher、基础 App 生命周期、manifest v2、staged install/delete、板端 staged manifest 文件 hash 校验、浏览器管理 UI、Weather 迁移、首批上游显示类 App 迁移、第一轮 key-driven App 迁移、Lua App manager 只读/退出 API、Voice AI 桥接骨架、以及 NES native/core 首个可执行路径已经进入可验证阶段；完整应用生态、更多 LVGL 覆盖、真机视觉 QA、真实麦克风/音频输出、真实 AI 服务商接入、NES ROM 上板验证和 native gamepad/audio 仍需补齐。
 
 ## 当前完成清单与后续路线
 
@@ -91,6 +91,7 @@ LVGL 能力：
 - `POST /launch?app=<id>` 可远程启动指定 App；
 - `POST /install?app=<id>&path=<relative>&stage=<stage>` 可写入 staging 目录；
 - `POST /install/commit?app=<id>&stage=<stage>` 可提交 staged App 并替换正式目录；
+- staged App 如果包含 `manifest.json`，commit 前会逐个校验 `files[]` 里的文件大小和 SHA-256，校验失败会拒绝提交并保留旧 App；
 - `POST /install/abort?stage=<stage>` 可丢弃 staged 上传；
 - `POST /apps/delete?app=<id>` 可删除未运行的 App；
 - `/status` 已返回 runtime、Lua API、LVGL API、package schema 和 native ABI 版本信息；
@@ -201,8 +202,8 @@ AI 生成一个受限 Lua/LVGL App
 第五优先级：设备端 App 管理。
 
 - Lua 侧 `app.list()`、`app.current()`、`app.rescan()`、`app.exiting()`、`app.exit()`、`app.launch(id)` 已 build-verified；
-- HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime/API/App schema 版本查询、不兼容 App 拒绝启动、以及工具侧 App 包 hash preflight 已完成第一版；
-- 后续补真实 `app.launch(id)` 上板 handoff smoke、板端 manifest/hash 校验、更严格的工具侧版本拒绝和升级提示。
+- HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime/API/App schema 版本查询、不兼容 App 拒绝启动、工具侧 App 包 hash preflight、以及板端 staged manifest 文件 hash 校验已完成第一版；
+- 后续补真实 `app.launch(id)` 上板 handoff smoke、staged manifest hash 失败场景真机 smoke、更严格的工具侧版本拒绝和升级提示。
 
 第六优先级：上游兼容和高级能力。
 

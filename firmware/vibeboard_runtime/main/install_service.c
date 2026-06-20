@@ -19,6 +19,7 @@
 #include "esp_netif.h"
 #include "launcher_ui.h"
 #include "module_abi.h"
+#include "mbedtls/sha256.h"
 
 static const char *TAG = "install_service";
 #define VB_INSTALL_HTTPD_STACK_SIZE 8192
@@ -30,6 +31,10 @@ static const char *TAG = "install_service";
 #define VB_RUNTIME_NATIVE_ABI_VERSION VB_NATIVE_MODULE_ABI_VERSION
 #define VB_RUNTIME_CUBICSERVER_CONFIG_PATH "/sdcard/runtime/cubicserver.json"
 #define VB_RUNTIME_CONFIG_MAX_BYTES 512
+#define VB_MANIFEST_MAX_BYTES 16384
+#define VB_SHA256_BYTES 32
+#define VB_SHA256_HEX_LEN 64
+#define VB_HASH_BUFFER_SIZE 512
 
 static httpd_handle_t s_server;
 static bool s_netif_ready;
@@ -85,6 +90,268 @@ static esp_err_t build_storage_path(char *dest, size_t dest_size, const char *ro
         written = snprintf(dest, dest_size, "%s/%s/%s", root, name, path);
     }
     return (written < 0 || written >= (int)dest_size) ? ESP_ERR_INVALID_SIZE : ESP_OK;
+}
+
+static const char *find_json_key_in_range(const char *start, const char *end, const char *key)
+{
+    size_t key_len = strlen(key);
+    for (const char *cursor = start; cursor != NULL && cursor + key_len <= end; cursor++) {
+        if (*cursor == '"' && cursor + key_len + 2 <= end &&
+            strncmp(cursor + 1, key, key_len) == 0 &&
+            cursor[key_len + 1] == '"') {
+            return cursor + key_len + 2;
+        }
+    }
+    return NULL;
+}
+
+static bool read_json_string_field_in_range(const char *start, const char *end, const char *key, char *dest, size_t dest_size)
+{
+    const char *cursor = find_json_key_in_range(start, end, key);
+    if (cursor == NULL) {
+        return false;
+    }
+    cursor = memchr(cursor, ':', (size_t)(end - cursor));
+    if (cursor == NULL) {
+        return false;
+    }
+    cursor++;
+    while (cursor < end && (*cursor == ' ' || *cursor == '\n' || *cursor == '\r' || *cursor == '\t')) {
+        cursor++;
+    }
+    if (cursor >= end || *cursor != '"') {
+        return false;
+    }
+    cursor++;
+    const char *value_end = memchr(cursor, '"', (size_t)(end - cursor));
+    if (value_end == NULL) {
+        return false;
+    }
+
+    size_t value_len = (size_t)(value_end - cursor);
+    if (value_len >= dest_size) {
+        value_len = dest_size - 1;
+    }
+    memcpy(dest, cursor, value_len);
+    dest[value_len] = '\0';
+    return true;
+}
+
+static bool read_json_size_field_in_range(const char *start, const char *end, const char *key, size_t *value)
+{
+    const char *cursor = find_json_key_in_range(start, end, key);
+    if (cursor == NULL) {
+        return false;
+    }
+    cursor = memchr(cursor, ':', (size_t)(end - cursor));
+    if (cursor == NULL) {
+        return false;
+    }
+    cursor++;
+    while (cursor < end && (*cursor == ' ' || *cursor == '\n' || *cursor == '\r' || *cursor == '\t')) {
+        cursor++;
+    }
+    if (cursor >= end || *cursor < '0' || *cursor > '9') {
+        return false;
+    }
+
+    size_t parsed = 0;
+    while (cursor < end && *cursor >= '0' && *cursor <= '9') {
+        parsed = parsed * 10 + (size_t)(*cursor - '0');
+        cursor++;
+    }
+    *value = parsed;
+    return true;
+}
+
+static esp_err_t read_manifest_file(const char *manifest_path, char **manifest, size_t *manifest_size)
+{
+    FILE *file = fopen(manifest_path, "rb");
+    if (file == NULL) {
+        return errno == ENOENT ? ESP_ERR_NOT_FOUND : ESP_FAIL;
+    }
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return ESP_FAIL;
+    }
+    long size = ftell(file);
+    if (size < 0 || size > VB_MANIFEST_MAX_BYTES) {
+        fclose(file);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return ESP_FAIL;
+    }
+
+    char *buffer = heap_caps_malloc((size_t)size + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buffer == NULL) {
+        fclose(file);
+        return ESP_ERR_NO_MEM;
+    }
+    size_t read = fread(buffer, 1, (size_t)size, file);
+    fclose(file);
+    if (read != (size_t)size) {
+        free(buffer);
+        return ESP_FAIL;
+    }
+    buffer[size] = '\0';
+    *manifest = buffer;
+    *manifest_size = (size_t)size;
+    return ESP_OK;
+}
+
+static void hex_encode_sha256(const unsigned char digest[VB_SHA256_BYTES], char *dest, size_t dest_size)
+{
+    static const char hex[] = "0123456789abcdef";
+    if (dest_size < VB_SHA256_HEX_LEN + 1) {
+        return;
+    }
+    for (int i = 0; i < VB_SHA256_BYTES; i++) {
+        dest[i * 2] = hex[(digest[i] >> 4) & 0x0f];
+        dest[i * 2 + 1] = hex[digest[i] & 0x0f];
+    }
+    dest[VB_SHA256_HEX_LEN] = '\0';
+}
+
+static esp_err_t sha256_file_hex(const char *path, char *hex, size_t hex_size)
+{
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    int ret = mbedtls_sha256_starts(&ctx, 0);
+    unsigned char buffer[VB_HASH_BUFFER_SIZE];
+    while (ret == 0) {
+        size_t read = fread(buffer, 1, sizeof(buffer), file);
+        if (read > 0) {
+            ret = mbedtls_sha256_update(&ctx, buffer, read);
+        }
+        if (read < sizeof(buffer)) {
+            if (ferror(file)) {
+                ret = -1;
+            }
+            break;
+        }
+    }
+
+    unsigned char digest[VB_SHA256_BYTES];
+    if (ret == 0) {
+        ret = mbedtls_sha256_finish(&ctx, digest);
+    }
+    mbedtls_sha256_free(&ctx);
+    fclose(file);
+    if (ret != 0) {
+        return ESP_FAIL;
+    }
+
+    hex_encode_sha256(digest, hex, hex_size);
+    return ESP_OK;
+}
+
+static esp_err_t validate_manifest_file_entry(const char *stage_path, const char *object_start, const char *object_end)
+{
+    char relative_path[128] = {0};
+    char expected_sha[VB_SHA256_HEX_LEN + 1] = {0};
+    size_t expected_size = 0;
+    if (!read_json_string_field_in_range(object_start, object_end, "path", relative_path, sizeof(relative_path)) ||
+        !read_json_string_field_in_range(object_start, object_end, "sha256", expected_sha, sizeof(expected_sha)) ||
+        !read_json_size_field_in_range(object_start, object_end, "size", &expected_size) ||
+        reject_unsafe_path(relative_path) ||
+        strlen(expected_sha) != VB_SHA256_HEX_LEN) {
+        ESP_LOGW(TAG, "manifest file entry invalid");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char full_path[VB_APP_PATH_MAX];
+    if (build_storage_path(full_path, sizeof(full_path), stage_path, relative_path, NULL) != ESP_OK) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    struct stat st;
+    if (stat(full_path, &st) != 0 || !S_ISREG(st.st_mode)) {
+        ESP_LOGW(TAG, "manifest file missing %s", relative_path);
+        return ESP_ERR_NOT_FOUND;
+    }
+    if ((size_t)st.st_size != expected_size) {
+        ESP_LOGW(TAG, "manifest size mismatch %s expected=%u actual=%u",
+                 relative_path,
+                 (unsigned)expected_size,
+                 (unsigned)st.st_size);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    char actual_sha[VB_SHA256_HEX_LEN + 1] = {0};
+    esp_err_t err = sha256_file_hex(full_path, actual_sha, sizeof(actual_sha));
+    if (err != ESP_OK) {
+        return err;
+    }
+    if (strcmp(actual_sha, expected_sha) != 0) {
+        ESP_LOGW(TAG, "sha256 mismatch %s expected=%s actual=%s", relative_path, expected_sha, actual_sha);
+        return ESP_ERR_INVALID_CRC;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t validate_stage_manifest(const char *stage_path)
+{
+    char manifest_path[VB_APP_PATH_MAX];
+    if (build_storage_path(manifest_path, sizeof(manifest_path), stage_path, "manifest.json", NULL) != ESP_OK) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    char *manifest = NULL;
+    size_t manifest_size = 0;
+    esp_err_t err = read_manifest_file(manifest_path, &manifest, &manifest_size);
+    if (err == ESP_ERR_NOT_FOUND) {
+        return ESP_OK;
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "manifest read failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    const char *manifest_end = manifest + manifest_size;
+    const char *files_key = find_json_key_in_range(manifest, manifest_end, "files");
+    if (files_key == NULL) {
+        free(manifest);
+        return ESP_OK;
+    }
+    const char *array_start = memchr(files_key, '[', (size_t)(manifest_end - files_key));
+    if (array_start == NULL) {
+        free(manifest);
+        return ESP_ERR_INVALID_ARG;
+    }
+    const char *array_end = memchr(array_start, ']', (size_t)(manifest_end - array_start));
+    if (array_end == NULL) {
+        free(manifest);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const char *cursor = array_start;
+    while (cursor < array_end) {
+        const char *object_start = memchr(cursor, '{', (size_t)(array_end - cursor));
+        if (object_start == NULL) {
+            break;
+        }
+        const char *object_end = memchr(object_start, '}', (size_t)(array_end - object_start));
+        if (object_end == NULL) {
+            free(manifest);
+            return ESP_ERR_INVALID_ARG;
+        }
+        err = validate_manifest_file_entry(stage_path, object_start, object_end);
+        if (err != ESP_OK) {
+            free(manifest);
+            return err;
+        }
+        cursor = object_end + 1;
+    }
+
+    free(manifest);
+    return ESP_OK;
 }
 
 static esp_err_t build_app_path(char *dest, size_t dest_size, const char *app, const char *path)
@@ -250,6 +517,10 @@ static esp_err_t install_commit_handler(httpd_req_t *req)
     struct stat st;
     if (stat(stage_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "stage not found");
+        return ESP_FAIL;
+    }
+    if (validate_stage_manifest(stage_path) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "manifest validation failed");
         return ESP_FAIL;
     }
     if (remove_tree(app_path) != ESP_OK || ensure_parent_dirs(app_path) != ESP_OK || rename(stage_path, app_path) != 0) {
