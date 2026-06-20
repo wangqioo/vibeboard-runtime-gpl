@@ -12,10 +12,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DEMO_APP_DIRS,
   packageApp,
   packageDemoApps,
   slugifyAppId
 } from "./index.mjs";
+
+const EXPECTED_DEMO_APP_DIRS = [
+  "apps/weather",
+  "apps/voice_ai",
+  "apps/nesgame",
+  "apps/matrix_rain",
+  "apps/nixie_clock",
+  "apps/clock",
+  "apps/conway_life",
+  "apps/fluid_pendant",
+  "apps/smoke_key",
+  "apps/2048"
+];
 
 function makeTempRepo() {
   return mkdtempSync(join(tmpdir(), "vibeboard-packager-"));
@@ -187,9 +201,13 @@ describe("packageApp", () => {
 });
 
 describe("packageDemoApps", () => {
+  it("keeps the curated package list aligned with migrated apps", () => {
+    assert.deepEqual(DEMO_APP_DIRS, EXPECTED_DEMO_APP_DIRS);
+  });
+
   it("packages the curated demo and migrated apps", () => {
     const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
     const result = packageDemoApps({ repoRoot });
-    assert.deepEqual(result.map((item) => item.appId).sort(), ["clock", "conway_life", "fluid_pendant", "matrix_rain", "nesgame", "nixie_clock", "voice_ai", "weather"]);
+    assert.deepEqual(result.map((item) => item.appId).sort(), ["2048", "clock", "conway_life", "fluid_pendant", "matrix_rain", "nesgame", "nixie_clock", "smoke_key", "voice_ai", "weather"]);
   });
 });

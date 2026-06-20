@@ -7,6 +7,18 @@ import { fileURLToPath } from "node:url";
 import { parseAppInfo, validateAppDirectory } from "./index.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
+const MIGRATED_APP_EXPECTED_CAPABILITIES = new Map([
+  ["apps/matrix_rain", ["lvgl", "timer"]],
+  ["apps/nixie_clock", ["lvgl", "file", "timer", "network"]],
+  ["apps/clock", ["lvgl", "file", "timer", "network"]],
+  ["apps/conway_life", ["lvgl", "file", "timer"]],
+  ["apps/fluid_pendant", ["lvgl", "file", "timer"]],
+  ["apps/2048", ["lvgl", "file", "timer", "input"]],
+  ["apps/weather", ["lvgl", "network", "timer", "input"]],
+  ["apps/voice_ai", ["lvgl", "network", "audio", "file", "timer", "input"]],
+  ["apps/nesgame", ["lvgl", "file", "timer", "input"]]
+]);
 
 describe("parseAppInfo", () => {
   it("parses key value metadata", () => {
@@ -42,6 +54,28 @@ describe("validateAppDirectory", () => {
     assert.deepEqual(result.capabilities, ["network"]);
   });
 
+  it("requires network capability for NTP initialization", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-ntp-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = NTP",
+        "entry = main.lua",
+        "description = NTP app",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), "time.initntp('pool.ntp.org')\n");
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, ["Missing capability declaration: network"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("requires timer capability for tmr usage", () => {
     const root = mkdtempSync(join(tmpdir(), "app-validator-timer-"));
     try {
@@ -61,6 +95,59 @@ describe("validateAppDirectory", () => {
       assert.deepEqual(result.errors, ["Missing capability declaration: timer"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("requires input capability for key usage", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-input-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = Input",
+        "entry = main.lua",
+        "description = Input app",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), "key.on(function() end)\n");
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, ["Missing capability declaration: input"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("requires lvgl capability for LVGL usage", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-lvgl-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = Display",
+        "entry = main.lua",
+        "description = Display app",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), "local root = lv_scr_act()\nlv_obj_create(root)\n");
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, ["Missing capability declaration: lvgl"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps migrated app capabilities aligned with static API usage", () => {
+    for (const [appPath, expectedCapabilities] of MIGRATED_APP_EXPECTED_CAPABILITIES) {
+      const result = validateAppDirectory(join(repoRoot, appPath));
+
+      assert.equal(result.ok, true, `${appPath}: ${result.errors.join("; ")}`);
+      assert.deepEqual(result.capabilities, expectedCapabilities, `${appPath} capability drift`);
     }
   });
 

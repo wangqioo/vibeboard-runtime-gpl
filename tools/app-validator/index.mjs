@@ -2,10 +2,12 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, relative, sep } from "node:path";
 
 const CAPABILITY_USAGE_PATTERNS = [
+  { capability: "lvgl", pattern: /\blv_[A-Za-z0-9_]+\b|\bLV_[A-Za-z0-9_]+\b/ },
   { capability: "timer", pattern: /\btmr\s*\.|\bset_interval\s*\(/ },
-  { capability: "network", pattern: /\b(?:http|net|mqtt|wifi)\s*\.|\bwebsocket\b/ },
+  { capability: "network", pattern: /\b(?:http|net|mqtt|wifi)\s*\.|\bwebsocket\b|\binitntp\s*\(/ },
   { capability: "audio", pattern: /\bi2s\s*\./ },
   { capability: "file", pattern: /\bfile\s*\./ },
+  { capability: "input", pattern: /\b(?:key|touch)\s*\./ },
   { capability: "module", pattern: /\brequire\s*\(/ }
 ];
 

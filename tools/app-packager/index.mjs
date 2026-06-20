@@ -30,7 +30,9 @@ export const DEMO_APP_DIRS = [
   "apps/nixie_clock",
   "apps/clock",
   "apps/conway_life",
-  "apps/fluid_pendant"
+  "apps/fluid_pendant",
+  "apps/smoke_key",
+  "apps/2048"
 ];
 export const PACKAGE_SCHEMA = "vibeboard-runtime-app-package@2";
 export const DEFAULT_RUNTIME_REQUIREMENT = ">=0.1.0";
