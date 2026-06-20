@@ -354,6 +354,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(hostApiHeader, /vb_module_host_time_api_t/);
     assert.match(hostApiHeader, /vb_module_host_heap_api_t/);
     assert.match(hostApiHeader, /vb_module_host_file_api_t/);
+    assert.match(hostApiHeader, /vb_module_host_task_api_t/);
     assert.match(hostApiHeader, /vb_module_host_api_init/);
     assert.match(hostApi, /vb_host_serial_write/);
     assert.match(hostApi, /vb_host_serial_println/);
@@ -365,9 +366,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(hostApi, /vb_host_file_open/);
     assert.match(hostApi, /vb_host_file_read/);
     assert.match(hostApi, /vb_host_file_close/);
+    assert.match(hostApi, /vb_host_task_create/);
+    assert.match(hostApi, /vb_host_task_remove/);
+    assert.match(hostApi, /vb_host_task_yield/);
+    assert.match(hostApi, /vb_host_task_delay_ms/);
     assert.match(hostApi, /esp_timer_get_time/);
     assert.match(hostApi, /heap_caps_malloc/);
     assert.match(hostApi, /MALLOC_CAP_8BIT/);
+    assert.match(hostApi, /xTaskCreatePinnedToCore/);
+    assert.match(hostApi, /vTaskDelete/);
     assert.match(hostApi, /\/sdcard/);
     assert.match(staticAdapterHeader, /vb_native_module_static_adapter_load/);
     assert.match(staticAdapter, /vb_native_module_static_adapter_load/);

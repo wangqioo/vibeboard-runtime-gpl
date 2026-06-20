@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -41,11 +44,24 @@ typedef struct {
 } vb_module_host_file_api_t;
 
 typedef struct {
+    BaseType_t (*create)(TaskFunction_t entry,
+                         const char *name,
+                         uint32_t stack_depth,
+                         void *arg,
+                         UBaseType_t priority,
+                         TaskHandle_t *handle);
+    void (*remove)(TaskHandle_t handle);
+    void (*yield)(void);
+    void (*delay_ms)(uint32_t ms);
+} vb_module_host_task_api_t;
+
+typedef struct {
     uint32_t version;
     vb_module_host_serial_api_t serial;
     vb_module_host_time_api_t time;
     vb_module_host_heap_api_t heap;
     vb_module_host_file_api_t file;
+    vb_module_host_task_api_t task;
 } vb_module_host_api_t;
 
 void vb_module_host_api_init(vb_module_host_api_t *api);

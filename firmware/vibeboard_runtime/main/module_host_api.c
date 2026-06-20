@@ -156,6 +156,34 @@ static int vb_host_file_close(FILE *file)
     return fclose(file);
 }
 
+static BaseType_t vb_host_task_create(TaskFunction_t entry,
+                                      const char *name,
+                                      uint32_t stack_depth,
+                                      void *arg,
+                                      UBaseType_t priority,
+                                      TaskHandle_t *handle)
+{
+    if (entry == NULL || name == NULL || stack_depth == 0) {
+        return pdFAIL;
+    }
+    return xTaskCreatePinnedToCore(entry, name, stack_depth, arg, priority, handle, tskNO_AFFINITY);
+}
+
+static void vb_host_task_remove(TaskHandle_t handle)
+{
+    vTaskDelete(handle);
+}
+
+static void vb_host_task_yield(void)
+{
+    taskYIELD();
+}
+
+static void vb_host_task_delay_ms(uint32_t ms)
+{
+    vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
 void vb_module_host_api_init(vb_module_host_api_t *api)
 {
     if (api == NULL) {
@@ -184,4 +212,8 @@ void vb_module_host_api_init(vb_module_host_api_t *api)
     api->file.size_bytes = vb_host_file_size_bytes;
     api->file.available = vb_host_file_available;
     api->file.close = vb_host_file_close;
+    api->task.create = vb_host_task_create;
+    api->task.remove = vb_host_task_remove;
+    api->task.yield = vb_host_task_yield;
+    api->task.delay_ms = vb_host_task_delay_ms;
 }
