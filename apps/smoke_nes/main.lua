@@ -25,6 +25,7 @@ end
 local function run_check()
   local ok = true
   local lines = {}
+  local rom_path = "/sdcard/nes/smoke.nes"
 
   local state = nes.state()
   append(lines, "state", state and state.status)
@@ -40,9 +41,28 @@ local function run_check()
     ok = false
   end
 
-  local start_ok, start_err = nes.start("/sd/nes/smoke.nes", { target_fps = 60 })
+  local start_ok, start_err = nes.start(rom_path, { target_fps = 60 })
   append(lines, "start", tostring(start_ok) .. " " .. tostring(start_err))
-  if start_ok ~= false or tostring(start_err):find("native executor pending", 1, true) == nil then
+  if start_ok then
+    tmr.create():alarm(500, tmr.ALARM_SINGLE, function()
+      local running_state = nes.state()
+      local running_lines = {}
+      append(running_lines, "rom", rom_path)
+      append(running_lines, "status", running_state and running_state.status)
+      append(running_lines, "running", running_state and running_state.running)
+      append(running_lines, "frames", running_state and (running_state.core_frames or running_state.frames))
+      append(running_lines, "display", running_state and running_state.display_stream_supported)
+      append(running_lines, "error", running_state and (running_state.core_last_error or running_state.last_error))
+      lv_label_set_text(status_label, "OK\n" .. table.concat(running_lines, "\n"))
+      print("[smoke_nes] running", running_state and running_state.status, running_state and running_state.core_frames)
+    end)
+    return
+  end
+
+  local err_text = tostring(start_err or "")
+  if err_text:find("open rom failed", 1, true) then
+    append(lines, "rom", "copy test ROM to " .. rom_path)
+  else
     ok = false
   end
 

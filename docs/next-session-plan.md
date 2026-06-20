@@ -290,7 +290,7 @@ Suggested commit split from the parallel worktree audit:
 
 The next NES implementation slice should make NES execution board-smokeable and stable under real display ownership:
 
-- package or document a tiny legal/public-domain iNES test ROM path for board smoke, then verify start/stop/status on the board after reflashing Runtime;
+- copy a tiny legal/public-domain iNES test ROM to `/sdcard/nes/smoke.nes`, launch `apps/smoke_nes`, and verify start/status/display on the board after reflashing Runtime; without that ROM the smoke app should still pass the loader/input path and show the precise `open rom failed` diagnostic;
 - verify NES display on the board and tighten LVGL/LCD ownership if direct LCD writes race with LVGL flushes;
 - extend the Lua transfer table only as real NES adapter calls require more Lua C API entries;
 - leave audio and native gamepad host API for later slices.
