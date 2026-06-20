@@ -46,6 +46,7 @@ esp_err_t vb_native_module_static_adapter_load(const char *module_name,
     }
 
     result->error[0] = '\0';
+    result->module = module;
     result->status = ESP_OK;
     return result->status;
 }

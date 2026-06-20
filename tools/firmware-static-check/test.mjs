@@ -339,6 +339,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(loaderHeader, /vb_native_module_load/);
     assert.match(loaderHeader, /vb_native_module_manifest_t/);
     assert.match(loaderHeader, /vb_native_module_result_t/);
+    assert.match(loaderHeader, /void\s+\*module/);
     assert.match(loaderHeader, /VB_NATIVE_MODULE_ERROR_MAX/);
     assert.match(loaderHeader, /VB_NATIVE_MODULE_MANIFEST_MAGIC\s+"VBNM"/);
     assert.match(loader, /Native module load failed/);
@@ -415,6 +416,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(staticAdapter, /init_err\s*==\s*ESP_ERR_NOT_SUPPORTED/);
     assert.match(staticAdapter, /Native module host API unsupported: vb_native_module_init/);
     assert.match(staticAdapter, /result->error\[0\]\s*=\s*'\\0'/);
+    assert.match(staticAdapter, /result->module\s*=\s*module/);
     assert.match(staticAdapter, /result->status\s*=\s*ESP_OK/);
     assert.match(staticAdapter, /native executor pending/);
     assert.match(nesNativeAdapterHeader, /vb_nes_native_module_init/);
@@ -423,6 +425,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesNativeAdapter, /host_api->version/);
     assert.match(nesNativeAdapter, /host_api->display\.width/);
     assert.match(nesNativeAdapter, /host_api->heap\.malloc/);
+    assert.match(nesNativeAdapter, /vb_module_host_api_t\s+host_api/);
+    assert.match(nesNativeAdapter, /s_nes_module\.host_api\s*=\s*\*host_api/);
     assert.match(nesNativeAdapter, /\*module\s*=/);
     assert.match(luaModule, /package/);
     assert.match(luaModule, /searchers/);

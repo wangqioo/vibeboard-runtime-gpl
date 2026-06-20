@@ -1,7 +1,7 @@
 #include "nes_native_adapter.h"
 
 typedef struct {
-    vb_module_host_api_t *host_api;
+    vb_module_host_api_t host_api;
     uint16_t display_width;
     uint16_t display_height;
 } vb_nes_native_module_t;
@@ -18,7 +18,7 @@ esp_err_t vb_nes_native_module_init(vb_module_host_api_t *host_api, void **modul
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    s_nes_module.host_api = host_api;
+    s_nes_module.host_api = *host_api;
     s_nes_module.display_width = host_api->display.width();
     s_nes_module.display_height = host_api->display.height();
     *module = &s_nes_module;

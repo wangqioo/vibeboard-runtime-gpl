@@ -25,6 +25,7 @@ typedef struct {
 typedef struct {
     esp_err_t status;
     vb_native_module_kind_t kind;
+    void *module;
     char error[VB_NATIVE_MODULE_ERROR_MAX];
 } vb_native_module_result_t;
 
