@@ -91,6 +91,7 @@ const voiceAiInfoPath = join(repoRoot, "apps/voice_ai/app.info");
 const voiceAiSourcePath = join(repoRoot, "apps/voice_ai/main.lua");
 const nesgameInfoPath = join(repoRoot, "apps/nesgame/app.info");
 const nesgameSourcePath = join(repoRoot, "apps/nesgame/main.lua");
+const nesgameNativeManifestPath = join(repoRoot, "apps/nesgame/native/nes.vbn");
 
 function readRequired(path) {
   assert.equal(existsSync(path), true, `${path} should exist`);
@@ -364,6 +365,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
   it("routes the migrated NES app through require('nes') instead of assuming a global module", () => {
     const app = readRequired(nesgameSourcePath);
     const info = readRequired(nesgameInfoPath);
+    const nativeManifest = readRequired(nesgameNativeManifestPath);
     const requireIndex = app.indexOf('local nes = require("nes")');
     const playerIndex = app.indexOf("APP.PLAYER = nes.PLAYER_1");
 
@@ -371,6 +373,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.ok(requireIndex >= 0, "nesgame should require the NES module explicitly");
     assert.ok(playerIndex > requireIndex, "nesgame should not use nes before require('nes')");
     assert.match(info, /capabilities\s*=\s*lvgl,file,timer,input,module,native/);
+    assert.match(nativeManifest, /magic\s*=\s*VBNM/);
+    assert.match(nativeManifest, /abi\s*=\s*vibeboard-native-module-abi@1/);
+    assert.match(nativeManifest, /symbol\s*=\s*vb_native_module_init/);
+    assert.match(nativeManifest, /min_host\s*=\s*vibeboard-native-host@1/);
   });
 
   it("supports staged app install commit, abort, and delete operations", () => {

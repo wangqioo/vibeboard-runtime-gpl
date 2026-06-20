@@ -1,0 +1,4 @@
+magic = VBNM
+abi = vibeboard-native-module-abi@1
+symbol = vb_native_module_init
+min_host = vibeboard-native-host@1
