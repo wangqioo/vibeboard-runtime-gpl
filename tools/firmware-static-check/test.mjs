@@ -43,6 +43,8 @@ const nativeModuleStaticAdapterSourcePath = join(firmwareRoot, "main/native_modu
 const nativeModuleStaticAdapterHeaderPath = join(firmwareRoot, "main/native_module_static_adapter.h");
 const nesNativeAdapterSourcePath = join(firmwareRoot, "main/nes_native_adapter.c");
 const nesNativeAdapterHeaderPath = join(firmwareRoot, "main/nes_native_adapter.h");
+const nesHostShimSourcePath = join(firmwareRoot, "main/nes_host_v1_shim.c");
+const nesHostShimHeaderPath = join(firmwareRoot, "main/nes_host_v1_shim.h");
 const moduleAbiHeaderPath = join(firmwareRoot, "main/module_abi.h");
 const luaTimeSourcePath = join(firmwareRoot, "main/lua_time.c");
 const luaTimeHeaderPath = join(firmwareRoot, "main/lua_time.h");
@@ -320,6 +322,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cmake, /module_host_api\.c/);
     assert.match(cmake, /native_module_static_adapter\.c/);
     assert.match(cmake, /nes_native_adapter\.c/);
+    assert.match(cmake, /nes_host_v1_shim\.c/);
     assert.match(runner, /lua_native_module\.h/);
     assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)/);
     assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)[\s\S]*load_lua_file\(L,\s*app->first_app_path\)/);
@@ -335,6 +338,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const staticAdapter = readRequired(nativeModuleStaticAdapterSourcePath);
     const nesNativeAdapterHeader = readRequired(nesNativeAdapterHeaderPath);
     const nesNativeAdapter = readRequired(nesNativeAdapterSourcePath);
+    const nesHostShimHeader = readRequired(nesHostShimHeaderPath);
+    const nesHostShim = readRequired(nesHostShimSourcePath);
 
     assert.match(loaderHeader, /vb_native_module_load/);
     assert.match(loaderHeader, /vb_native_module_manifest_t/);
@@ -421,6 +426,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(staticAdapter, /native executor pending/);
     assert.match(nesNativeAdapterHeader, /vb_nes_native_module_init/);
     assert.match(nesNativeAdapterHeader, /module_host_api\.h/);
+    assert.match(nesNativeAdapterHeader, /nes_host_v1_shim\.h/);
     assert.match(nesNativeAdapter, /vb_nes_native_module_init/);
     assert.match(nesNativeAdapter, /host_api->version/);
     assert.match(nesNativeAdapter, /host_api->display\.width/);
@@ -434,6 +440,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesNativeAdapter, /read_ines_header/);
     assert.match(nesNativeAdapter, /invalid iNES header/);
     assert.match(nesNativeAdapter, /NES 2\.0 rom is not supported yet/);
+    assert.match(nesHostShimHeader, /nes_module_abi_v1\.h/);
+    assert.match(nesHostShimHeader, /vb_nes_host_v1_shim_init/);
+    assert.match(nesHostShim, /MODULE_ABI_VERSION/);
+    assert.match(nesHostShim, /module_host_api_v1/);
+    assert.match(nesHostShim, /host->serial\.write/);
+    assert.match(nesHostShim, /host->sd\.open/);
+    assert.match(nesHostShim, /host->file\.read/);
+    assert.match(nesHostShim, /host->display\.pushImageDMA/);
+    assert.match(nesHostShim, /MODULE_ERR_UNSUPPORTED/);
     assert.match(luaModule, /package/);
     assert.match(luaModule, /searchers/);
     assert.match(luaModule, /vb_native_module_load/);

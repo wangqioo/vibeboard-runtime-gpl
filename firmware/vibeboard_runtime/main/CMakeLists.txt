@@ -22,8 +22,9 @@ idf_component_register(
         "module_host_api.c"
         "native_module_loader.c"
         "native_module_static_adapter.c"
+        "nes_host_v1_shim.c"
         "nes_native_adapter.c"
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS "." "../../../modules/nes/include"
     REQUIRES
         esp_driver_i2c
         esp_driver_ledc

@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include "module_host_api.h"
+#include "nes_host_v1_shim.h"
 
 #ifdef __cplusplus
 extern "C" {
