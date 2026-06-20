@@ -784,7 +784,7 @@ apps/smoke_network/
 Phase 5 现在拆成两段：
 
 - **Phase 5A 已验收：原生 Launcher MVP 和基础 stop/switch。**
-- **Phase 5B 待收尾：返回 Launcher、屏幕停止/刷新/错误提示、上传可靠性、Lua 侧 App manager API。**
+- **Phase 5B 已完成第一轮：返回 Launcher、屏幕停止/刷新/错误提示、上传可靠性、Lua 侧 App manager API build verification。**
 
 需要新增或修改：
 
@@ -794,11 +794,11 @@ firmware/vibeboard_runtime/main/app_runner.c
 firmware/vibeboard_runtime/main/lua_app.c
 firmware/vibeboard_runtime/main/launcher.c
 firmware/vibeboard_runtime/main/launcher.h
-apps/launcher/
+apps/smoke_app_manager/
 docs/runtime-capabilities.md
 ```
 
-实际实现采用 `launcher_ui.c` / `launcher_ui.h` 的原生 LVGL Launcher，而不是 `apps/launcher/` Lua App。原因是当前阶段需要稳定的系统级 app-selection screen；Lua Launcher 和 `app.*` API 后移到 Phase 5B。
+实际实现采用 `launcher_ui.c` / `launcher_ui.h` 的原生 LVGL Launcher，而不是 `apps/launcher/` Lua App。原因是当前阶段需要稳定的系统级 app-selection screen；Lua 侧 `app.*` manager API 已作为 App 内能力实现，`apps/smoke_app_manager` 用于后续上板 smoke。
 
 任务：
 
@@ -825,7 +825,7 @@ app.exiting()
 app.on(event, callback)
 ```
 
-4. 实现 App 生命周期。**HTTP `/status.state` 已完成第一轮真机验证；屏幕端状态反馈仍待 Phase 5B。**
+4. 实现 App 生命周期。**HTTP `/status.state` 和屏幕端 Stop/Refresh/失败反馈/返回 Launcher 已完成第一轮真机验证。**
 
 ```text
 start
@@ -839,57 +839,62 @@ stopped
 
 - 显示 App 列表；
 - 点击或按键启动 App；
-- 返回 Launcher；**待 Phase 5B。**
-- App 失败时显示错误。**待 Phase 5B。**
+- 返回 Launcher；**已验收。**
+- App 失败时显示错误。**已验收。**
 
 验收标准：
 
 - SD 卡放多个 App 时，Launcher 能列出；**已验收。**
 - 能从 Launcher 启动 App；**已验收，触摸点击和 BOOT 长按均可启动。**
-- 能退出 App 回到 Launcher；**待 Phase 5B。**
-- `app.rescan()` 能识别新复制的 App；**HTTP `/rescan` 已验收，Lua `app.rescan()` 待 Phase 5B。**
-- App 崩溃不会导致整个 Runtime 崩溃。**已通过 `apps/smoke_fail` 真机验证；屏幕错误恢复体验待 Phase 5B。**
+- 能退出 App 回到 Launcher；**已验收。**
+- `app.rescan()` 能识别新复制的 App；**HTTP `/rescan` 已验收，Lua `app.rescan()` 已 build-verified，真实 Lua smoke 待上板。**
+- App 崩溃不会导致整个 Runtime 崩溃。**已通过 `apps/smoke_fail` 真机验证，屏幕错误恢复体验已验收。**
 
 ## Phase 6：触摸、按键和输入事件
 
 目标：把硬件输入暴露给 Lua，让 App 可以交互。
+
+当前状态：`key.on/off/push` 已通过 `2048` 真机触摸滑动验证；`touch.on/off/push` 坐标事件模块、`gamepad.state/start/stop/on/off/rescan/push_state` 兼容模块、`apps/smoke_touch` 和 `apps/smoke_gamepad` 已 build-verified。真实触摸坐标显示、BOOT 转发、长按/repeat 和真实 BLE/Xbox gamepad 仍待上板。
 
 需要新增或修改：
 
 ```text
 firmware/vibeboard_runtime/main/lua_key.c
 firmware/vibeboard_runtime/main/lua_touch.c
+firmware/vibeboard_runtime/main/lua_gamepad.c
 firmware/vibeboard_runtime/main/board_lckfb_szpi_s3.c
+apps/smoke_key/
 apps/smoke_touch/
-apps/smoke_input/
+apps/smoke_gamepad/
 ```
 
 任务：
 
-1. 把 FT6336 touch 事件接到 Lua。
+1. 把 FT6336 touch 事件接到 Lua。**触摸滑动到 `key` 已 board-verified，原始坐标到 `touch` 已 build-verified。**
 2. 实现：
 
 ```lua
-touch.on("down", callback)
-touch.on("move", callback)
-touch.on("up", callback)
+touch.on(function(evt, x, y, ts_ms) end)
+touch.off()
+touch.push(touch.DOWN, x, y)
 ```
 
 3. 如果板子有可用按键，增加 `key` 模块：
 
 ```lua
-key.on("short", callback)
-key.on("long", callback)
+key.on(function(code, event, ts_ms) end)
+key.off()
+key.push(key.LEFT, key.SHORT)
 ```
 
-4. 事件回调必须在 Lua runtime 线程安全执行，不能直接从中断或 LVGL 回调乱入 Lua VM。
+4. 事件回调必须在 Lua runtime 线程安全执行，不能直接从中断或 LVGL 回调乱入 Lua VM。**已通过 runner 输入队列和 Lua/timer loop drain 实现。**
 
 验收标准：
 
-- `apps/smoke_touch` 能显示当前触摸坐标；
-- 点击 Launcher 列表能启动 App；
-- 快速点击不会导致 Lua panic；
-- App 退出时事件 handler 被解绑。
+- `apps/smoke_touch` 能显示当前触摸坐标；**build-verified，真实坐标显示待上板。**
+- 点击 Launcher 列表能启动 App；**已验收。**
+- 快速点击不会导致 Lua panic；**2048 手势路径已验收，`smoke_touch` 待上板补证据。**
+- App 退出时事件 handler 被解绑。**key/touch cleanup 已实现并有静态测试覆盖。**
 
 ## Phase 7：设备端安装、卸载和免拔 SD 部署
 
@@ -1093,7 +1098,7 @@ apps/nesgame/
 docs/native-module-abi-notes.md
 ```
 
-第一阶段只建立 ABI、`require("nes")` 搜索器和精确失败边界；没有导入 NES 模拟器核心、显示 DMA、音频或 gamepad native host API。
+当前状态：ABI、`require("nes")` 搜索器、app-local native manifest、静态 NES adapter、上游 NES C++ core 链接、ROM iNES header 校验、显示 DMA host shim、基础输入映射、`nes.start/state/stop/read_audio/input` Lua API 都已 build-verified。仍缺合法 ROM 上板、真实屏幕输出压力测试、硬件音频输出和 native gamepad 真机证据。
 
 后续需要新增或修改：
 
@@ -1107,14 +1112,15 @@ docs/native-module-abi.md
 
 任务：
 
-1. 确定 ESP-IDF、ESP-ELFLoader、工具链版本。
+1. 确定 ESP-IDF、ESP-ELFLoader、工具链版本。**当前采用静态 adapter + app-local `.vbn` manifest，不依赖运行时加载 `.so`。**
 2. 定义 VibeBoard Native Module ABI。**第一阶段已完成：`vibeboard-native-module-abi@1`。**
-3. 编译或导入 `nes.so` / app-local native payload。
+3. 编译或导入 `nes.so` / app-local native payload。**当前已改为链接上游 NES C++ core，并通过 `native/nes.vbn` 走 Runtime native facade。**
 4. 部署：
 
 ```text
-/sd/modules/nes.so
+/sd/apps/nesgame/native/nes.vbn
 /sd/apps/nesgame/
+/sdcard/nes/smoke.nes
 ```
 
 5. Lua 支持：
@@ -1133,9 +1139,9 @@ Native module load failed
 
 验收标准：
 
-- `nes.so` 能被加载；
-- ABI 不匹配时错误清楚；
-- `nesgame` 至少能显示 ROM 选择或模块状态；
+- `require("nes")` 能返回 core-backed Lua module；**build-verified。**
+- ABI 不匹配时错误清楚；**静态测试覆盖。**
+- `nesgame` 至少能显示 ROM 选择或模块状态；**build-verified，真机待合法 ROM。**
 - 性能问题单独记录，不和加载能力混在一起。
 
 ## Phase 11：音频和 Voice AI

@@ -1,6 +1,6 @@
 # Next Session Plan
 
-Date: 2026-06-20
+Date: 2026-06-21
 
 ## Current Baseline
 
@@ -100,6 +100,8 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - LVGL object delete/foreground, opacity, gradients, shadows, and property animation helpers needed by `2048`.
   - `apps/smoke_key` input smoke app: shows the latest key event on screen and injects alternating LEFT/RIGHT events through `key.push()` for software-triggered input verification.
   - `apps/smoke_key` was packaged, uploaded, launched, and board-verified through serial logs showing alternating `LEFT`/`RIGHT` callbacks from `key.push()`.
+  - `apps/smoke_touch` is now included in demo packaging and build-verified; it displays raw touch down/move/up coordinates and can self-inject `touch.push(...)` events for software smoke.
+  - Runtime now registers a Lua `touch` module and drains physical board touch coordinate events on the same Lua runner input timer as `key`.
   - smoke-app key labeling regression fixed: `key.START` is an event type, not a key-code label, and static tests now prevent reintroducing `[key.START] = "START"` in the smoke app name table.
 - Firmware bring-up fixes from the 2026-06-17 board reflash:
   - main task stack increased to 8192 so SD app scanning no longer overflows `main`;
@@ -140,6 +142,7 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
 - Tooling guardrails:
   - `npm run device:check` performs the non-destructive shared-board preflight;
   - validator tests keep migrated App capabilities aligned with static API usage;
+  - validator now rejects unsupported direct Runtime Lua module API calls in entry Lua for `app`, `file`, `gamepad`, `http`, `i2s`, `json`, `key`, `sjson`, `time`, `tmr`, `touch`, and `wifi`, while allowing optional compatibility probes;
   - firmware static tests now track migrated-App Runtime API gaps before board runs.
 
 ## Last Verified Commands
@@ -153,7 +156,7 @@ git diff --check
 idf.py build
 ```
 
-The latest full verification for migration work passed through package/static/test/build layers. The latest ESP-IDF build generated `vibeboard_runtime.bin` size `0x1777c0`, with 63% free in the 4 MB app partition. Build warning: `esp_lcd_touch_get_coordinates` is deprecated and should later move to `esp_lcd_touch_get_data`.
+The latest full verification for migration work passed through package/static/test/build layers. On 2026-06-21, `npm test`, `npm run validate:apps`, `git diff --check`, and `idf.py build` passed. The latest ESP-IDF build generated `vibeboard_runtime.bin` size `0x18e010`, with 61% free in the 4 MB app partition. Build warnings: existing NES `.mod_iram` orphan section linker warnings; `esp_lcd_touch_get_coordinates` is deprecated and should later move to `esp_lcd_touch_get_data`.
 
 On 2026-06-18, `/dev/cu.usbmodem11301` identified as:
 
@@ -222,7 +225,7 @@ Expected result:
 - `smoke_key` upload/launch is done and serial logs verify injected LEFT/RIGHT events through `key.push()` and `key.on`;
 - still confirm on the physical screen that the event label updates for the injected LEFT/RIGHT events;
 - still swipe left, right, up, and down on the device screen and record whether those physical gestures update the same `smoke_key` label;
-- add `smoke_touch` later if raw coordinates are needed beyond key-style swipe events;
+- upload/launch `smoke_touch` and record physical down/move/up coordinate labels on the board;
 - keep `2048` as a regression check for directional gameplay and double-exit behavior;
 - `key.push(...)` remains available for software-triggered tests;
 - event cleanup is tied to Lua VM/app shutdown.
