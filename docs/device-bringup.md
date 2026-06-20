@@ -1954,3 +1954,560 @@ I SystemInfo: free sram: 106787 minimal sram: 102751
 No `main` stack overflow and no LVGL task watchdog appeared in the final captured runtime log window. However, `curl http://192.168.1.32:8080/status` returned connection failure after this last flash, even though ARP still mapped `192.168.1.32` to board MAC `10:51:db:80:e2:e8`. The board was running an existing SD app that printed `SystemInfo` memory logs.
 
 Result: the firmware was reflashed and the startup crash path is fixed. Main stack size, HTTP handler count, and LVGL wait-yield behavior are regression-guarded by static tests. The migrated display apps are still not board-verified because the final HTTP upload/launch path was unreachable; next session should first recover HTTP/WiFi service visibility, then upload and launch `matrix_rain`, `nixie_clock`, `clock`, `conway_life`, and `fluid_pendant`.
+
+## 2026-06-18 2048 migration and hardware blocker
+
+Software migration completed for upstream `2048`:
+
+```text
+Source: upstream/holocubic-apps/2048/
+Target: apps/2048/
+Runtime additions:
+- lua_key.c / lua_key.h with key.on, key.off, key.push
+- global millis()
+- LVGL object delete/foreground helpers
+- LVGL opacity, gradient, shadow, clip-corner helpers
+- simple lv_anim_start/lv_anim_del/lv_anim_delete wrappers
+```
+
+Local verification:
+
+```text
+npm run test:firmware-static passed with 39 tests.
+npm run test:packager passed.
+npm run package:app -- apps/2048 packaged dist/apps/2048.
+npm test passed.
+idf.py build passed.
+vibeboard_runtime.bin binary size 0x176b60 bytes.
+Smallest app partition is 0x400000 bytes.
+Free app partition space is 0x2894a0 bytes (63%).
+```
+
+Board verification could not continue because the currently connected USB serial device is not the ESP32-S3 Runtime board:
+
+```text
+Serial path: /dev/cu.usbmodem11301
+USB Product Name: CDC ACM serial backend
+USB Vendor Name: Zephyr Project
+idVendor: 12259
+idProduct: 4
+Serial number: 12EBF0B1B70E5B58
+```
+
+Observed failures:
+
+```text
+curl http://192.168.1.32:8080/status timed out.
+arp -a no longer showed board MAC 10:51:db:80:e2:e8.
+esptool.py --chip esp32s3 -p /dev/cu.usbmodem11301 chip_id failed with:
+Failed to connect to ESP32-S3: No serial data received.
+```
+
+Conclusion: the correct ESP32-S3 board is not connected or is not exposed as the expected USB-Serial/JTAG device. The next hardware session should first reconnect the ESP32-S3 Runtime board, confirm `esptool.py chip_id`, then flash/upload and screen-test `matrix_rain`, `nixie_clock`, `clock`, `conway_life`, `fluid_pendant`, and `2048`.
+
+## 2026-06-19 board reconnect, temporary Runtime flash, and shared-firmware note
+
+The ESP32-S3 board was reconnected and identified as the expected LCKFB/ESP32-S3 target:
+
+```text
+Serial path: /dev/cu.usbmodem112301
+USB Product Name: USB JTAG/serial debug unit
+USB Vendor Name: Espressif
+Chip: ESP32-S3 QFN56 revision v0.2
+PSRAM: 8 MB
+MAC: 10:51:db:80:e2:e8
+Runtime IP after WiFi: 192.168.1.32
+```
+
+Important ownership note:
+
+```text
+This physical board is shared with the user's other ESP32 project firmware.
+Do not assume it is permanently running VibeBoard Runtime.
+For VibeBoard hardware verification, first temporarily flash VibeBoard Runtime.
+After testing, record whether the board is left on VibeBoard Runtime or on the user's other firmware.
+```
+
+Use the non-destructive shared-board preflight before any VibeBoard hardware test:
+
+```bash
+npm run device:check
+```
+
+The check lists candidate `/dev/cu.usbmodem*` ports, probes `chip_id` for ESP32-S3 identity, and checks `http://192.168.1.32:8080/status` for VibeBoard Runtime metadata. It does not erase, flash, upload, or otherwise write to the board.
+
+The first VibeBoard flash attempt booted into older residual firmware. A full erase plus fresh flash was needed to remove stale OTA/partition state before the board booted the expected Runtime:
+
+```text
+Project name: vibeboard_runtime
+app_registry: found 16 apps
+install_service: install service listening on port 8080
+runtime sta got ip 192.168.1.32
+```
+
+The temporary Runtime hardware run exposed two memory/boot issues and one app-listing issue.
+
+### LVGL SPI DMA internal-memory pressure
+
+Observed failure:
+
+```text
+spi_master: setup_dma_priv_buffer... Failed to allocate priv TX buffer
+panel_io_spi_tx_color
+task_wdt: CPU 0: LVGL task
+```
+
+Root cause: the LVGL draw buffer was in PSRAM. The SPI LCD driver then needed a temporary internal DMA TX buffer; after WiFi and runtime services were active, that internal allocation could fail and the LVGL flush path could stall.
+
+Fix:
+
+```text
+Display buffer uses internal DMA memory.
+VB_LCD_DRAW_BUF_HEIGHT reduced to 5 rows.
+.buff_dma = true
+.buff_spiram = false
+```
+
+Post-fix observation: the boot window no longer showed the SPI DMA TX buffer allocation failure or LVGL watchdog report.
+
+### HTTPD task stack placement
+
+Observed failure:
+
+```text
+install_service: httpd_start failed: ESP_ERR_HTTPD_TASK
+```
+
+Root cause: after moving the LCD draw buffer into internal DMA memory, the HTTPD 8192-byte stack could fail to allocate from internal RAM.
+
+Fix:
+
+```text
+config.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+config.stack_size = 8192
+```
+
+Post-fix evidence:
+
+```text
+install_service: install service listening on port 8080
+GET /status returned JSON from the board.
+```
+
+### `/apps` response size
+
+Observed failure: the uploader could upload files, but the follow-up app-list confirmation saw truncated or invalid JSON when many apps were installed.
+
+Fix:
+
+```text
+GET /apps now streams chunked JSON instead of building one fixed-size response buffer.
+```
+
+Post-fix evidence:
+
+```text
+HTTP/1.1 200 OK
+Content-Type: application/json
+Transfer-Encoding: chunked
+```
+
+The board returned a complete app list including `2048`:
+
+```text
+{"id":"2048","name":"2048","entry":"main.lua","schema":"vibeboard-runtime-app-package@2","version":"0.1.0","kind":"app","capabilities":"lvgl,file,timer,input","compatible":true}
+```
+
+The Mac uploader also succeeded against the temporary Runtime firmware:
+
+```text
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/2048 2048
+uploaded 5 files
+commit ok; confirmed 2048 in /apps
+```
+
+### 2048 launch status
+
+Before the Lua runner stack was moved to PSRAM, launching `2048` returned:
+
+```text
+ESP_ERR_NO_MEM
+```
+
+Fix added after that result:
+
+```text
+Lua runner tasks use xTaskCreatePinnedToCoreWithCaps(..., MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT).
+```
+
+The first post-fix launch exposed two app/API compatibility issues:
+
+```text
+/sdcard/apps/2048/main.lua:122: bad argument #1 to 'lv_begin' (number expected, got no value)
+/sdcard/apps/2048/main.lua:374: only 320x240 canvas is supported
+```
+
+Fixes:
+
+```text
+2048 no longer calls the object-id `lv_begin`/`lv_canvas_frame_begin` API as a no-arg frame batch.
+2048 no longer creates a small game-over blur canvas; it uses a normal LVGL overlay panel because the current Runtime canvas binding only supports 320x240.
+FATFS no longer prefers external RAM, the PSRAM malloc threshold is lower, internal reserve is 64 KB, and SDMMC enables `SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF`.
+Lua script loading reads through an internal DMA-capable 512-byte buffer.
+```
+
+Final 2026-06-19 board evidence:
+
+```text
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/2048 2048
+uploaded 5 files
+commit ok; confirmed 2048 in /apps
+
+POST /launch?app=2048
+{"ok":true,"launched":"2048"}
+
+GET /status
+{"state":"running","running":true,"current_app":"2048","last_status":"ESP_OK","last_message":""}
+```
+
+The board stayed in `running` for repeated `/status` polls. Manual visual confirmation and real touch-swipe gameplay are still pending; HTTP/serial evidence verifies launch stability.
+
+### 2048 exit guard and LVGL object table follow-up
+
+User feedback after the first launch check: accidental left/right swipe exits are too easy while playing `2048`; the app should require two consecutive exit gestures before leaving the game.
+
+App-side change:
+
+```text
+apps/2048/main.lua
+HOME/EXIT exit events now require the same event twice within 1200 ms before APP.stop().
+Normal LEFT/RIGHT/UP/DOWN movement remains immediate.
+```
+
+The first post-change hardware run exposed another Runtime-side stability issue:
+
+```text
+/sdcard/apps/2048/main.lua:790: lvgl object table full
+```
+
+Root cause: deleted LVGL objects left holes in the Lua object handle table, but new objects were allocated only after the current high-water count. `2048` creates/deletes animated tiles often enough to exhaust the fixed table even though many previous objects have already been deleted.
+
+Follow-up finding: slot reuse and a 128-handle limit were still not enough. `2048` deletes temporary animation tile parents, and LVGL deletes their child labels as part of that object subtree. The Lua handle table had only forgotten the parent object id, so child label handles remained registered even after LVGL had freed the real objects.
+
+Runtime fix:
+
+```text
+lua_lvgl.c now stores new object handles into the first free slot.
+lua_lvgl.c now accepts valid sparse object IDs instead of requiring id <= s_object_count.
+lua_lvgl.c now forgets registered handles for a deleted object's full child subtree.
+lua_lvgl_widgets.c calls vb_lua_lvgl_forget_object_tree() before lv_obj_clean() and lv_obj_del().
+VB_LVGL_OBJECT_MAX increased from 64 to 128.
+```
+
+Final 2026-06-19 follow-up evidence:
+
+```text
+npm run test:firmware-static
+git diff --check
+npm test
+idf.py build flash
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/2048 2048
+POST /launch?app=2048
+repeated GET /status for about 90 seconds
+{"state":"running","running":true,"current_app":"2048","last_status":"ESP_OK","last_message":""}
+```
+
+Result: the `lvgl object table full` failure did not recur during the longer follow-up status polling window.
+
+Manual follow-up from the user on the physical board:
+
+```text
+2048 screen/gameplay looks OK.
+Directional swipe gameplay works.
+The accidental-exit path now requires the intended double gesture.
+```
+
+Result: `2048` is board-verified for upload/list/launch/stability, physical swipe gameplay, and the double-exit guard. Future sessions should keep it as a quick regression check after Runtime input or LVGL lifecycle changes.
+
+### Incompatible package launch guard
+
+After reflashing the Runtime, the device screen appeared to have apps that would not open. HTTP diagnostics showed the SD card and registry were healthy, but most installed apps were old package schema v1:
+
+```text
+GET /status
+{"sd":true,"state":"failed","last_status":"ESP_ERR_NO_MEM","last_message":"ESP_ERR_NO_MEM"}
+
+GET /apps
+{"id":"smoke_network",...,"schema":"vibeboard-runtime-app-package@1","compatible":false}
+{"id":"2048",...,"schema":"vibeboard-runtime-app-package@2","compatible":true}
+```
+
+Root cause: the registry correctly marked old schema v1 packages as `compatible:false`, but the native Launcher still rendered every stored app and HTTP `/launch` still attempted to start incompatible entries. Tapping old entries looked like all apps were broken.
+
+Fix:
+
+```text
+launcher_ui.c refresh_rendered_apps() now skips !compatible apps.
+install_service.c /launch now returns HTTP 400 "app incompatible" for incompatible packages.
+```
+
+Board evidence after flashing the fix:
+
+```text
+POST /launch?app=smoke_network
+HTTP/1.1 400 Bad Request
+app incompatible
+
+POST /launch?app=2048
+{"ok":true,"launched":"2048"}
+
+GET /status
+{"state":"running","running":true,"current_app":"2048","last_status":"ESP_OK","last_message":""}
+```
+
+Result: incompatible legacy packages are no longer launchable, and compatible schema v2 apps still launch normally. To make the screen show more than `2048`, re-upload current schema v2 builds of the desired apps with `npm run upload:app`.
+
+### Expanded app registry and migrated app uploads
+
+The first attempt to upload `matrix_rain` exposed a second many-app issue:
+
+```text
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/matrix_rain matrix_rain
+Uploaded app matrix_rain was not found after rescan
+
+GET /status
+{"app_count":18,...}
+```
+
+Root cause: the board had more than 12 SD app directories. The registry counted all app directories, but `VB_APP_REGISTRY_MAX_APPS` was still 12, so later uploaded schema v2 apps could be present on SD while absent from `/apps`, the Launcher, and uploader confirmation.
+
+Runtime fix:
+
+```text
+VB_APP_REGISTRY_MAX_APPS increased from 12 to 32.
+main.c allocates vb_app_registry_result_t in PSRAM instead of static DRAM.
+launcher_ui.c allocates the compatible rendered-app cache in PSRAM instead of static DRAM.
+```
+
+The first naive max-app increase failed at link time with:
+
+```text
+.dram0.bss will not fit in region dram0_0_seg
+region dram0_0_seg overflowed by 19496 bytes
+```
+
+After moving the large buffers to PSRAM, verification passed:
+
+```text
+npm run test:firmware-static
+idf.py build
+idf.py -p /dev/cu.usbmodem112301 flash
+
+GET /status
+{"sd":true,"app_count":22,"install":"ok","state":"idle","last_status":"ESP_OK"}
+
+GET /apps
+returns 22 app entries
+```
+
+Current board app state after uploads:
+
+```text
+Compatible schema v2 apps:
+2048
+matrix_rain
+nixie_clock
+clock
+conway_life
+fluid_pendant
+
+Legacy schema v1 apps still present but hidden from Launcher:
+smoke_network
+smoke_visual_remote
+smoke_fail
+demo_auto_snake
+demo_focus_timer
+holocubic_nixie_clock
+demo_lucky_card
+demo_pixel_pet
+demo_digital_clock
+holocubic_analog_clock
+demo_terminal_status
+demo_night_light
+smoke_canvas
+holocubic_matrix_rain
+holocubic_2048
+holocubic_btc
+```
+
+Result: the board has not lost the earlier apps. The native Launcher intentionally shows only compatible schema v2 apps; the old schema v1 apps remain on SD and need migration or replacement packages before they become launchable again.
+
+### Migrated app launch verification and shared-board flash note
+
+During follow-up verification, `/status` became unreachable and serial logs showed the board was running the user's other ESP32 project again:
+
+```text
+Project name:     esp32s3_device
+Partition Table:
+factory app offset 0x20000
+```
+
+Important shared-board finding: a normal `idf.py -p /dev/cu.usbmodem112301 flash` can leave the board booting the other project's partition layout. For VibeBoard verification on this shared board, use full erase plus flash:
+
+```text
+idf.py -p /dev/cu.usbmodem112301 erase-flash flash
+```
+
+The correct VibeBoard boot evidence is:
+
+```text
+Project name:     vibeboard_runtime
+Partition Table:
+factory app offset 0x10000
+VibeBoard Runtime ready: sd=ok apps=22 launcher=ok
+runtime sta got ip 192.168.1.32
+```
+
+After full erase+flash, HTTP launch checks passed for the migrated schema v2 apps:
+
+```text
+npm run launch:app -- http://192.168.1.32:8080 nixie_clock
+GET /status -> {"state":"running","current_app":"nixie_clock","last_status":"ESP_OK"}
+
+npm run launch:app -- http://192.168.1.32:8080 matrix_rain
+GET /status -> {"state":"running","current_app":"matrix_rain","last_status":"ESP_OK"}
+
+npm run launch:app -- http://192.168.1.32:8080 clock
+GET /status -> {"state":"running","current_app":"clock","last_status":"ESP_OK"}
+
+npm run launch:app -- http://192.168.1.32:8080 conway_life
+GET /status -> {"state":"running","current_app":"conway_life","last_status":"ESP_OK"}
+
+npm run launch:app -- http://192.168.1.32:8080 fluid_pendant
+GET /status -> {"state":"running","current_app":"fluid_pendant","last_status":"ESP_OK"}
+```
+
+One switch path exposed a lifecycle timing issue:
+
+```text
+conway_life -> fluid_pendant
+Launch fluid_pendant failed after 3 attempts: 500 app stop timeout
+```
+
+Root cause: `conway_life` stopped successfully, but its heavier canvas/timer cleanup could exceed the hard-coded 1500 ms stop wait used by HTTP `/launch`, `/stop`, and the native Launcher. The runner later reported idle with `last_message:"stopped"`, so this was a timeout window problem rather than an app crash.
+
+Runtime fix:
+
+```text
+app_runner.h defines VB_APP_RUNNER_STOP_TIMEOUT_MS 5000.
+install_service.c uses VB_APP_RUNNER_STOP_TIMEOUT_MS for switch and stop waits.
+launcher_ui.c uses VB_APP_RUNNER_STOP_TIMEOUT_MS for screen launch/stop waits.
+```
+
+Verification after rebuild and full erase+flash:
+
+```text
+npm run test:firmware-static
+idf.py build
+idf.py -p /dev/cu.usbmodem112301 erase-flash flash
+npm run launch:app -- http://192.168.1.32:8080 conway_life
+npm run launch:app -- http://192.168.1.32:8080 fluid_pendant
+launched fluid_pendant
+GET /status -> {"state":"running","current_app":"fluid_pendant","last_status":"ESP_OK"}
+```
+
+Result: migrated app HTTP lifecycle verification is now green for `nixie_clock`, `matrix_rain`, `clock`, `conway_life`, and `fluid_pendant`. Manual physical screen inspection is still useful for visual quality, but the Runtime launch/switch/status path is verified.
+
+Earlier in this session the board had booted the user's other ESP32 firmware:
+
+```text
+Project name: esp32s3_device
+Loaded app from partition at offset 0x1a0000
+```
+
+That is expected for the shared board workflow. At the end of this session the board is temporarily flashed with VibeBoard Runtime and is running `2048`, but the next VibeBoard hardware session should still first check the current firmware because the same board may be reflashed back to the user's other project.
+
+```text
+GET /status
+GET /apps JSON parse
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/2048 2048
+POST /launch?app=2048
+quick 2048 screen/input/double-exit regression if firmware changed
+```
+
+### smoke_key input smoke verification
+
+Date: 2026-06-19
+
+Commands:
+
+```text
+npm run device:check
+npm run package:app -- apps/smoke_key
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_key smoke_key
+npm run launch:app -- http://192.168.1.32:8080 smoke_key
+GET /status -> {"state":"running","current_app":"smoke_key","last_status":"ESP_OK"}
+```
+
+Board status:
+
+```text
+/dev/cu.usbmodem112301 identified as ESP32-S3
+HTTP /status reachable: yes
+VibeBoard Runtime: yes
+app_count=23
+current_app=smoke_key
+last_status=ESP_OK
+```
+
+Serial monitor evidence after launching `smoke_key`:
+
+```text
+app_runner: smoke key start
+app_runner: smoke key ok
+app_runner: smoke key event LEFT type=1 ...
+app_runner: smoke key event RIGHT type=1 ...
+app_runner: smoke key event LEFT type=1 ...
+app_runner: smoke key event RIGHT type=1 ...
+```
+
+Result: software `key.push()` dispatch is board-verified through the Lua `key.on` callback and serial event logs. The first run exposed a smoke-app labeling bug: `apps/smoke_key/main.lua` mapped `[key.START] = "START"` even though `key.START` is an event type and its value collides with the `LEFT` key code. The app now only maps key codes to names, and `tools/firmware-static-check/test.mjs` prevents that `key.START` name-table regression.
+
+Pending manual screen check: physical touch swipes should still be observed on the device screen and recorded separately to confirm the same label updates for LEFT, RIGHT, UP, and DOWN gestures outside the existing `2048` gameplay evidence.
+
+### Migrated app HTTP lifecycle regression
+
+Date: 2026-06-19
+
+Preflight:
+
+```text
+GET /status -> {"state":"running","current_app":"smoke_key","last_status":"ESP_OK","app_count":23}
+GET /apps -> compatible schema v2 apps include 2048, matrix_rain, nixie_clock, clock, conway_life, fluid_pendant, smoke_key
+```
+
+The sandboxed `npm run device:check` could not open local serial ports in this environment and reported serial `Operation not permitted`, but HTTP status and app listing were reachable and identified VibeBoard Runtime at `192.168.1.32:8080`.
+
+HTTP launch/status checks:
+
+```text
+npm run launch:app -- http://192.168.1.32:8080 matrix_rain
+GET /status -> {"state":"running","current_app":"matrix_rain","last_status":"ESP_OK"}
+
+npm run launch:app -- http://192.168.1.32:8080 nixie_clock
+GET /status -> {"state":"running","current_app":"nixie_clock","last_status":"ESP_OK"}
+
+npm run launch:app -- http://192.168.1.32:8080 clock
+GET /status -> {"state":"running","current_app":"clock","last_status":"ESP_OK"}
+
+npm run launch:app -- http://192.168.1.32:8080 conway_life
+GET /status -> {"state":"running","current_app":"conway_life","last_status":"ESP_OK"}
+
+npm run launch:app -- http://192.168.1.32:8080 fluid_pendant
+GET /status -> {"state":"running","current_app":"fluid_pendant","last_status":"ESP_OK"}
+
+npm run launch:app -- http://192.168.1.32:8080 2048
+GET /status -> {"state":"running","current_app":"2048","last_status":"ESP_OK"}
+```
+
+Result: the migrated schema v2 apps still pass HTTP lifecycle switching, including the previously risky `conway_life -> fluid_pendant` path. Manual physical screen QA remains pending for visual details such as black screen, overlap, asset visibility, animation quality, and launcher switch-away behavior.

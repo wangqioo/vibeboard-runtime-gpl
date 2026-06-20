@@ -181,3 +181,31 @@ Example:
 ```
 
 The runtime treats this file as optional. If it is absent or malformed, boot continues to the native launcher and the install service still starts. The current firmware also reads the existing local `/sdcard/apps/smoke_network/wifi.json` as a compatibility fallback for board bring-up; new setups should prefer `/sdcard/runtime/wifi.json`.
+
+## Runtime Cubic Server Config
+
+Migrated apps that call `http.cubicserver.get(path, headers, callback)` use a runtime-owned Cubic server base URL for relative paths.
+
+Runtime-owned local config path:
+
+```text
+/sdcard/runtime/cubicserver.json
+```
+
+The config can be updated over the install service without manually editing the SD card:
+
+```text
+POST /runtime/config?name=cubicserver
+```
+
+Body:
+
+Example:
+
+```json
+{
+  "base_url": "http://192.168.1.100:8080"
+}
+```
+
+The runtime treats this file as optional. If it is absent, malformed, too large, or contains a non-HTTP URL, `http.cubicserver.get` falls back to `http://cubicserver.local`. Absolute URLs passed by the Lua app are used directly.

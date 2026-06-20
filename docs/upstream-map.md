@@ -20,12 +20,15 @@
 | Clock | `upstream/holocubic-apps/clock/` | `apps/clock/` |
 | ConwayLife | `upstream/holocubic-apps/ConwayLife/` | `apps/conway_life/` |
 | FluidPendant | `upstream/holocubic-apps/FluidPendant/` | `apps/fluid_pendant/` |
+| 2048 | `upstream/holocubic-apps/2048/` | `apps/2048/` |
 
 ## Current Migration Queue
 
 | Upstream app | Target local path | Notes |
 | --- | --- | --- |
-| 2048 or another light interactive app | TBD | Next candidate after display-app board verification; expected to drive Lua touch/key input work. |
+| Real input events for 2048 | `firmware/vibeboard_runtime/main/` | Map FT6336 touch or board buttons into the build-verified `key` module. |
+| Weather compatibility hardening | `apps/weather/` | Next network/UI-heavy migration target after input and board verification. |
+| NES native ABI checkpoint | `docs/native-module-abi-notes.md` | Document host ABI, display, heap, file, task, Lua, and gamepad requirements before implementing native loading. |
 
 ## License
 

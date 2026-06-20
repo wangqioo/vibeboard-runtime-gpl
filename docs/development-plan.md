@@ -1,6 +1,6 @@
 # VibeBoard Runtime GPL 开发计划
 
-更新时间：2026-06-17
+更新时间：2026-06-19
 
 ## 一句话目标
 
@@ -44,7 +44,7 @@
 - App registry 会过滤缺少入口文件的 App；例如 `raw_upload/main.lua` 不存在时不会进入可启动列表。
 - 网络运行时让固件超过默认 1MB app 分区，当前已切换到自定义 4MB factory app 分区。
 
-当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **40% 到 50%**：核心方向、文件/资源、基础控件、定时器、网络 API、免拔 SD 部署、原生 Launcher、基础 App 生命周期、manifest v2、staged install/delete、以及首批上游显示类 App 迁移已经进入可验证阶段；应用生态、Lua 侧 App 管理 API、输入事件 API、音频和 Native 模块还需要补齐。
+当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **45% 到 55%**：核心方向、文件/资源、基础控件、定时器、网络 API、免拔 SD 部署、原生 Launcher、基础 App 生命周期、manifest v2、staged install/delete、首批上游显示类 App 迁移、以及第一轮 key-driven App 迁移已经进入可验证阶段；应用生态、Lua 侧 App 管理 API、真实触摸/按键事件接入、音频和 Native 模块还需要补齐。
 
 ## 当前完成清单与后续路线
 
@@ -113,7 +113,7 @@ npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote
 
 - `npm test` 已覆盖 validator、packager、AI contract、uploader、plan writer、firmware static check；
 - `idf.py build` 已通过；
-- `/dev/cu.usbmodem112301` 已刷入当前 Runtime；
+- `/dev/cu.usbmodem112301` 是本轮识别到的 ESP32-S3 板串口；该物理板会被用户的其他 ESP32 项目复用，不能假设长期保留 VibeBoard Runtime 固件；
 - `docs/device-bringup.md` 记录了每次真机证据；
 - `docs/runtime-capabilities.md` 维护 Runtime API 的实现/验证状态。
 
@@ -124,8 +124,14 @@ npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote
 - `apps/clock` 已从 `upstream/holocubic-apps/clock/` 迁移，补齐图片旋转、pivot、zoom 和文本样式绑定；
 - `apps/conway_life` 已从 `upstream/holocubic-apps/ConwayLife/` 迁移，补齐 font fallback 兼容和本地字体资源路径适配；
 - `apps/fluid_pendant` 已从 `upstream/holocubic-apps/FluidPendant/` 迁移，复用 canvas/time/timer 兼容路径；
-- `tools/app-packager` 的 demo 打包列表已包含 `matrix_rain`、`nixie_clock`、`clock`、`conway_life` 和 `fluid_pendant`；
-- 这些迁移已通过静态测试、packager 测试、总测试、`git diff --check` 和 ESP-IDF build；2026-06-17 已重新烧录固件并修复启动期 `main` 栈溢出、HTTP handler 数量不足和 LVGL flush 等待触发 watchdog 的问题；还需要先恢复当前板子的 HTTP/WiFi 可见性，再做迁移 App 的上板屏幕验证。
+- `apps/2048` 已从 `upstream/holocubic-apps/2048/` 迁移，补齐最小 Lua `key` 模块、`millis()` 兼容、LVGL 透明度/渐变/阴影/对象删除/置顶/属性动画绑定，并在 App 内对退出事件增加双次确认；
+- `tools/app-packager` 的 demo 打包列表已包含 `matrix_rain`、`nixie_clock`、`clock`、`conway_life`、`fluid_pendant`、`smoke_key` 和 `2048`；
+- 这些迁移已通过静态测试、packager 测试、总测试、`git diff --check` 和 ESP-IDF build；2026-06-17 已重新烧录固件并修复启动期 `main` 栈溢出、HTTP handler 数量不足和 LVGL flush 等待触发 watchdog 的问题。
+- 2026-06-19 重新连接正确 ESP32-S3 板后，临时刷回 VibeBoard Runtime 并验证 `/status`、chunked `/apps`、`2048` staged upload/list/launch 闭环；同日修复 LVGL SPI DMA internal-memory 压力、HTTPD stack 分配到 PSRAM、`/apps` 大列表 JSON 截断、Lua runner task stack 分配到 PSRAM、SDMMC/FATFS 内部 DMA 内存不足、以及 `2048` 对 no-arg batch 和小尺寸 canvas 的误用。后续真机验证又暴露 `lvgl object table full`，已改成复用释放后的对象槽、删除对象子树时同步清理 Lua 句柄表，并把对象句柄上限提高到 128；重刷后 `2048` 持续约 90 秒 HTTP 状态保持 `running,last_status=ESP_OK`。用户随后确认屏幕显示、真实触摸滑动和双次退出手势行为正常。
+- 已新增第一版真实输入桥：触摸任务只把滑动事件入队，Lua runner 在 Lua/timer loop 中 drain 到 `key.on` 回调；`2048` 触摸滑动已由用户在真机确认通过。
+- 已新增 `apps/smoke_key` 作为通用 key 输入 smoke：屏幕显示最近输入事件，定时通过 `key.push()` 注入 LEFT/RIGHT，后续上板用它补 2048 之外的输入回归证据。
+- 已新增 `npm run device:check` 作为共享 ESP32 板的非破坏性 preflight；不会自动擦写或烧录，只报告候选串口、ESP32-S3 识别和 Runtime HTTP 状态。
+- 硬件注意事项：当前 ESP32-S3 物理板不是 VibeBoard 专用测试板，用户会烧录其他项目固件；每次做 VibeBoard 真机验证前都要先确认当前固件，必要时临时重烧 VibeBoard Runtime，测完记录板上保留的固件状态。
 
 ### 现在能用到什么程度
 
@@ -149,7 +155,7 @@ AI 生成一个受限 Lua/LVGL App
 - Lua 侧还没有 `app.list()` / `app.launch()` / `app.current()` 等 App manager API；
 - 还不能直接运行完整上游 HoloCubic App；
 - LVGL 绑定覆盖还不够广；
-- 触摸/按键还没有暴露成 Lua 输入事件 API；
+- 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；还没有 BOOT/长按/repeat/gamepad 完整输入语义，也还需要用 `smoke_key` 补独立输入 smoke 的上板记录；
 - 没有 Native `.so` 模块加载；
 - 没有浏览器端 App 管理 UI；
 - 没有 Runtime/API/App schema 版本兼容检查。
@@ -175,9 +181,10 @@ AI 生成一个受限 Lua/LVGL App
 第三优先级：输入事件。
 
 - 暴露 FT6336 touch 给 Lua；
-- 增加 `touch.on(...)` 或统一事件 API；
+- 已有 `key.on(...)` / `key.off(...)` / `key.push(...)` 兼容层，可支持上游 key-driven App 的软件触发和 API 形状；
+- 触摸滑动到 `key` 队列桥接已通过 `2048` 真机验证；下一步用 `smoke_key` 做独立输入 smoke，上板后继续补物理按键、长按、repeat 或新增 `touch.on(...)`；
 - 给按钮、列表、Launcher 选择提供真实交互；
-- 做 `apps/smoke_touch`，显示触摸坐标和点击状态；
+- 已新增 `apps/smoke_key` 显示最近 key 事件；后续再做 `apps/smoke_touch` 显示触摸坐标和点击状态；
 - 验证快速点击不会导致 Lua/LVGL 崩溃。
 
 第四优先级：扩展 LVGL/API 覆盖。
@@ -219,16 +226,17 @@ AI 生成一个受限 Lua/LVGL App
    - App 启动失败时屏幕显示可理解错误；
    - HTTP `/apps` 和屏幕列表来自同一份 registry。
 
-2. **Launcher 失败恢复 UI**
+2. **真实输入事件接入**
 
-   目标是把已经 board-verified 的 lifecycle 状态变成设备屏幕上可理解、可恢复的体验。
+   目标是把已经通过 `2048` 验证的触摸滑动到 `key` 队列桥接扩成独立输入 smoke，并继续补物理按键。
 
    验收：
 
-   - 启动 `smoke_fail` 后屏幕显示可理解错误；
-   - 用户能从失败状态回到 Launcher；
-   - 失败后仍能启动 `smoke_network` 或 `smoke_visual_remote`；
-   - `/status`、串口和屏幕状态一致。
+   - `apps/2048` 能通过触摸滑动触发上下左右；**已由用户真机确认。**
+   - `apps/smoke_key` 能显示 `key.push(...)` 注入的 LEFT/RIGHT 事件；
+   - `apps/smoke_key` 能显示真实触摸滑动转换后的 key 事件；
+   - 事件 handler 在 App 停止/切换时清理；
+   - 快速输入不会导致 Lua/LVGL 崩溃。
 
 3. **触摸事件 smoke**
 
@@ -259,7 +267,7 @@ AI 生成一个受限 Lua/LVGL App
 硬件边界：
 
 - 当前目标板：立创 ESP32-S3 小屏板，320x240 ST7789，FT6336 触摸，SD 卡槽。
-- 当前串口：`/dev/cu.usbmodem112301`。
+- 当前已识别 ESP32-S3 串口：`/dev/cu.usbmodem112301`。注意该板会被用户其他 ESP32 项目复用，真机验证前必须重新确认并临时烧录 VibeBoard Runtime。
 - 官方示例源码参考：`/Users/wq/Downloads/szpi-s3-esp`。
 
 ## 上游参考结论
@@ -1029,7 +1037,7 @@ dist/apps/<app-id>/
 
 目标：逐个让上游 App 在 VibeBoard Runtime 上真实跑通。
 
-当前状态：上游兼容路线已经开始落地。`MatrixRain`、`NixieClock`、`clock`、`ConwayLife` 和 `FluidPendant` 已迁移为本地 App 包并驱动补齐了一批 LVGL/time/PNG/canvas/font-fallback 能力；当前验证层级是 package/static/build + 固件重烧后的启动稳定性修复，下一步需要先恢复板端 HTTP/WiFi 可见性，再上板屏幕验证这些 App。
+当前状态：上游兼容路线已经开始落地。`MatrixRain`、`NixieClock`、`clock`、`ConwayLife`、`FluidPendant` 和 `2048` 已迁移为本地 App 包并驱动补齐了一批 LVGL/time/PNG/canvas/font-fallback/key/animation 能力。当前验证层级是 package/static/build，加上 2026-06-19 临时 Runtime 上的 `/status`、`/apps` 和 `2048` upload/list/launch 验证；`2048` 已保持 `state=running,current_app=2048,last_status=ESP_OK`，真实触摸滑动到 `key.on` 和双次退出确认已由用户真机确认。
 
 优先顺序：
 
