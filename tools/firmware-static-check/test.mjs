@@ -1672,13 +1672,19 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(info, /name\s*=\s*smoke_app_manager/);
     assert.match(info, /entry\s*=\s*main\.lua/);
-    assert.match(info, /capabilities\s*=\s*lvgl,timer/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,input/);
     assert.match(source, /app\.list\(\)/);
     assert.match(source, /app\.rescan\(\)/);
     assert.match(source, /app\.current\(\)/);
     assert.match(source, /app\.exiting\(\)/);
     assert.match(source, /type\(app\.exit\)\s*==\s*["']function["']/);
     assert.match(source, /type\(app\.launch\)\s*==\s*["']function["']/);
+    assert.match(source, /type\(app\.set_home_exit\)\s*==\s*["']function["']/);
+    assert.match(source, /app\.set_home_exit\(false\)/);
+    assert.match(source, /app\.set_home_exit\(true\)/);
+    assert.match(source, /app\.launch\(["']smoke_key["']\)/);
+    assert.match(source, /key\.on/);
+    assert.match(source, /key\.HOME/);
     assert.match(source, /app\.on\(["']exit["']/);
     assert.match(source, /tmr\.create\(\):alarm/);
   });
