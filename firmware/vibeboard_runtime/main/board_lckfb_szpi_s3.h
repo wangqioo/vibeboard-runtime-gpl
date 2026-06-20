@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "driver/gpio.h"
 #include "esp_err.h"
@@ -45,6 +46,7 @@ typedef void (*vb_board_input_callback_t)(int code, int event, int timestamp_ms,
 
 esp_err_t vb_board_start(vb_board_status_t *status);
 esp_err_t vb_board_mount_sd(vb_board_status_t *status);
+esp_err_t vb_board_draw_rgb565(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const void *rgb565);
 esp_err_t vb_board_input_start(vb_board_input_callback_t callback, void *user_data);
 void vb_board_input_stop(void);
 

@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "lauxlib.h"
 #include "lua.h"
+#include "board_lckfb_szpi_s3.h"
 
 #define VB_MODULE_HOST_API_VERSION 1
 #define VB_MODULE_HOST_SD_ROOT "/sdcard"
@@ -239,7 +240,7 @@ static int vb_host_display_push_image_dma(vb_module_host_display_surface_t *surf
     if (width == 0 || height == 0 || x + width > surface->width || y + height > surface->height) {
         return -1;
     }
-    return -1;
+    return vb_board_draw_rgb565(x, y, width, height, rgb565) == ESP_OK ? 0 : -1;
 }
 
 static int vb_host_display_end_write(vb_module_host_display_surface_t *surface)

@@ -176,6 +176,19 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /VB_LCD_DRAW_BUF_HEIGHT\s+5/);
   });
 
+  it("routes native display DMA writes through the board LCD panel", () => {
+    const header = readRequired(boardHeaderPath);
+    const source = readRequired(boardSourcePath);
+    const hostApi = readRequired(moduleHostApiSourcePath);
+
+    assert.match(header, /vb_board_draw_rgb565/);
+    assert.match(source, /esp_lcd_panel_draw_bitmap\(lcd_panel/);
+    assert.match(source, /vb_board_draw_rgb565/);
+    assert.match(hostApi, /board_lckfb_szpi_s3\.h/);
+    assert.match(hostApi, /vb_board_draw_rgb565\(x,\s*y,\s*width,\s*height,\s*rgb565\)/);
+    assert.doesNotMatch(hostApi, /vb_host_display_push_image_dma[\s\S]*return\s+-1;\s*\n}/);
+  });
+
   it("does not format SD cards during mount", () => {
     const source = readRequired(boardSourcePath);
 

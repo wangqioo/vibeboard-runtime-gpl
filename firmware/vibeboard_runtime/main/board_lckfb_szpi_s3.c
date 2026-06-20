@@ -197,6 +197,18 @@ static void lvgl_flush_wait_callback(lv_disp_drv_t *drv)
     vTaskDelay(pdMS_TO_TICKS(1));
 }
 
+esp_err_t vb_board_draw_rgb565(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const void *rgb565)
+{
+    if (lcd_panel == NULL || rgb565 == NULL || width == 0 || height == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if ((uint32_t)x + width > VB_LCD_H_RES || (uint32_t)y + height > VB_LCD_V_RES) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    return esp_lcd_panel_draw_bitmap(lcd_panel, x, y, x + width, y + height, rgb565);
+}
+
 static esp_err_t lvgl_init(vb_board_status_t *status)
 {
     const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
