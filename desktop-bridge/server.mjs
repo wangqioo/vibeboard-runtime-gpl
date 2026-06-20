@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { readFile, writeFile } from "node:fs/promises";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8790;
@@ -105,6 +106,27 @@ async function runJob({ audio, metadata, transcribe, reply }) {
   };
 }
 
+export async function runOnceFile({
+  audioPath,
+  outputPath = "",
+  metadata = {},
+  transcribe = defaultTranscribe,
+  reply = defaultReply,
+} = {}) {
+  if (!audioPath) {
+    throw new Error("--once-file requires an audio file path");
+  }
+  const audio = await readFile(audioPath);
+  if (audio.length === 0) {
+    throw new Error("empty audio file");
+  }
+  const result = await runJob({ audio, metadata: normalizeMetadata(metadata), transcribe, reply });
+  if (outputPath) {
+    await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
+  }
+  return result;
+}
+
 function createJobId() {
   return `voice-${randomUUID()}`;
 }
@@ -123,6 +145,24 @@ export function parseArgs(argv = process.argv.slice(2)) {
       options.provider = argv[++index] || "mock";
     } else if (arg.startsWith("--provider=")) {
       options.provider = arg.slice("--provider=".length);
+    } else if (arg === "--once-file") {
+      options.onceFile = argv[++index] || "";
+    } else if (arg.startsWith("--once-file=")) {
+      options.onceFile = arg.slice("--once-file=".length);
+    } else if (arg === "--output") {
+      options.output = argv[++index] || "";
+    } else if (arg.startsWith("--output=")) {
+      options.output = arg.slice("--output=".length);
+    } else if (arg === "--sample-rate") {
+      options.metadata = { ...options.metadata, sampleRate: Number.parseInt(argv[++index] || "", 10) };
+    } else if (arg === "--bits") {
+      options.metadata = { ...options.metadata, bits: Number.parseInt(argv[++index] || "", 10) };
+    } else if (arg === "--channels") {
+      options.metadata = { ...options.metadata, channels: Number.parseInt(argv[++index] || "", 10) };
+    } else if (arg === "--format") {
+      options.metadata = { ...options.metadata, format: argv[++index] || "" };
+    } else if (arg === "--reply-limit") {
+      options.metadata = { ...options.metadata, replyLimit: Number.parseInt(argv[++index] || "", 10) };
     } else if (arg === "--help" || arg === "-h") {
       options.help = true;
     } else {
@@ -135,7 +175,27 @@ export function parseArgs(argv = process.argv.slice(2)) {
   if (!Number.isFinite(options.port) || options.port <= 0 || options.port > 65535) {
     throw new Error(`Invalid port: ${options.port}`);
   }
+  if (options.onceFile === "") {
+    throw new Error("--once-file requires an audio file path");
+  }
+  if (options.metadata) {
+    options.metadata = normalizeMetadata(options.metadata);
+  }
   return options;
+}
+
+function normalizeMetadata(metadata = {}) {
+  const sampleRate = Number.isFinite(metadata.sampleRate) ? metadata.sampleRate : 16000;
+  const bits = Number.isFinite(metadata.bits) ? metadata.bits : 32;
+  const channels = Number.isFinite(metadata.channels) ? metadata.channels : 1;
+  const replyLimit = Number.isFinite(metadata.replyLimit) ? metadata.replyLimit : 100;
+  return {
+    sampleRate,
+    bits,
+    channels,
+    format: metadata.format || "pcm_s32le",
+    replyLimit,
+  };
 }
 
 export function createProviderFromEnv({
@@ -260,6 +320,7 @@ export function createVoiceBridgeServer({
 
 function printHelp() {
   console.log("Usage: node desktop-bridge/server.mjs [--host 127.0.0.1] [--port 8790] [--async] [--provider mock|command]");
+  console.log("       node desktop-bridge/server.mjs --once-file sample.pcm [--output result.json] [--sample-rate 16000] [--bits 32] [--channels 1] [--format pcm_s32le] [--reply-limit 100] [--provider mock|command]");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -269,10 +330,20 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       printHelp();
     } else {
       const provider = createProviderFromEnv({ provider: options.provider });
-      const server = createVoiceBridgeServer({ asyncMode: options.async, ...provider });
-      server.listen(options.port, options.host, () => {
-        console.log(`VibeBoard voice bridge: http://${options.host}:${options.port} provider=${options.provider}`);
-      });
+      if (options.onceFile) {
+        const result = await runOnceFile({
+          audioPath: options.onceFile,
+          outputPath: options.output,
+          metadata: options.metadata,
+          ...provider,
+        });
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        const server = createVoiceBridgeServer({ asyncMode: options.async, ...provider });
+        server.listen(options.port, options.host, () => {
+          console.log(`VibeBoard voice bridge: http://${options.host}:${options.port} provider=${options.provider}`);
+        });
+      }
     }
   } catch (error) {
     console.error(error.message);

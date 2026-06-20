@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { request as httpRequest } from "node:http";
-import { createProviderFromEnv, createVoiceBridgeServer, parseArgs } from "./server.mjs";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createProviderFromEnv, createVoiceBridgeServer, parseArgs, runOnceFile } from "./server.mjs";
 
 function requestJson(server, path, { method = "GET", body = Buffer.alloc(0), headers = {} } = {}) {
   return new Promise((resolve, reject) => {
@@ -45,6 +48,37 @@ describe("voice bridge args", () => {
       port: 8790,
       async: true,
       provider: "command",
+    });
+  });
+
+  it("supports one-shot local audio file runs with metadata overrides", () => {
+    assert.deepEqual(parseArgs([
+      "--provider=command",
+      "--once-file",
+      "sample.pcm",
+      "--sample-rate",
+      "24000",
+      "--bits",
+      "16",
+      "--channels",
+      "2",
+      "--format",
+      "pcm_s16le",
+      "--reply-limit",
+      "40",
+    ]), {
+      host: "127.0.0.1",
+      port: 8790,
+      async: false,
+      provider: "command",
+      onceFile: "sample.pcm",
+      metadata: {
+        sampleRate: 24000,
+        bits: 16,
+        channels: 2,
+        format: "pcm_s16le",
+        replyLimit: 40,
+      },
     });
   });
 });
@@ -103,6 +137,54 @@ describe("voice bridge providers", () => {
     assert.equal(calls[0].input.metadata.sampleRate, 16000);
     assert.equal(calls[1].command, "reply-local");
     assert.equal(calls[1].input.transcript, "bytes=4");
+  });
+
+  it("reports invalid JSON from command provider hooks", async () => {
+    const provider = createProviderFromEnv({
+      provider: "command",
+      env: {
+        VOICE_BRIDGE_TRANSCRIBE_COMMAND: "bad-transcribe",
+        VOICE_BRIDGE_REPLY_COMMAND: "reply-local",
+      },
+      runCommand: async () => "not-json",
+    });
+
+    await assert.rejects(
+      () => provider.transcribe({
+        audio: Buffer.from([1]),
+        metadata: { sampleRate: 16000, bits: 32, channels: 1, format: "pcm_s32le" },
+      }),
+      /bad-transcribe returned invalid JSON/,
+    );
+  });
+});
+
+describe("voice bridge one-shot runner", () => {
+  it("runs the configured provider against a local audio file and writes JSON output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "vibeboard-voice-"));
+    const audioPath = join(dir, "sample.pcm");
+    const outputPath = join(dir, "result.json");
+    try {
+      await writeFile(audioPath, Buffer.from([1, 2, 3, 4]));
+
+      const result = await runOnceFile({
+        audioPath,
+        outputPath,
+        metadata: { sampleRate: 8000, bits: 16, channels: 1, format: "pcm_s16le", replyLimit: 20 },
+        transcribe: async ({ audio, metadata }) => `bytes=${audio.length},rate=${metadata.sampleRate}`,
+        reply: async ({ transcript }) => ({ reply: `reply:${transcript}`, uiCode: "return function() end" }),
+      });
+
+      assert.deepEqual(result, {
+        ok: true,
+        transcript: "bytes=4,rate=8000",
+        reply: "reply:bytes=4,rate=8000",
+        ui_code: "return function() end",
+      });
+      assert.deepEqual(JSON.parse(await readFile(outputPath, "utf8")), result);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
