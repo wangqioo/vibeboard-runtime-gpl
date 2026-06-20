@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 
 #include "module_abi.h"
+#include "native_module_static_adapter.h"
 
 static const char *const VB_NATIVE_MODULE_ERROR_LOAD_FAILED = "Native module load failed";
 static const char *const VB_NATIVE_MODULE_ERROR_SYMBOL_MISSING = "Native module symbol missing";
@@ -177,7 +178,5 @@ esp_err_t vb_native_module_load(const char *module_name,
         return result->status;
     }
 
-    snprintf(result->error, sizeof(result->error), "%s: native executor pending", VB_NATIVE_MODULE_ERROR_LOAD_FAILED);
-    result->status = ESP_ERR_NOT_FOUND;
-    return result->status;
+    return vb_native_module_static_adapter_load(module_name, &manifest, result);
 }

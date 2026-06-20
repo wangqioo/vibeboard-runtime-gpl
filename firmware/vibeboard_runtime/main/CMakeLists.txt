@@ -20,6 +20,7 @@ idf_component_register(
         "lua_wifi.c"
         "main.c"
         "native_module_loader.c"
+        "native_module_static_adapter.c"
     INCLUDE_DIRS "."
     REQUIRES
         esp_driver_i2c

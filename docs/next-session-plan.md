@@ -277,13 +277,12 @@ Suggested commit split from the parallel worktree audit:
 - first loader slice is implemented: `module_abi.h`, `native_module_loader.*`, `lua_native_module.*`, `/status.native_abi_version = vibeboard-native-module-abi@1`, and `apps/nesgame` now uses `local nes = require("nes")`;
 - manifest-first loader validation is implemented for app-local `native/nes.vbn` descriptors with `magic = VBNM`, `abi = vibeboard-native-module-abi@1`, `symbol = vb_native_module_init`, and `min_host = vibeboard-native-host@1`;
 - `apps/smoke_nes` is implemented as an independent native-module smoke app and demo package entry, validating `require("nes")`, `nes.state()`, `nes.input.set_mask`, and the expected `native executor pending` result without depending on the full `nesgame` UI;
+- after manifest validation, the Runtime now routes native modules through `native_module_static_adapter.*`, giving the NES port a concrete static `vb_native_module_init` adapter seam before a real ELF loader or emulator core is wired in;
 - current loader intentionally returns precise missing payload/symbol/ABI/host API errors and, after a valid descriptor, exposes a minimal NES Lua stub table whose `start(...)` returns `false, "native executor pending"`; it does not include the NES emulator core.
 
 The next NES implementation slice should be ELF/static native payload execution and the first host API group, not full emulation:
 
-- add RED static tests for the chosen executor path after a valid `native/nes.vbn` descriptor;
-- decide whether the first executor loads `/sd/modules/nes.so` or links a static NES adapter behind the same `vb_native_module_init` symbol;
-- implement ELFLoader/import resolution or a static linked module adapter;
+- replace the static adapter placeholder with a real linked NES adapter entrypoint or add ELFLoader/import resolution behind the same `vb_native_module_init` contract;
 - add serial/time/heap/file host API first;
 - leave display DMA, audio, and native gamepad host API for later slices.
 
