@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseDeleteCliArgs } from "./delete.mjs";
+import {
+  createInterruptedUploadSmokeApp,
+  parseInterruptedUploadCliArgs,
+  runInterruptedUploadSmoke,
+} from "./interrupted-smoke.mjs";
 import { parseLaunchCliArgs } from "./launch.mjs";
 import { parseUploadCliArgs } from "./cli.mjs";
-import { createNcRequest, launchApp, listUploadFiles, uploadApp } from "./index.mjs";
+import { createNcRequest, deleteApp, launchApp, listUploadFiles, sendRequest, stopApp, uploadApp } from "./index.mjs";
 
 function makePackage() {
   const root = mkdtempSync(join(tmpdir(), "vibeboard-uploader-"));
@@ -213,6 +219,91 @@ describe("uploadApp", () => {
   });
 });
 
+describe("interrupted upload smoke", () => {
+  it("creates a temporary app package for staged abort checks", () => {
+    const root = mkdtempSync(join(tmpdir(), "vibeboard-interrupted-upload-test-"));
+    try {
+      const appDir = createInterruptedUploadSmokeApp(root, "interrupted_smoke");
+      const files = listUploadFiles(appDir).map((file) => file.relativePath);
+      assert.deepEqual(files, ["app.info", "assets/payload.txt", "main.lua"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("aborts a staged upload after an intentional file failure and confirms absence", async () => {
+    const calls = [];
+    const result = await runInterruptedUploadSmoke({
+      boardUrl: "http://192.168.1.32:8080",
+      appId: "interrupted_smoke",
+      stageId: "interrupted-stage",
+      failPath: "main.lua",
+      createTempDir: async () => mkdtempSync(join(tmpdir(), "vibeboard-interrupted-upload-test-")),
+      requestImpl: async (url, body, options = {}) => {
+        calls.push({ url, method: options.method, body: body.toString("utf8") });
+        if (url.includes("path=main.lua")) {
+          throw new Error("intentional interrupted upload at main.lua");
+        }
+        if (url.endsWith("/install/abort?stage=interrupted-stage")) {
+          return { ok: true, status: 200, text: '{"ok":true,"aborted":"interrupted-stage"}' };
+        }
+        if (url.endsWith("/apps")) {
+          return { ok: true, status: 200, text: '{"apps":[{"id":"other"}]}' };
+        }
+        return { ok: true, status: 200, text: "ok\n" };
+      },
+    });
+
+    assert.equal(result.appId, "interrupted_smoke");
+    assert.equal(result.aborted, true);
+    assert.equal(result.confirmedAbsent, true);
+    assert.match(result.error, /intentional interrupted upload at main\.lua/);
+    assert.ok(calls.some((call) => call.url.endsWith("path=app.info&stage=interrupted-stage")));
+    assert.ok(calls.some((call) => call.url.endsWith("path=assets/payload.txt&stage=interrupted-stage")));
+    assert.ok(calls.some((call) => call.url.endsWith("/install/abort?stage=interrupted-stage")));
+    assert.ok(calls.some((call) => call.url.endsWith("/apps")));
+    assert.equal(calls.some((call) => call.url.includes("/install/commit")), false);
+  });
+
+  it("fails when the interrupted app appears after abort confirmation", async () => {
+    await assert.rejects(
+      runInterruptedUploadSmoke({
+        boardUrl: "http://192.168.1.32:8080",
+        appId: "interrupted_smoke",
+        stageId: "interrupted-stage",
+        failPath: "main.lua",
+        createTempDir: async () => mkdtempSync(join(tmpdir(), "vibeboard-interrupted-upload-test-")),
+        requestImpl: async (url) => {
+          if (url.includes("path=main.lua")) {
+            throw new Error("intentional interrupted upload at main.lua");
+          }
+          if (url.endsWith("/apps")) {
+            return { ok: true, status: 200, text: '{"apps":[{"id":"interrupted_smoke"}]}' };
+          }
+          return { ok: true, status: 200, text: "ok\n" };
+        },
+      }),
+      /interrupted_smoke is still present after interrupted upload abort/,
+    );
+  });
+
+  it("parses interrupted upload smoke cli args", () => {
+    assert.deepEqual(
+      parseInterruptedUploadCliArgs([
+        "--fail-path",
+        "assets/payload.txt",
+        "http://192.168.1.32:8080",
+        "interrupted_smoke",
+      ]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        appId: "interrupted_smoke",
+        failPath: "assets/payload.txt",
+      },
+    );
+  });
+});
+
 describe("parseUploadCliArgs", () => {
   it("uses the native Node HTTP transport by default", () => {
     assert.deepEqual(
@@ -315,6 +406,31 @@ describe("createNcRequest", () => {
   });
 });
 
+describe("sendRequest", () => {
+  it("times out and destroys native HTTP requests that do not finish", async () => {
+    const request = {
+      on() {},
+      setTimeout(ms, callback) {
+        assert.equal(ms, 12);
+        callback();
+        return this;
+      },
+      destroy: mock.fn(),
+      end() {},
+    };
+
+    await assert.rejects(
+      sendRequest("http://192.168.1.32:8080/status", Buffer.alloc(0), {
+        method: "GET",
+        timeoutMs: 12,
+        httpRequestImpl: () => request,
+      }),
+      /timed out after 12ms/,
+    );
+    assert.equal(request.destroy.mock.callCount(), 1);
+  });
+});
+
 describe("launchApp", () => {
   it("posts a launch request for an installed app", async () => {
     const calls = [];
@@ -331,5 +447,123 @@ describe("launchApp", () => {
     assert.equal(calls[0].url, "http://192.168.1.32:8080/launch?app=demo");
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].body.length, 0);
+  });
+});
+
+describe("stopApp", () => {
+  it("posts a stop request", async () => {
+    const calls = [];
+    const result = await stopApp({
+      boardUrl: "http://192.168.1.32:8080/",
+      requestImpl: async (url, body, options = {}) => {
+        calls.push({ url, method: options.method, body });
+        return { ok: true, status: 200, text: '{"ok":true,"stopped":true}' };
+      },
+    });
+
+    assert.deepEqual(result, { ok: true, stopped: true });
+    assert.equal(calls[0].url, "http://192.168.1.32:8080/stop");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].body.length, 0);
+  });
+});
+
+describe("deleteApp", () => {
+  it("deletes a non-running app without stopping the current app", async () => {
+    const calls = [];
+    const result = await deleteApp({
+      boardUrl: "http://192.168.1.32:8080/",
+      appId: "demo",
+      requestImpl: async (url, body, options = {}) => {
+        calls.push({ url, method: options.method });
+        if (url.endsWith("/status")) {
+          return { ok: true, status: 200, text: '{"state":"running","current_app":"other"}' };
+        }
+        if (url.endsWith("/apps/delete?app=demo")) {
+          return { ok: true, status: 200, text: '{"ok":true,"deleted":"demo"}' };
+        }
+        if (url.endsWith("/apps")) {
+          return { ok: true, status: 200, text: '{"apps":[{"id":"other"}]}' };
+        }
+        throw new Error(`unexpected url ${url}`);
+      },
+    });
+
+    assert.equal(result.deleted, "demo");
+    assert.equal(result.stopped, false);
+    assert.equal(calls.some((call) => call.url.endsWith("/stop")), false);
+  });
+
+  it("stops the app before deleting when the target is running", async () => {
+    const calls = [];
+    const result = await deleteApp({
+      boardUrl: "http://192.168.1.32:8080",
+      appId: "demo",
+      requestImpl: async (url, body, options = {}) => {
+        calls.push({ url, method: options.method });
+        if (url.endsWith("/status")) {
+          return { ok: true, status: 200, text: '{"state":"running","current_app":"demo"}' };
+        }
+        if (url.endsWith("/stop")) {
+          return { ok: true, status: 200, text: '{"ok":true,"stopped":true}' };
+        }
+        if (url.endsWith("/apps/delete?app=demo")) {
+          return { ok: true, status: 200, text: '{"ok":true,"deleted":"demo"}' };
+        }
+        if (url.endsWith("/apps")) {
+          return { ok: true, status: 200, text: '{"apps":[]}' };
+        }
+        throw new Error(`unexpected url ${url}`);
+      },
+    });
+
+    assert.equal(result.deleted, "demo");
+    assert.equal(result.stopped, true);
+    assert.deepEqual(
+      calls.map((call) => call.url.replace("http://192.168.1.32:8080", "")),
+      ["/status", "/stop", "/apps/delete?app=demo", "/apps"],
+    );
+  });
+
+  it("fails when the deleted app is still listed after confirmation", async () => {
+    await assert.rejects(
+      deleteApp({
+        boardUrl: "http://192.168.1.32:8080",
+        appId: "demo",
+        requestImpl: async (url) => {
+          if (url.endsWith("/status")) {
+            return { ok: true, status: 200, text: '{"state":"idle","current_app":null}' };
+          }
+          if (url.endsWith("/apps/delete?app=demo")) {
+            return { ok: true, status: 200, text: '{"ok":true,"deleted":"demo"}' };
+          }
+          if (url.endsWith("/apps")) {
+            return { ok: true, status: 200, text: '{"apps":[{"id":"demo"}]}' };
+          }
+          throw new Error(`unexpected url ${url}`);
+        },
+      }),
+      /Deleted app demo is still present after rescan/,
+    );
+  });
+});
+
+describe("parseDeleteCliArgs", () => {
+  it("uses native transport and stop-if-running by default", () => {
+    assert.deepEqual(parseDeleteCliArgs(["http://192.168.1.32:8080", "demo"]), {
+      boardUrl: "http://192.168.1.32:8080",
+      appId: "demo",
+      transport: "native",
+      stopIfRunning: true,
+    });
+  });
+
+  it("supports nc transport and no-stop mode", () => {
+    assert.deepEqual(parseDeleteCliArgs(["--transport=nc", "--no-stop", "http://192.168.1.32:8080", "demo"]), {
+      boardUrl: "http://192.168.1.32:8080",
+      appId: "demo",
+      transport: "nc",
+      stopIfRunning: false,
+    });
   });
 });

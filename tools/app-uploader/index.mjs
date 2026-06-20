@@ -43,9 +43,23 @@ export function postFile(url, body) {
   return sendRequest(url, body, { method: "POST" });
 }
 
-export function sendRequest(url, body = Buffer.alloc(0), { method = body.length > 0 ? "POST" : "GET" } = {}) {
+export function sendRequest(
+  url,
+  body = Buffer.alloc(0),
+  {
+    method = body.length > 0 ? "POST" : "GET",
+    timeoutMs = 8000,
+    httpRequestImpl = httpRequest,
+  } = {},
+) {
   return new Promise((resolve, reject) => {
-    const request = httpRequest(url, {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
+    const request = httpRequestImpl(url, {
       method,
       headers: {
         "content-length": body.length,
@@ -56,14 +70,18 @@ export function sendRequest(url, body = Buffer.alloc(0), { method = body.length 
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => {
         const text = Buffer.concat(chunks).toString("utf8");
-        resolve({
+        finish(resolve, {
           ok: response.statusCode >= 200 && response.statusCode < 300,
           status: response.statusCode,
           text,
         });
       });
     });
-    request.on("error", reject);
+    request.on("error", (error) => finish(reject, error));
+    request.setTimeout(timeoutMs, () => {
+      request.destroy();
+      finish(reject, new Error(`HTTP request to ${url} timed out after ${timeoutMs}ms`));
+    });
     request.end(body);
   });
 }
@@ -301,4 +319,120 @@ export async function launchApp({
     retryDelayMs,
     label: `Launch ${appId}`,
   });
+}
+
+export async function getStatus({
+  boardUrl,
+  fetchImpl,
+  requestImpl = sendRequest,
+  retryAttempts = 3,
+  retryDelayMs = 250,
+}) {
+  if (!boardUrl) {
+    throw new Error("boardUrl is required");
+  }
+
+  const base = boardUrl.replace(/\/+$/, "");
+  return requestJson({
+    url: `${base}/status`,
+    method: "GET",
+    fetchImpl,
+    requestImpl,
+    retryAttempts,
+    retryDelayMs,
+    label: "Get status",
+  });
+}
+
+export async function listApps({
+  boardUrl,
+  fetchImpl,
+  requestImpl = sendRequest,
+  retryAttempts = 3,
+  retryDelayMs = 250,
+}) {
+  if (!boardUrl) {
+    throw new Error("boardUrl is required");
+  }
+
+  const base = boardUrl.replace(/\/+$/, "");
+  return requestJson({
+    url: `${base}/apps`,
+    method: "GET",
+    fetchImpl,
+    requestImpl,
+    retryAttempts,
+    retryDelayMs,
+    label: "List apps",
+  });
+}
+
+export async function stopApp({
+  boardUrl,
+  fetchImpl,
+  requestImpl = sendRequest,
+  retryAttempts = 3,
+  retryDelayMs = 250,
+}) {
+  if (!boardUrl) {
+    throw new Error("boardUrl is required");
+  }
+
+  const base = boardUrl.replace(/\/+$/, "");
+  return requestJson({
+    url: `${base}/stop`,
+    method: "POST",
+    fetchImpl,
+    requestImpl,
+    retryAttempts,
+    retryDelayMs,
+    label: "Stop app",
+  });
+}
+
+export async function deleteApp({
+  boardUrl,
+  appId,
+  fetchImpl,
+  requestImpl = sendRequest,
+  retryAttempts = 3,
+  retryDelayMs = 250,
+  stopIfRunning = true,
+  confirm = true,
+}) {
+  if (!boardUrl) {
+    throw new Error("boardUrl is required");
+  }
+  assertSafeRelativePath(appId);
+
+  const base = boardUrl.replace(/\/+$/, "");
+  let stopped = false;
+  if (stopIfRunning) {
+    const status = await getStatus({ boardUrl: base, fetchImpl, requestImpl, retryAttempts, retryDelayMs });
+    if (status.current_app === appId && ["starting", "running", "stopping"].includes(status.state)) {
+      const stop = await stopApp({ boardUrl: base, fetchImpl, requestImpl, retryAttempts, retryDelayMs });
+      stopped = Boolean(stop.stopped);
+    }
+  }
+
+  const deleted = await requestJson({
+    url: `${base}/apps/delete?app=${encodeURIComponent(appId)}`,
+    method: "POST",
+    fetchImpl,
+    requestImpl,
+    retryAttempts,
+    retryDelayMs,
+    label: `Delete ${appId}`,
+  });
+
+  let apps = null;
+  if (confirm) {
+    apps = await listApps({ boardUrl: base, fetchImpl, requestImpl, retryAttempts, retryDelayMs });
+    const found = Array.isArray(apps.apps) && apps.apps.some((app) => app.id === appId);
+    if (found) {
+      throw new Error(`Deleted app ${appId} is still present after rescan`);
+    }
+  }
+
+  return { ...deleted, appId, stopped, confirmed: confirm, apps };
 }
