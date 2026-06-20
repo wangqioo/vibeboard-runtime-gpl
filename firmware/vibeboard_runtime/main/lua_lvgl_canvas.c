@@ -189,6 +189,8 @@ void vb_lua_lvgl_canvas_register(lua_State *L)
         { "lv_canvas_fill_bg", l_lv_canvas_fill_bg },
         { "lv_canvas_draw_rect", l_lv_canvas_draw_rect },
         { "lv_canvas_draw_text", l_lv_canvas_draw_text },
+        { "lv_canvas_begin", l_lv_canvas_frame_begin },
+        { "lv_canvas_end", l_lv_canvas_frame_end },
         { "lv_canvas_frame_begin", l_lv_canvas_frame_begin },
         { "lv_canvas_frame_end", l_lv_canvas_frame_end },
         { "lv_obj_invalidate", l_lv_obj_invalidate },

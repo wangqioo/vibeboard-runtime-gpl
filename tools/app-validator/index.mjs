@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const CAPABILITY_USAGE_PATTERNS = [
   { capability: "lvgl", pattern: /\blv_[A-Za-z0-9_]+\b|\bLV_[A-Za-z0-9_]+\b/ },
@@ -10,6 +11,53 @@ const CAPABILITY_USAGE_PATTERNS = [
   { capability: "input", pattern: /\b(?:key|touch)\s*\./ },
   { capability: "module", pattern: /\brequire\s*\(/ }
 ];
+
+const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
+const LVGL_BINDING_SOURCE_PATHS = [
+  join(repoRoot, "firmware/vibeboard_runtime/main/lua_lvgl.c"),
+  join(repoRoot, "firmware/vibeboard_runtime/main/lua_lvgl_canvas.c"),
+  join(repoRoot, "firmware/vibeboard_runtime/main/lua_lvgl_fs.c"),
+  join(repoRoot, "firmware/vibeboard_runtime/main/lua_lvgl_widgets.c")
+];
+
+function readSupportedLvglSymbols() {
+  const supported = new Set();
+  for (const sourcePath of LVGL_BINDING_SOURCE_PATHS) {
+    if (!existsSync(sourcePath)) continue;
+    const source = readFileSync(sourcePath, "utf8");
+    for (const match of source.matchAll(/lua_setglobal\(L,\s*"((?:lv|LV|ANIM)_[A-Za-z0-9_]+)"\)/g)) {
+      supported.add(match[1]);
+    }
+    for (const match of source.matchAll(/\{\s*"((?:lv|LV|ANIM)_[A-Za-z0-9_]+)"\s*,/g)) {
+      supported.add(match[1]);
+    }
+  }
+  return supported;
+}
+
+const SUPPORTED_LVGL_SYMBOLS = readSupportedLvglSymbols();
+
+function findUnsupportedLvglSymbols(entryContent) {
+  const unsupported = new Set();
+  const localSymbols = new Set(
+    [...entryContent.matchAll(/\blocal\s+(lv_[A-Za-z0-9_]+)\b/g)]
+      .map((match) => match[1])
+  );
+  const optionalSymbols = new Set(
+    [...entryContent.matchAll(/\bif\s+(?:not\s+)?(lv_[A-Za-z0-9_]+)\s+then\b/g)]
+      .map((match) => match[1])
+  );
+  for (const match of entryContent.matchAll(/\b(lv_[A-Za-z0-9_]+)\s*\(/g)) {
+    const symbol = match[1];
+    if (symbol.endsWith("_fn") || localSymbols.has(symbol) || optionalSymbols.has(symbol)) {
+      continue;
+    }
+    if (!SUPPORTED_LVGL_SYMBOLS.has(symbol)) {
+      unsupported.add(symbol);
+    }
+  }
+  return [...unsupported].sort();
+}
 
 export function parseAppInfo(text) {
   const data = {};
@@ -98,6 +146,11 @@ export function validateAppDirectory(appDir) {
     for (const { capability, pattern } of CAPABILITY_USAGE_PATTERNS) {
       if (pattern.test(entryContent) && !declaredCapabilities.has(capability)) {
         errors.push(`Missing capability declaration: ${capability}`);
+      }
+    }
+    if (declaredCapabilities.has("lvgl")) {
+      for (const symbol of findUnsupportedLvglSymbols(entryContent)) {
+        errors.push(`Runtime update required: unsupported LVGL API ${symbol}`);
       }
     }
   }

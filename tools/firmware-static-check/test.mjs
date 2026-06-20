@@ -1287,6 +1287,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(canvas, /"lv_canvas_fill_bg"/);
     assert.match(canvas, /"lv_canvas_draw_rect"/);
     assert.match(canvas, /"lv_canvas_draw_text"/);
+    assert.match(canvas, /"lv_canvas_frame_begin"/);
+    assert.match(canvas, /"lv_canvas_frame_end"/);
+    assert.match(canvas, /"lv_canvas_begin"/);
+    assert.match(canvas, /"lv_canvas_end"/);
     assert.match(canvas, /"lv_obj_invalidate"/);
   });
 

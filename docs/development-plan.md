@@ -161,7 +161,7 @@ AI 生成一个受限 Lua/LVGL App
 - 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；还没有 BOOT/长按/repeat 的完整 Lua 输入语义，`smoke_key` 还需要补物理触摸手势的独立上板记录；
 - Native NES 已经 build-verified 到核心启动路径，但还缺合法 ROM 上板、真实显示所有权压力测试、音频输出和 native gamepad；
 - Voice AI 只有本地 bridge skeleton 和 I2S/GIF build verification，真实麦克风、真实 STT/LLM、凭证策略和端到端上板还没完成；
-- Runtime/API/App schema 版本兼容已经有基础元数据，但还需要更严格的工具侧拒绝和升级提示。
+- Runtime/API/App schema 版本兼容已经有基础元数据；工具侧现在会拒绝 entry Lua 里直接调用当前 Runtime 未暴露的 LVGL API，并返回 `Runtime update required: unsupported LVGL API <name>`。后续还需要把同类严格拒绝扩展到更多 Lua 模块和版本范围。
 
 ### 下一阶段必须补的核心能力
 
@@ -196,7 +196,7 @@ AI 生成一个受限 Lua/LVGL App
 - 补常用样式：font、opacity、shadow、line、flex/grid 基础；
 - 补图片/字体资源加载的稳定路径；
 - 建立 “AI 可以生成的 UI API 白名单”；
-- 让工具在 App 使用未支持 API 时提前报 `Runtime update required`。
+- 工具侧已能在 App entry 直接调用未暴露 LVGL API 时提前报 `Runtime update required`；后续继续扩展到更多 Lua 模块、版本范围和生成器白名单。
 
 第五优先级：设备端 App 管理。
 

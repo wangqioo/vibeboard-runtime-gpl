@@ -142,6 +142,34 @@ describe("validateAppDirectory", () => {
     }
   });
 
+  it("rejects LVGL calls that are not exposed by the current runtime", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-lvgl-api-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = Missing LVGL",
+        "entry = main.lua",
+        "description = Missing LVGL binding",
+        "capabilities = lvgl",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), [
+        "local root = lv_scr_act()",
+        "lv_obj_create(root)",
+        "lv_totally_missing_widget(root)",
+        ""
+      ].join("\n"));
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, ["Runtime update required: unsupported LVGL API lv_totally_missing_widget"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps migrated app capabilities aligned with static API usage", () => {
     for (const [appPath, expectedCapabilities] of MIGRATED_APP_EXPECTED_CAPABILITIES) {
       const result = validateAppDirectory(join(repoRoot, appPath));
