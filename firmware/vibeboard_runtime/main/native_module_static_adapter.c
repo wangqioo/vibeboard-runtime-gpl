@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "module_host_api.h"
+
 typedef esp_err_t (*vb_native_module_init_fn)(void *host_api, void **module);
 
 static esp_err_t nes_native_module_init(void *host_api, void **module)
@@ -25,6 +27,9 @@ esp_err_t vb_native_module_static_adapter_load(const char *module_name,
         result->status = ESP_ERR_NOT_SUPPORTED;
         return result->status;
     }
+
+    vb_module_host_api_t host_api;
+    vb_module_host_api_init(&host_api);
 
     vb_native_module_init_fn vb_native_module_init = nes_native_module_init;
     if (vb_native_module_init == NULL) {

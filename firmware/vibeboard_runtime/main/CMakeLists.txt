@@ -19,6 +19,7 @@ idf_component_register(
         "lua_tmr.c"
         "lua_wifi.c"
         "main.c"
+        "module_host_api.c"
         "native_module_loader.c"
         "native_module_static_adapter.c"
     INCLUDE_DIRS "."

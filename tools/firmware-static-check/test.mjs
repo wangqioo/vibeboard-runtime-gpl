@@ -37,6 +37,8 @@ const luaNativeModuleSourcePath = join(firmwareRoot, "main/lua_native_module.c")
 const luaNativeModuleHeaderPath = join(firmwareRoot, "main/lua_native_module.h");
 const nativeModuleLoaderSourcePath = join(firmwareRoot, "main/native_module_loader.c");
 const nativeModuleLoaderHeaderPath = join(firmwareRoot, "main/native_module_loader.h");
+const moduleHostApiSourcePath = join(firmwareRoot, "main/module_host_api.c");
+const moduleHostApiHeaderPath = join(firmwareRoot, "main/module_host_api.h");
 const nativeModuleStaticAdapterSourcePath = join(firmwareRoot, "main/native_module_static_adapter.c");
 const nativeModuleStaticAdapterHeaderPath = join(firmwareRoot, "main/native_module_static_adapter.h");
 const moduleAbiHeaderPath = join(firmwareRoot, "main/module_abi.h");
@@ -313,6 +315,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(cmake, /native_module_loader\.c/);
     assert.match(cmake, /lua_native_module\.c/);
+    assert.match(cmake, /module_host_api\.c/);
     assert.match(cmake, /native_module_static_adapter\.c/);
     assert.match(runner, /lua_native_module\.h/);
     assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)/);
@@ -323,6 +326,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const loaderHeader = readRequired(nativeModuleLoaderHeaderPath);
     const loader = readRequired(nativeModuleLoaderSourcePath);
     const luaModule = readRequired(luaNativeModuleSourcePath);
+    const hostApiHeader = readRequired(moduleHostApiHeaderPath);
+    const hostApi = readRequired(moduleHostApiSourcePath);
     const staticAdapterHeader = readRequired(nativeModuleStaticAdapterHeaderPath);
     const staticAdapter = readRequired(nativeModuleStaticAdapterSourcePath);
 
@@ -344,8 +349,30 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(loader, /VB_NATIVE_MODULE_HOST_API_VERSION\s+"vibeboard-native-host@1"/);
     assert.match(loader, /native_module_static_adapter\.h/);
     assert.match(loader, /vb_native_module_static_adapter_load/);
+    assert.match(hostApiHeader, /vb_module_host_api_t/);
+    assert.match(hostApiHeader, /vb_module_host_serial_api_t/);
+    assert.match(hostApiHeader, /vb_module_host_time_api_t/);
+    assert.match(hostApiHeader, /vb_module_host_heap_api_t/);
+    assert.match(hostApiHeader, /vb_module_host_file_api_t/);
+    assert.match(hostApiHeader, /vb_module_host_api_init/);
+    assert.match(hostApi, /vb_host_serial_write/);
+    assert.match(hostApi, /vb_host_serial_println/);
+    assert.match(hostApi, /vb_host_time_millis/);
+    assert.match(hostApi, /vb_host_time_micros/);
+    assert.match(hostApi, /vb_host_time_delay_ms/);
+    assert.match(hostApi, /vb_host_heap_malloc/);
+    assert.match(hostApi, /vb_host_heap_free/);
+    assert.match(hostApi, /vb_host_file_open/);
+    assert.match(hostApi, /vb_host_file_read/);
+    assert.match(hostApi, /vb_host_file_close/);
+    assert.match(hostApi, /esp_timer_get_time/);
+    assert.match(hostApi, /heap_caps_malloc/);
+    assert.match(hostApi, /MALLOC_CAP_8BIT/);
+    assert.match(hostApi, /\/sdcard/);
     assert.match(staticAdapterHeader, /vb_native_module_static_adapter_load/);
     assert.match(staticAdapter, /vb_native_module_static_adapter_load/);
+    assert.match(staticAdapter, /module_host_api\.h/);
+    assert.match(staticAdapter, /vb_module_host_api_init/);
     assert.match(staticAdapter, /strcmp\(module_name,\s*"nes"\)/);
     assert.match(staticAdapter, /vb_native_module_init/);
     assert.match(staticAdapter, /native executor pending/);
