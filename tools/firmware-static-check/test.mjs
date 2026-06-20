@@ -479,6 +479,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesNativeAdapter, /nes_core_destroy\(s_nes_module\.core_runtime\)/);
     assert.match(nesNativeAdapter, /static\s+uint32_t\s+runtime_mask_to_nes_mask\(uint8_t\s+mask\)/);
     assert.match(nesNativeAdapter, /nes_core_options_t\s+options/);
+    assert.match(nesNativeAdapter, /apply_start_options\(L,\s*2,\s*&options\)/);
+    assert.match(nesNativeAdapter, /table_u32\(L,\s*"target_fps",\s*options->target_fps\)/);
+    assert.match(nesNativeAdapter, /table_bool\(L,\s*"audio_enabled",\s*options->audio_enabled != 0\)/);
+    assert.match(nesNativeAdapter, /options->audio_lua_fallback/);
+    assert.match(nesNativeAdapter, /options->audio_sample_rate/);
+    assert.match(nesNativeAdapter, /options->audio_queue_bytes/);
     assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_state"\)/);
     assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_running"\)/);
     assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_loaded"\)/);

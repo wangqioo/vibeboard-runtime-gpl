@@ -124,6 +124,124 @@ static bool read_ines_header(vb_nes_native_module_t *nes, const char *rom_path, 
     return true;
 }
 
+static uint32_t table_u32(lua_State *L, const char *key, uint32_t fallback)
+{
+    uint32_t value = fallback;
+    lua_getfield(L, -1, key);
+    if (lua_isnumber(L, -1)) {
+        lua_Integer integer = lua_tointeger(L, -1);
+        if (integer >= 0) {
+            value = (uint32_t)integer;
+        }
+    }
+    lua_pop(L, 1);
+    return value;
+}
+
+static uint16_t table_u16(lua_State *L, const char *key, uint16_t fallback)
+{
+    uint32_t value = table_u32(L, key, fallback);
+    return value > UINT16_MAX ? UINT16_MAX : (uint16_t)value;
+}
+
+static int32_t table_i32(lua_State *L, const char *key, int32_t fallback)
+{
+    int32_t value = fallback;
+    lua_getfield(L, -1, key);
+    if (lua_isnumber(L, -1)) {
+        lua_Integer integer = lua_tointeger(L, -1);
+        if (integer < INT32_MIN) {
+            value = INT32_MIN;
+        } else if (integer > INT32_MAX) {
+            value = INT32_MAX;
+        } else {
+            value = (int32_t)integer;
+        }
+    }
+    lua_pop(L, 1);
+    return value;
+}
+
+static bool table_bool(lua_State *L, const char *key, bool fallback)
+{
+    bool value = fallback;
+    lua_getfield(L, -1, key);
+    if (!lua_isnil(L, -1)) {
+        value = lua_toboolean(L, -1);
+    }
+    lua_pop(L, 1);
+    return value;
+}
+
+static void clamp_start_options(nes_core_options_t *options)
+{
+    if (options->width == 0 || options->width > 320) {
+        options->width = 256;
+    }
+    if (options->height == 0 || options->height > 240) {
+        options->height = 240;
+    }
+    if (options->x > 320 || options->x + options->width > 320) {
+        options->x = (uint16_t)((320 - options->width) / 2);
+    }
+    if (options->y > 240 || options->y + options->height > 240) {
+        options->y = 0;
+    }
+    if (options->transfer_rows == 0 || options->transfer_rows > options->height) {
+        options->transfer_rows = 8;
+    }
+    if (options->target_fps == 0 || options->target_fps > 120) {
+        options->target_fps = 60;
+    }
+    if (options->task_stack_bytes < 8192) {
+        options->task_stack_bytes = 16 * 1024;
+    }
+    if (options->audio_sample_rate == 0) {
+        options->audio_sample_rate = 22050;
+    }
+    if (options->audio_bits_per_sample == 0) {
+        options->audio_bits_per_sample = 16;
+    }
+    if (options->audio_channels == 0) {
+        options->audio_channels = 1;
+    }
+    if (options->audio_volume_percent > 100) {
+        options->audio_volume_percent = 100;
+    }
+    if (options->audio_queue_bytes == 0) {
+        options->audio_queue_bytes = 32768;
+    }
+}
+
+static void apply_start_options(lua_State *L, int index, nes_core_options_t *options)
+{
+    if (lua_isnoneornil(L, index) || options == NULL) {
+        return;
+    }
+
+    luaL_checktype(L, index, LUA_TTABLE);
+    lua_pushvalue(L, index);
+    options->x = table_u16(L, "x", options->x);
+    options->y = table_u16(L, "y", options->y);
+    options->width = table_u16(L, "width", options->width);
+    options->height = table_u16(L, "height", options->height);
+    options->transfer_rows = table_u16(L, "transfer_rows", options->transfer_rows);
+    options->target_fps = table_u32(L, "target_fps", options->target_fps);
+    options->task_stack_bytes = table_u32(L, "task_stack_bytes", options->task_stack_bytes);
+    options->task_priority = table_u32(L, "task_priority", options->task_priority);
+    options->task_core = table_i32(L, "task_core", options->task_core);
+    options->autorun = table_bool(L, "autorun", options->autorun != 0) ? 1 : 0;
+    options->audio_enabled = table_bool(L, "audio_enabled", options->audio_enabled != 0) ? 1 : 0;
+    options->audio_lua_fallback = table_bool(L, "audio_lua_fallback", options->audio_lua_fallback != 0) ? 1 : 0;
+    options->audio_channels = table_u16(L, "audio_channels", options->audio_channels);
+    options->audio_bits_per_sample = table_u16(L, "audio_bits_per_sample", options->audio_bits_per_sample);
+    options->audio_volume_percent = (uint8_t)table_u32(L, "audio_volume_percent", options->audio_volume_percent);
+    options->audio_sample_rate = table_u32(L, "audio_sample_rate", options->audio_sample_rate);
+    options->audio_queue_bytes = table_u32(L, "audio_queue_bytes", options->audio_queue_bytes);
+    lua_pop(L, 1);
+    clamp_start_options(options);
+}
+
 esp_err_t vb_nes_native_module_init(vb_module_host_api_t *host_api, void **module)
 {
     if (host_api == NULL || module == NULL) {
@@ -283,6 +401,13 @@ int vb_nes_native_module_start(lua_State *L, void *module)
     options.task_core = -1;
     options.autorun = 1;
     options.audio_enabled = 0;
+    options.audio_lua_fallback = 1;
+    options.audio_channels = 1;
+    options.audio_bits_per_sample = 16;
+    options.audio_volume_percent = 100;
+    options.audio_sample_rate = 22050;
+    options.audio_queue_bytes = 32768;
+    apply_start_options(L, 2, &options);
     err[0] = '\0';
 
     nes_core_set_input_mask(nes->core_runtime, runtime_mask_to_nes_mask(nes->player_1_mask));
