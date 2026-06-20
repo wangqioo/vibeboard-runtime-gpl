@@ -75,7 +75,71 @@ The local testable bridge lives in `desktop-bridge/server.mjs`.
 node desktop-bridge/server.mjs --host 0.0.0.0 --port 8790
 ```
 
-The current implementation is a provider-neutral protocol bridge. It validates and stores audio requests, returns deterministic Chinese mock replies by default, and supports both synchronous and pending-result flows. It does not yet call a real STT or OpenAI provider.
+The current implementation is a provider-neutral protocol bridge. It validates and stores audio requests, returns deterministic Chinese mock replies by default, and supports both synchronous and pending-result flows.
+
+Provider selection:
+
+```sh
+node desktop-bridge/server.mjs --host 0.0.0.0 --port 8790 --provider mock
+node desktop-bridge/server.mjs --host 0.0.0.0 --port 8790 --provider command
+```
+
+The `command` provider keeps real STT/LLM credentials outside this repo. It calls local commands with JSON on stdin and expects JSON on stdout:
+
+```sh
+VOICE_BRIDGE_TRANSCRIBE_COMMAND="your-transcribe-command" \
+VOICE_BRIDGE_REPLY_COMMAND="your-reply-command" \
+node desktop-bridge/server.mjs --host 0.0.0.0 --port 8790 --provider command
+```
+
+Transcribe input:
+
+```json
+{
+  "audio_base64": "base64 PCM bytes",
+  "metadata": {
+    "format": "pcm_s32le",
+    "sampleRate": 16000,
+    "bits": 32,
+    "channels": 1,
+    "replyLimit": 100
+  }
+}
+```
+
+Transcribe output:
+
+```json
+{
+  "transcript": "用户语音转写"
+}
+```
+
+Reply input:
+
+```json
+{
+  "transcript": "用户语音转写",
+  "metadata": {
+    "format": "pcm_s32le",
+    "sampleRate": 16000,
+    "bits": 32,
+    "channels": 1,
+    "replyLimit": 100
+  }
+}
+```
+
+Reply output:
+
+```json
+{
+  "reply": "中文回复",
+  "ui_code": ""
+}
+```
+
+The bridge intentionally does not hard-code a cloud STT or LLM SDK yet. The command boundary lets a local wrapper own provider selection, credentials, logging, and privacy policy without changing the device protocol.
 
 ## Device Config
 
@@ -100,7 +164,6 @@ npm run runtime:config -- http://192.168.1.32:8080 i2s runtime/i2s.local.json
 
 ## Remaining Work
 
-- Wire a real speech-to-text provider into `desktop-bridge/server.mjs`.
-- Wire a real OpenAI response provider that returns `reply` plus optional sandboxed LVGL `ui_code`.
+- Provide local STT and LLM command wrappers for the bridge `command` provider.
 - Board-verify I2S microphone capture with the correct ES7210 or board mic path.
 - Board-verify `voice_ai` upload, reply rendering, and GIF buddy animation.

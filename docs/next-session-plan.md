@@ -85,7 +85,8 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - `apps/smoke_app_manager` exercises those APIs, disables default HOME exit through `app.set_home_exit(false)`, and maps HOME short press to `app.launch("smoke_key")` for real handoff smoke; it is included in demo packaging;
   - LVGL GIF support is enabled with `CONFIG_LV_USE_GIF=y`, `lv_gif_create`, and `lv_gif_set_src`;
   - `desktop-bridge/server.mjs` provides a provider-neutral local bridge for `POST /api/chat`, async pending jobs, `GET /api/result`, and `GET /health`;
-  - current bridge responses are mock/default provider output until real STT/LLM credentials and provider code are configured.
+  - current bridge responses are mock/default provider output until real STT/LLM credentials and provider code are configured;
+  - `--provider command` can run local STT/reply wrapper commands through JSON stdin/stdout, keeping credentials and cloud SDK choices outside the device protocol.
 - Upstream display apps migrated so far:
   - `apps/matrix_rain` from upstream `MatrixRain`;
   - `apps/nixie_clock` from upstream `NixieClock`;

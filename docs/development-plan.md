@@ -128,7 +128,7 @@ npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote
 - `apps/fluid_pendant` 已从 `upstream/holocubic-apps/FluidPendant/` 迁移，复用 canvas/time/timer 兼容路径；
 - `apps/2048` 已从 `upstream/holocubic-apps/2048/` 迁移，补齐最小 Lua `key` 模块、`millis()` 兼容、LVGL 透明度/渐变/阴影/对象删除/置顶/属性动画绑定，并在 App 内对退出事件增加双次确认；
 - `apps/weather` 已完成第一轮迁移：`json` alias、`http.cubicserver.get`、Cubicserver runtime config、gzip 移除策略、轻量 LVGL 面板替代小 canvas blur，并已用本地 Cubicserver mock 完成上板 HTTP 生命周期验证；
-- `apps/voice_ai` 的第一轮支撑能力已进入 build-verified：I2S RX Lua 模块、LVGL GIF widget、`json` alias、`app.exit`、以及 provider-neutral `desktop-bridge/server.mjs`。真实麦克风采集、真实 AI 服务商和 GIF 视觉上板仍待验证；
+- `apps/voice_ai` 的第一轮支撑能力已进入 build-verified：I2S RX Lua 模块、LVGL GIF widget、`json` alias、`app.exit`、以及 provider-neutral `desktop-bridge/server.mjs`。bridge 已有 `mock` 和 `command` provider 边界，`command` 通过 JSON stdin/stdout 调本地 STT/LLM 包装命令；真实麦克风采集、本地 provider wrapper 和 GIF 视觉上板仍待验证；
 - `apps/nesgame` / `apps/smoke_nes` 的第一轮 native 路径已进入 build-verified：native manifest loader、静态 NES adapter、host API v1 shim、上游 NES C++ core 链接、ROM iNES header 校验、`nes.start(path, opts)`、`nes.state()`、`nes.input.*`、`nes.read_audio([max_bytes])`。合法 ROM、真实显示、音频输出和 native gamepad 仍待上板；
 - `tools/app-packager` 的 demo 打包列表已包含 `matrix_rain`、`nixie_clock`、`clock`、`conway_life`、`fluid_pendant`、`smoke_key` 和 `2048`；
 - 这些迁移已通过静态测试、packager 测试、总测试、`git diff --check` 和 ESP-IDF build；2026-06-17 已重新烧录固件并修复启动期 `main` 栈溢出、HTTP handler 数量不足和 LVGL flush 等待触发 watchdog 的问题。
@@ -162,7 +162,7 @@ AI 生成一个受限 Lua/LVGL App
 - LVGL 绑定覆盖还不够广，尤其 list/arc/switch/dropdown/textarea/roller/slider、flex/grid、字体和 canvas 高级效果；
 - 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；Lua `touch.on/off/push` 坐标事件模块和 `apps/smoke_touch` 已进入 build-verified。还没有 BOOT/长按/repeat 的完整 Lua 输入语义，`smoke_touch` 真实坐标显示还需要上板记录；
 - Native NES 已经 build-verified 到核心启动路径，但还缺合法 ROM 上板、真实显示所有权压力测试、音频输出和 native gamepad；
-- Voice AI 只有本地 bridge skeleton 和 I2S/GIF build verification，真实麦克风、真实 STT/LLM、凭证策略和端到端上板还没完成；
+- Voice AI 已有本地 bridge skeleton、command provider 边界和 I2S/GIF build verification；真实麦克风、本地 STT/LLM wrapper、凭证策略和端到端上板还没完成；
 - Runtime/API/App schema 版本兼容已经有基础元数据；工具侧现在会拒绝 entry Lua 里直接调用当前 Runtime 未暴露的 LVGL API，并返回 `Runtime update required: unsupported LVGL API <name>`；也会拒绝 `requires.runtime`、`requires.luaApi`、`requires.lvglApi` 或 `requires.nativeAbi` 高于当前 Runtime 的 App；第一版 Lua 模块 API 白名单也已覆盖 `app`、`file`、`gamepad`、`http`、`i2s`、`json`、`key`、`sjson`、`time`、`tmr`、`touch`、`wifi` 的直接调用，能在打包前拒绝 `Runtime update required: unsupported Lua API <module.fn>`；capability guardrail 现在会把 `key.*`、`touch.*` 和 `gamepad.*` 都归入 `capabilities = input`。后续还需要把同类严格拒绝扩展到生成器白名单和更深层 Lua 解析。
 
 ### 下一阶段必须补的核心能力
@@ -247,7 +247,7 @@ AI 生成一个受限 Lua/LVGL App
 
    - `/sdcard/runtime/i2s.json` 通过 `npm run runtime:config -- <board-url> i2s <json-file|-|json>` 写入真实麦克风引脚；
    - `apps/smoke_i2s` 能录到非零 PCM；
-   - `desktop-bridge/server.mjs` 能被板端访问；
+   - `desktop-bridge/server.mjs --provider mock` 能被板端访问，`--provider command` 能通过本地 STT/LLM wrapper 返回 `transcript`、`reply` 和可选 `ui_code`；
    - `apps/voice_ai` 能录音、上传、拿到 bridge 回复并更新 UI；
    - GIF buddy 动画在屏幕上可见。
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { request as httpRequest } from "node:http";
-import { createVoiceBridgeServer, parseArgs } from "./server.mjs";
+import { createProviderFromEnv, createVoiceBridgeServer, parseArgs } from "./server.mjs";
 
 function requestJson(server, path, { method = "GET", body = Buffer.alloc(0), headers = {} } = {}) {
   return new Promise((resolve, reject) => {
@@ -40,11 +40,69 @@ async function withServer(options, run) {
 
 describe("voice bridge args", () => {
   it("uses local defaults and supports host, port, and async flags", () => {
-    assert.deepEqual(parseArgs(["--host", "0.0.0.0", "--port", "8790", "--async"]), {
+    assert.deepEqual(parseArgs(["--host", "0.0.0.0", "--port", "8790", "--async", "--provider", "command"]), {
       host: "0.0.0.0",
       port: 8790,
       async: true,
+      provider: "command",
     });
+  });
+});
+
+describe("voice bridge providers", () => {
+  it("uses the mock provider by default", async () => {
+    const provider = createProviderFromEnv({ env: {} });
+    const transcript = await provider.transcribe({
+      audio: Buffer.from([1, 2, 3, 4]),
+      metadata: { sampleRate: 16000, bits: 32, channels: 1 },
+    });
+    const reply = await provider.reply({ transcript });
+
+    assert.match(transcript, /收到 4 字节音频/);
+    assert.match(reply.reply, /我已收到录音/);
+    assert.equal(reply.uiCode, "");
+  });
+
+  it("rejects command provider when commands are not configured", () => {
+    assert.throws(
+      () => createProviderFromEnv({ provider: "command", env: {} }),
+      /VOICE_BRIDGE_TRANSCRIBE_COMMAND and VOICE_BRIDGE_REPLY_COMMAND are required/,
+    );
+  });
+
+  it("runs command provider hooks with audio and transcript payloads", async () => {
+    const calls = [];
+    const provider = createProviderFromEnv({
+      provider: "command",
+      env: {
+        VOICE_BRIDGE_TRANSCRIBE_COMMAND: "transcribe-local",
+        VOICE_BRIDGE_REPLY_COMMAND: "reply-local",
+      },
+      runCommand: async (command, input) => {
+        calls.push({ command, input: JSON.parse(input.toString("utf8")) });
+        if (command === "transcribe-local") {
+          return JSON.stringify({ transcript: `bytes=${calls[0].input.audio_base64.length}` });
+        }
+        return JSON.stringify({ reply: `reply:${calls[1].input.transcript}`, ui_code: "return function() end" });
+      },
+    });
+
+    const transcript = await provider.transcribe({
+      audio: Buffer.from([1, 2, 3]),
+      metadata: { sampleRate: 16000, bits: 32, channels: 1, format: "pcm_s32le" },
+    });
+    const reply = await provider.reply({
+      transcript,
+      metadata: { sampleRate: 16000, bits: 32, channels: 1, format: "pcm_s32le" },
+    });
+
+    assert.equal(transcript, "bytes=4");
+    assert.deepEqual(reply, { reply: "reply:bytes=4", uiCode: "return function() end" });
+    assert.equal(calls[0].command, "transcribe-local");
+    assert.equal(calls[0].input.audio_base64, "AQID");
+    assert.equal(calls[0].input.metadata.sampleRate, 16000);
+    assert.equal(calls[1].command, "reply-local");
+    assert.equal(calls[1].input.transcript, "bytes=4");
   });
 });
 

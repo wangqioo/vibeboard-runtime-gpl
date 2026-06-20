@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8790;
@@ -61,6 +62,38 @@ async function defaultReply({ transcript }) {
   };
 }
 
+function runShellCommand(command, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, {
+      shell: true,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const stdout = [];
+    const stderr = [];
+    child.stdout.on("data", (chunk) => stdout.push(chunk));
+    child.stderr.on("data", (chunk) => stderr.push(chunk));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      const output = Buffer.concat(stdout).toString("utf8");
+      if (code !== 0) {
+        const errorText = Buffer.concat(stderr).toString("utf8") || output;
+        reject(new Error(`command exited ${code}: ${errorText.trim()}`));
+        return;
+      }
+      resolve(output);
+    });
+    child.stdin.end(input);
+  });
+}
+
+function parseCommandJson(command, raw) {
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${command} returned invalid JSON: ${error.message}`);
+  }
+}
+
 async function runJob({ audio, metadata, transcribe, reply }) {
   const transcript = await transcribe({ audio, metadata });
   const result = await reply({ transcript, audio, metadata });
@@ -77,7 +110,7 @@ function createJobId() {
 }
 
 export function parseArgs(argv = process.argv.slice(2)) {
-  const options = { host: DEFAULT_HOST, port: DEFAULT_PORT, async: false };
+  const options = { host: DEFAULT_HOST, port: DEFAULT_PORT, async: false, provider: "mock" };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === "--host") {
@@ -86,16 +119,80 @@ export function parseArgs(argv = process.argv.slice(2)) {
       options.port = Number.parseInt(argv[++index] || String(DEFAULT_PORT), 10);
     } else if (arg === "--async") {
       options.async = true;
+    } else if (arg === "--provider") {
+      options.provider = argv[++index] || "mock";
+    } else if (arg.startsWith("--provider=")) {
+      options.provider = arg.slice("--provider=".length);
     } else if (arg === "--help" || arg === "-h") {
       options.help = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
+  if (!["mock", "command"].includes(options.provider)) {
+    throw new Error(`Unsupported provider: ${options.provider}`);
+  }
   if (!Number.isFinite(options.port) || options.port <= 0 || options.port > 65535) {
     throw new Error(`Invalid port: ${options.port}`);
   }
   return options;
+}
+
+export function createProviderFromEnv({
+  provider = "mock",
+  env = process.env,
+  runCommand = runShellCommand,
+} = {}) {
+  if (provider === "mock") {
+    return {
+      transcribe: defaultTranscribe,
+      reply: defaultReply,
+    };
+  }
+
+  if (provider !== "command") {
+    throw new Error(`Unsupported provider: ${provider}`);
+  }
+
+  if (!env.VOICE_BRIDGE_TRANSCRIBE_COMMAND || !env.VOICE_BRIDGE_REPLY_COMMAND) {
+    throw new Error("VOICE_BRIDGE_TRANSCRIBE_COMMAND and VOICE_BRIDGE_REPLY_COMMAND are required for command provider");
+  }
+
+  return {
+    transcribe: async ({ audio, metadata }) => {
+      const payload = {
+        audio_base64: audio.toString("base64"),
+        metadata,
+      };
+      const raw = await runCommand(
+        env.VOICE_BRIDGE_TRANSCRIBE_COMMAND,
+        Buffer.from(`${JSON.stringify(payload)}\n`, "utf8"),
+      );
+      const result = parseCommandJson(env.VOICE_BRIDGE_TRANSCRIBE_COMMAND, raw);
+      if (typeof result.transcript !== "string" || result.transcript === "") {
+        throw new Error(`${env.VOICE_BRIDGE_TRANSCRIBE_COMMAND} must return {"transcript":"..."}`);
+      }
+      return result.transcript;
+    },
+    reply: async ({ transcript, audio, metadata }) => {
+      const payload = { transcript, metadata };
+      if (audio) {
+        payload.audio_base64 = audio.toString("base64");
+      }
+      const raw = await runCommand(
+        env.VOICE_BRIDGE_REPLY_COMMAND,
+        Buffer.from(`${JSON.stringify(payload)}\n`, "utf8"),
+      );
+      const result = parseCommandJson(env.VOICE_BRIDGE_REPLY_COMMAND, raw);
+      if (typeof result.reply !== "string" || result.reply === "") {
+        throw new Error(`${env.VOICE_BRIDGE_REPLY_COMMAND} must return {"reply":"..."}`);
+      }
+      return {
+        reply: result.reply,
+        uiCode: typeof result.uiCode === "string" ? result.uiCode : (typeof result.ui_code === "string" ? result.ui_code : ""),
+      };
+    },
+  };
 }
 
 export function createVoiceBridgeServer({
@@ -162,7 +259,7 @@ export function createVoiceBridgeServer({
 }
 
 function printHelp() {
-  console.log("Usage: node desktop-bridge/server.mjs [--host 127.0.0.1] [--port 8790] [--async]");
+  console.log("Usage: node desktop-bridge/server.mjs [--host 127.0.0.1] [--port 8790] [--async] [--provider mock|command]");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -171,9 +268,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (options.help) {
       printHelp();
     } else {
-      const server = createVoiceBridgeServer({ asyncMode: options.async });
+      const provider = createProviderFromEnv({ provider: options.provider });
+      const server = createVoiceBridgeServer({ asyncMode: options.async, ...provider });
       server.listen(options.port, options.host, () => {
-        console.log(`VibeBoard voice bridge: http://${options.host}:${options.port}`);
+        console.log(`VibeBoard voice bridge: http://${options.host}:${options.port} provider=${options.provider}`);
       });
     }
   } catch (error) {
