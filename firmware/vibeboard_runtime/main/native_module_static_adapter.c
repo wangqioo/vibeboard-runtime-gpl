@@ -4,20 +4,9 @@
 #include <string.h>
 
 #include "module_host_api.h"
+#include "nes_native_adapter.h"
 
-typedef esp_err_t (*vb_native_module_init_fn)(void *host_api, void **module);
-
-static int s_nes_native_module_placeholder;
-
-static esp_err_t nes_native_module_init(void *host_api, void **module)
-{
-    if (host_api == NULL || module == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    *module = &s_nes_native_module_placeholder;
-    return ESP_OK;
-}
+typedef esp_err_t (*vb_native_module_init_fn)(vb_module_host_api_t *host_api, void **module);
 
 esp_err_t vb_native_module_static_adapter_load(const char *module_name,
                                                const vb_native_module_manifest_t *manifest,
@@ -36,7 +25,7 @@ esp_err_t vb_native_module_static_adapter_load(const char *module_name,
     vb_module_host_api_t host_api;
     vb_module_host_api_init(&host_api);
 
-    vb_native_module_init_fn vb_native_module_init = nes_native_module_init;
+    vb_native_module_init_fn vb_native_module_init = vb_nes_native_module_init;
     if (vb_native_module_init == NULL) {
         snprintf(result->error, sizeof(result->error), "Native module symbol missing: vb_native_module_init");
         result->status = ESP_ERR_NOT_FOUND;
