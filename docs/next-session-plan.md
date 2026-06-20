@@ -1,14 +1,14 @@
 # Next Session Plan
 
-Date: 2026-06-19
+Date: 2026-06-20
 
 ## Current Baseline
 
 ```text
-local main with 2048 migration, board-memory fixes, expanded app registry, six schema v2 apps uploaded, migrated app HTTP lifecycle re-verified, independent key smoke software path board-verified, uploader delete orchestration implemented, pending physical visual QA and commit/push
+local main with Weather/Web UI/deployment productization, Lua app manager lifecycle APIs, GIF support, Voice AI desktop bridge skeleton, and the first executable NES core path build-verified; board-only visual/audio/ROM checks remain
 ```
 
-The local work after the previous baseline migrates the upstream `2048` app and adds the minimum runtime API surface it needs. It also includes hardware-driven fixes from the 2026-06-19 temporary Runtime flash, a non-destructive `device:check` preflight, the first board-verified touch-swipe-to-`key.on` bridge, and an app-local double-confirm guard for `2048` exit events. `2048` now launches from SD, remains running on the board, and has user-confirmed physical swipe plus double-exit behavior. The board currently lists 23 SD apps: seven compatible schema v2 apps and sixteen legacy schema v1 apps that remain on SD but are intentionally hidden from the native Launcher. HTTP launch/status checks have re-verified `matrix_rain`, `nixie_clock`, `clock`, `conway_life`, `fluid_pendant`, and `2048`, including the `conway_life -> fluid_pendant` switch path after increasing the shared stop wait to 5000 ms. The worktree is intentionally dirty until the user asks to commit/push; do not reset it.
+The local work after the previous baseline migrates the upstream `2048` and `weather` apps, adds the minimum runtime API surface they need, and productizes the local upload/control workflow. It also includes hardware-driven fixes from the 2026-06-19 temporary Runtime flash, a non-destructive `device:check` preflight, the first board-verified touch-swipe-to-`key.on` bridge, an app-local double-confirm guard for `2048` exit events, staged upload/delete smoke, a local device web UI, Lua app-manager lifecycle reads, GIF widget support for `voice_ai`, a provider-neutral Voice AI desktop bridge, and a build-verified NES native path that links the upstream core. `2048` and `weather` have board HTTP lifecycle evidence; `2048` has user-confirmed physical swipe plus double-exit behavior. The shared ESP32-S3 board may be reflashed for other projects between sessions, so every hardware pass must start with `npm run device:check` and reflash VibeBoard Runtime only when needed.
 
 ## What Is Done
 
@@ -74,6 +74,12 @@ The local work after the previous baseline migrates the upstream `2048` app and 
   - the Cubic facade maps relative paths through a default base URL and calls the Lua callback with `status_code`, `body`, and a headers table;
   - static tests keep the alias visible for migrated `weather` and `voice_ai` compatibility;
   - ESP-IDF build passes with `vibeboard_runtime.bin` size `0x177a70`, still 63% free in the app partition.
+- Voice AI and runtime lifecycle slices are build-verified:
+  - Runtime exposes Lua `app.list`, `app.rescan`, `app.current`, `app.exiting`, `app.exit`, and `app.on("exit", cb)`;
+  - `apps/smoke_app_manager` exercises those APIs and is included in demo packaging;
+  - LVGL GIF support is enabled with `CONFIG_LV_USE_GIF=y`, `lv_gif_create`, and `lv_gif_set_src`;
+  - `desktop-bridge/server.mjs` provides a provider-neutral local bridge for `POST /api/chat`, async pending jobs, `GET /api/result`, and `GET /health`;
+  - current bridge responses are mock/default provider output until real STT/LLM credentials and provider code are configured.
 - Upstream display apps migrated so far:
   - `apps/matrix_rain` from upstream `MatrixRain`;
   - `apps/nixie_clock` from upstream `NixieClock`;
@@ -283,17 +289,20 @@ Suggested commit split from the parallel worktree audit:
 - the upstream NES C++ core sources are now linked into the Runtime firmware, their headers use explicit relative ABI includes so they do not collide with the Runtime's local `module_abi.h`, and `nes_native_adapter.*` creates a `nes_core_bridge` runtime at native-module init time and refreshes `nes_core_status_t` in `nes.state()`;
 - the v1 host shim now maps task create/remove, and `nes_native_adapter.*` calls `nes_core_start(...)`, `nes_core_stop(...)`, and `nes_core_set_input_mask(...)` with conservative default options, precise core errors, and a Runtime-mask-to-NES-pad-mask conversion;
 - `nes.state()` now exposes core-backed status fields including state, running/loaded/paused flags, frame count, pending steps, input masks, display stream diagnostics, audio diagnostics, and core last error;
+- `nes.start(path, opts)` now parses display/task/audio options including `target_fps`, task stack/priority/core, `audio_enabled`, `audio_lua_fallback`, sample rate, volume, and queue size;
+- `nes.read_audio([max_bytes])` now exposes queued PCM bytes from `nes_core_read_audio(...)` as a Lua binary string, clamped to 256..8192 bytes and aligned to the current 16-bit mono fallback path;
 - `nes_native_adapter.*` copies the host API table into the module instance instead of keeping a pointer to the static adapter stack frame, so future native callbacks can safely use the host API after init returns;
 - the Lua `nes` module now binds `state/start/stop/input` functions as closures over the native module handle and calls `nes_native_adapter.*` callbacks;
 - `nes_native_adapter.*` now opens ROM paths through the host file API, reads the 16-byte iNES header, rejects missing/short/invalid/NES 2.0 ROMs with precise messages, records mapper id in native state, and then starts the linked core bridge;
 - current loader intentionally returns precise missing payload/symbol/ABI/host API errors and, after a valid descriptor, exposes a minimal NES Lua table backed by the linked core bridge.
 
-The next NES implementation slice should make NES execution board-smokeable and stable under real display ownership:
+The next NES implementation slice is hardware-bound and should make NES execution board-smokeable and stable under real display ownership:
 
 - copy a tiny legal/public-domain iNES test ROM to `/sdcard/nes/smoke.nes`, launch `apps/smoke_nes`, and verify start/status/display on the board after reflashing Runtime; without that ROM the smoke app should still pass the loader/input path and show the precise `open rom failed` diagnostic;
 - verify NES display on the board and tighten LVGL/LCD ownership if direct LCD writes race with LVGL flushes;
+- decide whether `nes.read_audio()` should stay as the Lua fallback path only or feed a board audio-output bridge after codec/I2S TX pins are verified;
 - extend the Lua transfer table only as real NES adapter calls require more Lua C API entries;
-- leave audio and native gamepad host API for later slices.
+- leave native gamepad host API for later slices unless Lua `gamepad` to `nes.input.set_mask` latency is proven insufficient.
 
 ## Parallelization Guidance
 
@@ -306,4 +315,6 @@ Safe parallel tracks now:
 
 ## Deferred
 
-Do not implement Lua `app.*` APIs yet. Keep them deferred until there is a concrete Lua-side workflow such as a Lua desktop, in-app navigation, or app-to-app handoff.
+- Do not implement mutating Lua `app.launch(...)` until there is a concrete non-reentrant handoff design from an active Lua runner back to the launcher/app runner.
+- Do not wire real Voice AI providers until the target STT/LLM service, credential storage, and privacy boundary are decided.
+- Do not claim NES board completion until a legal iNES ROM has been copied to SD and the display path is physically observed on the ESP32-S3 screen.

@@ -1,6 +1,6 @@
 # VibeBoard Runtime GPL 开发计划
 
-更新时间：2026-06-19
+更新时间：2026-06-20
 
 ## 一句话目标
 
@@ -38,13 +38,14 @@
 - 免拔 SD 的上传和远程启动闭环已跑通：`npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_visual smoke_visual_remote` 上传并确认 App，`POST /launch?app=smoke_visual_remote` 返回 `200 OK`，串口确认从 `/sdcard/apps/smoke_visual_remote` 启动并持续刷新进度。
 - 原生设备 Launcher 已真机验证：开机进入 `VibeBoard Apps` 列表，不再自动运行第一个 App；触摸点击可启动 App，BOOT 短按可切换选中项，BOOT 长按可启动选中 App。
 - 受控 App stop/switch 已真机验证：远程 `/launch` 和设备 Launcher 都复用同一条 runner 生命周期，切换时会请求旧 App 停止并等待退出。
+- Phase 5B Launcher 收尾已真机验证：屏幕 Stop/Refresh、停止后回到 Launcher、失败后回到 Launcher、屏幕错误提示和 BOOT 长按停止路径都已实现。
 - `/status.state` 生命周期状态已真机验证：`idle`、`running`、受控 stop 回到 `idle`、故意失败后的 `failed`、以及失败后重新启动 `smoke_network` 恢复到 `idle`。
 - `apps/smoke_fail` 已加入仓库并上板验证，可稳定触发 Lua error，用于失败状态和错误恢复测试。
 - App 启动后再按 BOOT 造成 stale LVGL pointer 的崩溃已修复并真机验证；Launcher 交出屏幕后会忽略 BOOT 短按/长按，不再触碰旧控件。
 - App registry 会过滤缺少入口文件的 App；例如 `raw_upload/main.lua` 不存在时不会进入可启动列表。
 - 网络运行时让固件超过默认 1MB app 分区，当前已切换到自定义 4MB factory app 分区。
 
-当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **45% 到 55%**：核心方向、文件/资源、基础控件、定时器、网络 API、免拔 SD 部署、原生 Launcher、基础 App 生命周期、manifest v2、staged install/delete、首批上游显示类 App 迁移、以及第一轮 key-driven App 迁移已经进入可验证阶段；应用生态、Lua 侧 App 管理 API、真实触摸/按键事件接入、音频和 Native 模块还需要补齐。
+当前还不是完整 Cubic Lua/HoloCubic 运行时。相对上游成熟度，当前约为 **65% 到 75%**：核心方向、文件/资源、基础控件、定时器、网络 API、免拔 SD 部署、原生 Launcher、基础 App 生命周期、manifest v2、staged install/delete、浏览器管理 UI、Weather 迁移、首批上游显示类 App 迁移、第一轮 key-driven App 迁移、Lua App manager 只读/退出 API、Voice AI 桥接骨架、以及 NES native/core 首个可执行路径已经进入可验证阶段；完整应用生态、更多 LVGL 覆盖、真机视觉 QA、真实麦克风/音频输出、真实 AI 服务商接入、NES ROM 上板验证和 native gamepad/audio 仍需补齐。
 
 ## 当前完成清单与后续路线
 
@@ -125,6 +126,9 @@ npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote
 - `apps/conway_life` 已从 `upstream/holocubic-apps/ConwayLife/` 迁移，补齐 font fallback 兼容和本地字体资源路径适配；
 - `apps/fluid_pendant` 已从 `upstream/holocubic-apps/FluidPendant/` 迁移，复用 canvas/time/timer 兼容路径；
 - `apps/2048` 已从 `upstream/holocubic-apps/2048/` 迁移，补齐最小 Lua `key` 模块、`millis()` 兼容、LVGL 透明度/渐变/阴影/对象删除/置顶/属性动画绑定，并在 App 内对退出事件增加双次确认；
+- `apps/weather` 已完成第一轮迁移：`json` alias、`http.cubicserver.get`、Cubicserver runtime config、gzip 移除策略、轻量 LVGL 面板替代小 canvas blur，并已用本地 Cubicserver mock 完成上板 HTTP 生命周期验证；
+- `apps/voice_ai` 的第一轮支撑能力已进入 build-verified：I2S RX Lua 模块、LVGL GIF widget、`json` alias、`app.exit`、以及 provider-neutral `desktop-bridge/server.mjs`。真实麦克风采集、真实 AI 服务商和 GIF 视觉上板仍待验证；
+- `apps/nesgame` / `apps/smoke_nes` 的第一轮 native 路径已进入 build-verified：native manifest loader、静态 NES adapter、host API v1 shim、上游 NES C++ core 链接、ROM iNES header 校验、`nes.start(path, opts)`、`nes.state()`、`nes.input.*`、`nes.read_audio([max_bytes])`。合法 ROM、真实显示、音频输出和 native gamepad 仍待上板；
 - `tools/app-packager` 的 demo 打包列表已包含 `matrix_rain`、`nixie_clock`、`clock`、`conway_life`、`fluid_pendant`、`smoke_key` 和 `2048`；
 - 这些迁移已通过静态测试、packager 测试、总测试、`git diff --check` 和 ESP-IDF build；2026-06-17 已重新烧录固件并修复启动期 `main` 栈溢出、HTTP handler 数量不足和 LVGL flush 等待触发 watchdog 的问题。
 - 2026-06-19 重新连接正确 ESP32-S3 板后，临时刷回 VibeBoard Runtime 并验证 `/status`、chunked `/apps`、`2048` staged upload/list/launch 闭环；同日修复 LVGL SPI DMA internal-memory 压力、HTTPD stack 分配到 PSRAM、`/apps` 大列表 JSON 截断、Lua runner task stack 分配到 PSRAM、SDMMC/FATFS 内部 DMA 内存不足、以及 `2048` 对 no-arg batch 和小尺寸 canvas 的误用。后续真机验证又暴露 `lvgl object table full`，已改成复用释放后的对象槽、删除对象子树时同步清理 Lua 句柄表，并把对象句柄上限提高到 128；重刷后 `2048` 持续约 90 秒 HTTP 状态保持 `running,last_status=ESP_OK`。用户随后确认屏幕显示、真实触摸滑动和双次退出手势行为正常。
@@ -150,15 +154,14 @@ AI 生成一个受限 Lua/LVGL App
 
 但当前还不是面向普通用户的完整产品：
 
-- 原生 Launcher 还缺停止当前 App、返回列表、刷新列表和屏幕错误详情；
-- App 生命周期已有实用 stop/switch 路径，但还不是完整状态机；
-- Lua 侧还没有 `app.list()` / `app.launch()` / `app.current()` 等 App manager API；
-- 还不能直接运行完整上游 HoloCubic App；
-- LVGL 绑定覆盖还不够广；
-- 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；还没有 BOOT/长按/repeat/gamepad 完整输入语义，也还需要用 `smoke_key` 补独立输入 smoke 的上板记录；
-- 没有 Native `.so` 模块加载；
-- 没有浏览器端 App 管理 UI；
-- 没有 Runtime/API/App schema 版本兼容检查。
+- 已经有可用的 Launcher、生命周期、浏览器管理 UI 和 staged install/delete，但还需要长期稳定性回归和更完整的错误恢复体验；
+- Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()`，但还没有安全的 `app.launch(id)` app-to-app handoff；
+- 还不能直接运行完整上游 HoloCubic 全量 App，只能按 App 驱动逐个补兼容层；
+- LVGL 绑定覆盖还不够广，尤其 list/arc/switch/dropdown/textarea/roller/slider、flex/grid、字体和 canvas 高级效果；
+- 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；还没有 BOOT/长按/repeat 的完整 Lua 输入语义，`smoke_key` 还需要补物理触摸手势的独立上板记录；
+- Native NES 已经 build-verified 到核心启动路径，但还缺合法 ROM 上板、真实显示所有权压力测试、音频输出和 native gamepad；
+- Voice AI 只有本地 bridge skeleton 和 I2S/GIF build verification，真实麦克风、真实 STT/LLM、凭证策略和端到端上板还没完成；
+- Runtime/API/App schema 版本兼容已经有基础元数据，但还需要更严格的工具侧拒绝和升级提示。
 
 ### 下一阶段必须补的核心能力
 
@@ -171,12 +174,12 @@ AI 生成一个受限 Lua/LVGL App
 - 最后跑 package、firmware static、总测试、`git diff --check` 和 ESP-IDF build；
 - 有硬件时再补真机屏幕验证记录。
 
-第二优先级：Phase 5 收尾，而不是重新做 Launcher。
+第二优先级：把已完成的 Launcher/生命周期做长期回归，而不是重新做 Launcher。
 
-- 给原生 Launcher 增加停止当前 App、返回列表、刷新列表和启动失败详情；
-- `/status` 生命周期状态已经完成第一轮真机验证，后续重点是把状态和错误反馈显示到屏幕端；
-- 确认 `tmr` loop、文件句柄、LVGL 对象和事件 handler 在切换时有清晰清理边界；
-- 当前 App 出错时回到 Launcher，而不是只依赖串口或 HTTP 状态。
+- Stop/Refresh/返回 Launcher/启动失败详情已经实现并上板验证；
+- 后续重点是用更多迁移 App 回归 stop/switch/失败恢复；
+- 确认 `tmr` loop、文件句柄、LVGL 对象和事件 handler 在切换时持续保持清晰清理边界；
+- 当前 App 出错时已经能回到 Launcher，后续继续改善错误文字和用户操作路径。
 
 第三优先级：输入事件。
 
@@ -197,34 +200,30 @@ AI 生成一个受限 Lua/LVGL App
 
 第五优先级：设备端 App 管理。
 
-- Lua 侧 `app.list()`、`app.current()`、`app.launch(id)`、`app.rescan()`；
-- HTTP 删除 App；
-- upload staging + commit，避免半包被启动；
-- App 包 manifest/hash 校验；
-- 浏览器或桌面端 App 管理页；
-- Runtime 版本、API 版本、App schema 版本查询；
-- 不兼容 App 拒绝启动并给出原因。
+- Lua 侧 `app.list()`、`app.current()`、`app.rescan()`、`app.exiting()`、`app.exit()` 已 build-verified；
+- HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime/API/App schema 版本查询和不兼容 App 拒绝启动已经完成第一版；
+- 后续补 `app.launch(id)` 的非重入 handoff 设计、App 包 hash 校验、更严格的工具侧版本拒绝和升级提示。
 
 第六优先级：上游兼容和高级能力。
 
-- 按能力逐个迁移完整 `weather`；
-- 再做 `voice_ai` 的音频路径；
-- 最后做 NES/native module ABI；
-- 不要在 Launcher 和生命周期稳定前追 NES 或完整语音。
+- `weather` 已完成第一轮迁移和本地 Cubicserver mock 上板验证，后续只在需要时恢复更丰富 canvas/blur 视觉；
+- `voice_ai` 下一步是麦克风真机录音、真实 STT/LLM provider、GIF 上板视觉和端到端语音回合；
+- NES/native module ABI 已进入 linked-core build-verified，下一步是合法 ROM、真实显示、音频输出和 gamepad-native 逐项上板；
+- 不要绕过硬件证据直接宣称 Voice AI 或 NES 完成。
 
 ### 推荐最近三个开发切片
 
-1. **Launcher 收尾交互**
+1. **NES 合法 ROM 上板验证**
 
-   目标是把现在能用的原生 Launcher 收成完整最小产品。
+   目标是把 build-verified 的 NES core 路径变成 board-verified。
 
    验收：
 
-   - 运行 App 后能回到 Launcher；
-   - 屏幕上可以停止当前 App；
-   - 屏幕上可以刷新 App 列表；
-   - App 启动失败时屏幕显示可理解错误；
-   - HTTP `/apps` 和屏幕列表来自同一份 registry。
+   - 准备一个合法/public-domain iNES ROM 到 `/sdcard/nes/smoke.nes`；
+   - 重新烧录 VibeBoard Runtime 后启动 `apps/smoke_nes`；
+   - `nes.start(path, opts)` 返回成功，`nes.state()` 显示 core running/frames 增长；
+   - 屏幕能看到 NES RGB565 输出；
+   - 若没有 ROM，App 仍能显示精确 `open rom failed` 诊断。
 
 2. **真实输入事件接入**
 
@@ -238,16 +237,17 @@ AI 生成一个受限 Lua/LVGL App
    - 事件 handler 在 App 停止/切换时清理；
    - 快速输入不会导致 Lua/LVGL 崩溃。
 
-3. **触摸事件 smoke**
+3. **Voice AI 端到端 smoke**
 
-   目标是把 FT6336 输入暴露给 Runtime/Lua。
+   目标是把 build-verified 的 `voice_ai` 支撑能力连成真机闭环。
 
    验收：
 
-   - `apps/smoke_touch` 显示当前触摸坐标；
-   - 点击 Launcher 条目能触发选择；
-   - 快速点击不崩；
-   - 事件 handler 在 App 切换时被清理。
+   - `/sdcard/runtime/i2s.json` 写入真实麦克风引脚；
+   - `apps/smoke_i2s` 能录到非零 PCM；
+   - `desktop-bridge/server.mjs` 能被板端访问；
+   - `apps/voice_ai` 能录音、上传、拿到 bridge 回复并更新 UI；
+   - GIF buddy 动画在屏幕上可见。
 
 ## 项目边界
 
