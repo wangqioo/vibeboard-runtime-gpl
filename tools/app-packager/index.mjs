@@ -33,6 +33,7 @@ export const DEMO_APP_DIRS = [
   "apps/fluid_pendant",
   "apps/smoke_app_manager",
   "apps/smoke_gamepad",
+  "apps/smoke_i2s",
   "apps/smoke_key",
   "apps/smoke_nes",
   "apps/2048"

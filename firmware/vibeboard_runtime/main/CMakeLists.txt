@@ -10,6 +10,7 @@ idf_component_register(
         "lua_file.c"
         "lua_gamepad.c"
         "lua_http.c"
+        "lua_i2s.c"
         "lua_key.c"
         "lua_lvgl.c"
         "lua_lvgl_canvas.c"
@@ -55,6 +56,7 @@ idf_component_register(
         esp_event
         esp_http_client
         esp_http_server
+        esp_driver_i2s
         esp_lcd
         esp_netif
         espressif__esp_lvgl_port

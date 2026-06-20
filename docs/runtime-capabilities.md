@@ -52,6 +52,12 @@ This document separates implemented API, build verification, and board verificat
 | JSON | `sjson.decode`, `sjson.encode`, `json.decode`, `json.encode` | `board-verified` | `sjson.*` is board-verified through `apps/smoke_network`; `json.*` is exposed as the same table for migrated `weather`/`voice_ai` compatibility, is covered by static tests plus ESP-IDF build, and is board-verified through the 2026-06-20 `weather` Cubicserver mock response decode path. |
 | Time/NTP | `time.get`, `time.settimezone`, `time.initntp` | `board-verified` | `apps/smoke_network` ran no-credentials and WiFi-credentials paths without `Invalid mbox` and logged `time now ...`. |
 
+## Audio And Voice AI
+
+| Capability | APIs | Status | Evidence |
+| --- | --- | --- | --- |
+| I2S microphone RX | `i2s.start`, `i2s.read`, `i2s.stop`, `i2s.status`, `/sdcard/runtime/i2s.json` | `build-verified first slice` | Runtime registers a Lua `i2s` module for Voice AI recording. The first slice supports ESP-IDF standard-mode RX only and requires `bclk_pin`, `ws_pin`, and `din_pin` in `/sdcard/runtime/i2s.json`; this avoids hard-coding unknown microphone pins. `apps/smoke_i2s` is included in demo packaging for board smoke and reports a clear error when the config is missing. TX/playback, codec control, and board-verified microphone capture remain planned. |
+
 ## Device Install Service
 
 | Capability | APIs | Status | Evidence |

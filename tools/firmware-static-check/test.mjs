@@ -35,6 +35,8 @@ const luaKeySourcePath = join(firmwareRoot, "main/lua_key.c");
 const luaKeyHeaderPath = join(firmwareRoot, "main/lua_key.h");
 const luaGamepadSourcePath = join(firmwareRoot, "main/lua_gamepad.c");
 const luaGamepadHeaderPath = join(firmwareRoot, "main/lua_gamepad.h");
+const luaI2sSourcePath = join(firmwareRoot, "main/lua_i2s.c");
+const luaI2sHeaderPath = join(firmwareRoot, "main/lua_i2s.h");
 const luaNativeModuleSourcePath = join(firmwareRoot, "main/lua_native_module.c");
 const luaNativeModuleHeaderPath = join(firmwareRoot, "main/lua_native_module.h");
 const luaAppSourcePath = join(firmwareRoot, "main/lua_app.c");
@@ -85,6 +87,8 @@ const smokeKeyInfoPath = join(repoRoot, "apps/smoke_key/app.info");
 const smokeKeySourcePath = join(repoRoot, "apps/smoke_key/main.lua");
 const smokeGamepadInfoPath = join(repoRoot, "apps/smoke_gamepad/app.info");
 const smokeGamepadSourcePath = join(repoRoot, "apps/smoke_gamepad/main.lua");
+const smokeI2sInfoPath = join(repoRoot, "apps/smoke_i2s/app.info");
+const smokeI2sSourcePath = join(repoRoot, "apps/smoke_i2s/main.lua");
 const smokeNesInfoPath = join(repoRoot, "apps/smoke_nes/app.info");
 const smokeNesSourcePath = join(repoRoot, "apps/smoke_nes/main.lua");
 const smokeNesNativeManifestPath = join(repoRoot, "apps/smoke_nes/native/nes.vbn");
@@ -1067,6 +1071,29 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /vb_lua_gamepad_register\(L\)/);
   });
 
+  it("registers a Lua I2S recording module for Voice AI", () => {
+    const header = readRequired(luaI2sHeaderPath);
+    const source = readRequired(luaI2sSourcePath);
+    const cmake = readRequired(cmakePath);
+    const runner = readRequired(runnerSourcePath);
+
+    assert.match(cmake, /lua_i2s\.c/);
+    assert.match(header, /vb_lua_i2s_register/);
+    assert.match(source, /i2s_start/);
+    assert.match(source, /i2s_read/);
+    assert.match(source, /i2s_stop/);
+    assert.match(source, /i2s_status/);
+    assert.match(source, /MODE_MASTER/);
+    assert.match(source, /MODE_RX/);
+    assert.match(source, /CHANNEL_ONLY_LEFT/);
+    assert.match(source, /FORMAT_I2S/);
+    assert.match(source, /\/sdcard\/runtime\/i2s\.json/);
+    assert.match(source, /i2s_channel_read/);
+    assert.match(source, /i2s_channel_disable/);
+    assert.match(runner, /#include\s+"lua_i2s\.h"/);
+    assert.match(runner, /vb_lua_i2s_register\(L\)/);
+  });
+
   it("starts optional runtime Wi-Fi from SD before serving installs", () => {
     const header = readRequired(runtimeWifiHeaderPath);
     const source = readRequired(runtimeWifiSourcePath);
@@ -1310,6 +1337,18 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /gamepad\.push_state/);
     assert.match(source, /gamepad\.state/);
     assert.match(source, /gamepad\.BTN_XBOX/);
+  });
+
+  it("ships an I2S recording smoke app", () => {
+    const info = readRequired(smokeI2sInfoPath);
+    const source = readRequired(smokeI2sSourcePath);
+
+    assert.match(info, /name\s*=\s*smoke_i2s/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,audio/);
+    assert.match(source, /i2s\.start/);
+    assert.match(source, /i2s\.read/);
+    assert.match(source, /i2s\.status/);
+    assert.match(source, /i2s\.stop/);
   });
 
   it("ships a file smoke app", () => {
