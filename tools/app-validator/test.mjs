@@ -227,6 +227,32 @@ describe("validateAppDirectory", () => {
     }
   });
 
+  it("rejects unsupported APIs in non-entry Lua files", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-nested-lua-api-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = Nested Lua APIs",
+        "entry = main.lua",
+        "description = Missing Lua module binding in helper",
+        "capabilities = audio",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), "dofile('helper.lua')\n");
+      writeFileSync(join(appDir, "helper.lua"), "i2s.write(0, 'pcm')\n");
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, [
+        "Runtime update required: unsupported Lua API i2s.write"
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects apps that require newer runtime API versions", () => {
     const root = mkdtempSync(join(tmpdir(), "app-validator-runtime-version-"));
     try {

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -151,6 +151,37 @@ function findUnsupportedLuaApiSymbols(entryContent) {
   return [...unsupported].sort();
 }
 
+function listLuaFiles(appDir) {
+  const files = [];
+
+  function walk(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) {
+        continue;
+      }
+
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+
+      if (entry.isFile() && entry.name.endsWith(".lua")) {
+        files.push(fullPath);
+      }
+    }
+  }
+
+  walk(appDir);
+  return files.sort((a, b) => relative(appDir, a).localeCompare(relative(appDir, b)));
+}
+
+function addUnique(errors, message) {
+  if (!errors.includes(message)) {
+    errors.push(message);
+  }
+}
+
 function parseSemver(value) {
   const match = String(value).trim().match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
   if (!match) return null;
@@ -292,19 +323,25 @@ export function validateAppDirectory(appDir) {
   }
 
   if (validatedEntryPath) {
-    const entryContent = readFileSync(validatedEntryPath, "utf8");
-    for (const { capability, pattern } of CAPABILITY_USAGE_PATTERNS) {
-      if (pattern.test(entryContent) && !declaredCapabilities.has(capability)) {
-        errors.push(`Missing capability declaration: ${capability}`);
+    const luaFiles = listLuaFiles(appDir);
+    for (const luaFile of luaFiles) {
+      const entryContent = readFileSync(luaFile, "utf8");
+
+      for (const { capability, pattern } of CAPABILITY_USAGE_PATTERNS) {
+        if (pattern.test(entryContent) && !declaredCapabilities.has(capability)) {
+          addUnique(errors, `Missing capability declaration: ${capability}`);
+        }
       }
-    }
-    if (declaredCapabilities.has("lvgl")) {
-      for (const symbol of findUnsupportedLvglSymbols(entryContent)) {
-        errors.push(`Runtime update required: unsupported LVGL API ${symbol}`);
+
+      if (declaredCapabilities.has("lvgl")) {
+        for (const symbol of findUnsupportedLvglSymbols(entryContent)) {
+          addUnique(errors, `Runtime update required: unsupported LVGL API ${symbol}`);
+        }
       }
-    }
-    for (const symbol of findUnsupportedLuaApiSymbols(entryContent)) {
-      errors.push(`Runtime update required: unsupported Lua API ${symbol}`);
+
+      for (const symbol of findUnsupportedLuaApiSymbols(entryContent)) {
+        addUnique(errors, `Runtime update required: unsupported Lua API ${symbol}`);
+      }
     }
   }
 

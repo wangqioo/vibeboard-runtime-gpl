@@ -22,7 +22,7 @@ Optional fields:
 - `capabilities`: comma-separated runtime capabilities such as `lvgl`, `timer`, `network`, `audio`, `file`, `module`, `native`, or `service`.
 - `kind`: app kind. `service` is reserved for background service-style apps.
 
-Apps must declare special capabilities before using restricted runtime APIs in their entry Lua file:
+Apps must declare special capabilities before using restricted runtime APIs in any ordinary `.lua` file in the app package. Symlinked files are ignored by the local validator and packager.
 
 - `network`: required for `http.`, `net.`, `mqtt.`, `websocket`, or `wifi.` usage.
 - `timer`: required for `tmr.` or `set_interval(...)` usage.
@@ -31,9 +31,9 @@ Apps must declare special capabilities before using restricted runtime APIs in t
 - `module`: required for `require(` usage.
 - `native`: required for apps that expect Runtime native ABI support such as `require("nes")`.
 
-Package validation rejects missing metadata, missing entry files, entry paths outside the app directory, restricted API usage without the matching capability declaration, `requires.*` version ranges above the current Runtime, and direct LVGL API calls that the current Runtime does not expose. Unsupported direct LVGL calls are reported as `Runtime update required: unsupported LVGL API <name>`. Unsupported version requirements are reported as `Runtime update required: requires <field> <range>, current <version>`.
+Package validation rejects missing metadata, missing entry files, entry paths outside the app directory, restricted API usage without the matching capability declaration, `requires.*` version ranges above the current Runtime, and direct LVGL API calls in package Lua files that the current Runtime does not expose. Unsupported direct LVGL calls are reported as `Runtime update required: unsupported LVGL API <name>`. Unsupported version requirements are reported as `Runtime update required: requires <field> <range>, current <version>`.
 
-Package validation also rejects direct calls to unsupported Runtime Lua module APIs in the entry Lua file for the currently whitelisted modules: `app`, `file`, `gamepad`, `http`, `i2s`, `json`, `key`, `sjson`, `time`, `tmr`, `touch`, and `wifi`. These are reported as `Runtime update required: unsupported Lua API <module.fn>`. Optional compatibility probes such as `if app and app.set_home_exit then ... end` are allowed so migrated apps can degrade gracefully on older runtimes.
+Package validation also rejects direct calls to unsupported Runtime Lua module APIs in package Lua files for the currently whitelisted modules: `app`, `file`, `gamepad`, `http`, `i2s`, `json`, `key`, `sjson`, `time`, `tmr`, `touch`, and `wifi`. These are reported as `Runtime update required: unsupported Lua API <module.fn>`. Optional compatibility probes such as `if app and app.set_home_exit then ... end` are allowed so migrated apps can degrade gracefully on older runtimes.
 
 ## Package Manifest
 
