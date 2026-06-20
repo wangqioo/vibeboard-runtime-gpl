@@ -51,6 +51,11 @@ static int nes_stub_stop(lua_State *L)
     return vb_nes_native_module_stop(L, nes_module_from_upvalue(L));
 }
 
+static int nes_stub_read_audio(lua_State *L)
+{
+    return vb_nes_native_module_read_audio(L, nes_module_from_upvalue(L));
+}
+
 static int nes_stub_input_set_mask(lua_State *L)
 {
     return vb_nes_native_module_input_set_mask(L, nes_module_from_upvalue(L));
@@ -91,6 +96,7 @@ static void push_nes_stub_module(lua_State *L, void *module)
     set_module_function(L, "state", module, nes_stub_state);
     set_module_function(L, "start", module, nes_stub_start);
     set_module_function(L, "stop", module, nes_stub_stop);
+    set_module_function(L, "read_audio", module, nes_stub_read_audio);
 
     lua_newtable(L);
     set_module_function(L, "set_mask", module, nes_stub_input_set_mask);

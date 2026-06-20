@@ -439,6 +439,41 @@ int vb_nes_native_module_stop(lua_State *L, void *module)
     return 0;
 }
 
+int vb_nes_native_module_read_audio(lua_State *L, void *module)
+{
+    vb_nes_native_module_t *nes = (vb_nes_native_module_t *)module;
+    lua_Integer requested = luaL_optinteger(L, 1, 4096);
+    size_t max_bytes;
+    uint8_t *buf;
+    size_t got;
+
+    if (nes == NULL) {
+        return luaL_error(L, "native executor missing");
+    }
+    if (requested < 256) {
+        requested = 256;
+    } else if (requested > 8192) {
+        requested = 8192;
+    }
+
+    max_bytes = (size_t)requested;
+    max_bytes = (max_bytes / 2) * 2;
+    if (nes->core_runtime == NULL || max_bytes == 0) {
+        lua_pushliteral(L, "");
+        return 1;
+    }
+
+    buf = (uint8_t *)nes->host_api.heap.malloc(max_bytes);
+    if (buf == NULL) {
+        return luaL_error(L, "nes.read_audio: alloc buffer failed");
+    }
+    got = nes_core_read_audio(nes->core_runtime, buf, max_bytes);
+    lua_pushlstring(L, (const char *)buf, got);
+    nes->host_api.heap.free(buf);
+    nes_core_status(nes->core_runtime, &nes->core_status);
+    return 1;
+}
+
 int vb_nes_native_module_input_set_mask(lua_State *L, void *module)
 {
     vb_nes_native_module_t *nes = (vb_nes_native_module_t *)module;
