@@ -1,5 +1,7 @@
 #include "nes_native_adapter.h"
 
+#include "runtime/nes_core_bridge.h"
+
 typedef struct {
     char magic[4];
     uint8_t prg_rom_chunks;
@@ -14,6 +16,9 @@ typedef struct {
 
 typedef struct {
     vb_module_host_api_t host_api;
+    module_host_api_v1 host_v1;
+    nes_core_status_t core_status;
+    void *core_runtime;
     uint16_t display_width;
     uint16_t display_height;
     uint32_t frames;
@@ -77,7 +82,18 @@ esp_err_t vb_nes_native_module_init(vb_module_host_api_t *host_api, void **modul
         return ESP_ERR_NOT_SUPPORTED;
     }
 
+    if (s_nes_module.core_runtime != NULL) {
+        nes_core_destroy(s_nes_module.core_runtime);
+        s_nes_module.core_runtime = NULL;
+    }
+
     s_nes_module.host_api = *host_api;
+    vb_nes_host_v1_shim_init(&s_nes_module.host_v1, &s_nes_module.host_api);
+    s_nes_module.core_runtime = nes_core_create(&s_nes_module.host_v1);
+    if (s_nes_module.core_runtime == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    nes_core_status(s_nes_module.core_runtime, &s_nes_module.core_status);
     s_nes_module.display_width = host_api->display.width();
     s_nes_module.display_height = host_api->display.height();
     s_nes_module.frames = 0;
@@ -101,6 +117,9 @@ int vb_nes_native_module_state(lua_State *L, void *module)
     lua_setfield(L, -2, "running");
     lua_pushinteger(L, nes->frames);
     lua_setfield(L, -2, "frames");
+    if (nes->core_runtime != NULL) {
+        nes_core_status(nes->core_runtime, &nes->core_status);
+    }
     lua_pushinteger(L, nes->display_width);
     lua_setfield(L, -2, "display_width");
     lua_pushinteger(L, nes->display_height);

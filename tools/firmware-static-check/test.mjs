@@ -45,6 +45,11 @@ const nesNativeAdapterSourcePath = join(firmwareRoot, "main/nes_native_adapter.c
 const nesNativeAdapterHeaderPath = join(firmwareRoot, "main/nes_native_adapter.h");
 const nesHostShimSourcePath = join(firmwareRoot, "main/nes_host_v1_shim.c");
 const nesHostShimHeaderPath = join(firmwareRoot, "main/nes_host_v1_shim.h");
+const upstreamNesRoot = join(repoRoot, "modules/nes");
+const upstreamNesCoreBridgeHeaderPath = join(upstreamNesRoot, "runtime/nes_core_bridge.h");
+const upstreamNesPortHeaderPath = join(upstreamNesRoot, "port/nes_port.h");
+const upstreamNesArduinoHeaderPath = join(upstreamNesRoot, "port/Arduino.h");
+const upstreamNesAudioHeaderPath = join(upstreamNesRoot, "audio/nes_audio_out.h");
 const moduleAbiHeaderPath = join(firmwareRoot, "main/module_abi.h");
 const luaTimeSourcePath = join(firmwareRoot, "main/lua_time.c");
 const luaTimeHeaderPath = join(firmwareRoot, "main/lua_time.h");
@@ -323,6 +328,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cmake, /native_module_static_adapter\.c/);
     assert.match(cmake, /nes_native_adapter\.c/);
     assert.match(cmake, /nes_host_v1_shim\.c/);
+    assert.match(cmake, /runtime\/nes_core_bridge\.cpp/);
+    assert.match(cmake, /port\/nes_port\.cpp/);
+    assert.match(cmake, /core\/ppu2C02\.cpp/);
+    assert.match(cmake, /audio\/nes_audio_out\.cpp/);
+    assert.match(cmake, /video\/nes_video_out\.cpp/);
     assert.match(runner, /lua_native_module\.h/);
     assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)/);
     assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)[\s\S]*load_lua_file\(L,\s*app->first_app_path\)/);
@@ -340,6 +350,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const nesNativeAdapter = readRequired(nesNativeAdapterSourcePath);
     const nesHostShimHeader = readRequired(nesHostShimHeaderPath);
     const nesHostShim = readRequired(nesHostShimSourcePath);
+    const upstreamNesCoreBridgeHeader = readRequired(upstreamNesCoreBridgeHeaderPath);
+    const upstreamNesPortHeader = readRequired(upstreamNesPortHeaderPath);
+    const upstreamNesArduinoHeader = readRequired(upstreamNesArduinoHeaderPath);
+    const upstreamNesAudioHeader = readRequired(upstreamNesAudioHeaderPath);
 
     assert.match(loaderHeader, /vb_native_module_load/);
     assert.match(loaderHeader, /vb_native_module_manifest_t/);
@@ -428,6 +442,14 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesNativeAdapterHeader, /module_host_api\.h/);
     assert.match(nesNativeAdapterHeader, /nes_host_v1_shim\.h/);
     assert.match(nesNativeAdapter, /vb_nes_native_module_init/);
+    assert.match(nesNativeAdapter, /runtime\/nes_core_bridge\.h/);
+    assert.match(nesNativeAdapter, /module_host_api_v1\s+host_v1/);
+    assert.match(nesNativeAdapter, /nes_core_status_t\s+core_status/);
+    assert.match(nesNativeAdapter, /void\s+\*core_runtime/);
+    assert.match(nesNativeAdapter, /vb_nes_host_v1_shim_init\(&s_nes_module\.host_v1,\s*&s_nes_module\.host_api\)/);
+    assert.match(nesNativeAdapter, /nes_core_create\(&s_nes_module\.host_v1\)/);
+    assert.match(nesNativeAdapter, /nes_core_status\(nes->core_runtime,\s*&nes->core_status\)/);
+    assert.match(nesNativeAdapter, /nes_core_destroy\(s_nes_module\.core_runtime\)/);
     assert.match(nesNativeAdapter, /host_api->version/);
     assert.match(nesNativeAdapter, /host_api->display\.width/);
     assert.match(nesNativeAdapter, /host_api->heap\.malloc/);
@@ -449,6 +471,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesHostShim, /host->file\.read/);
     assert.match(nesHostShim, /host->display\.pushImageDMA/);
     assert.match(nesHostShim, /MODULE_ERR_UNSUPPORTED/);
+    assert.match(upstreamNesCoreBridgeHeader, /\.\.\/include\/module_abi\.h/);
+    assert.match(upstreamNesPortHeader, /\.\.\/include\/module_abi\.h/);
+    assert.match(upstreamNesArduinoHeader, /\.\.\/include\/module_abi\.h/);
+    assert.match(upstreamNesAudioHeader, /\.\.\/include\/module_abi\.h/);
     assert.match(luaModule, /package/);
     assert.match(luaModule, /searchers/);
     assert.match(luaModule, /vb_native_module_load/);

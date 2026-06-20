@@ -5,7 +5,7 @@
 
 #include <Arduino.h>
 
-#include "module_abi.h"
+#include "../include/module_abi.h"
 
 namespace nes::audio
 {

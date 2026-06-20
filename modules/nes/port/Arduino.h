@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "module_abi.h"
+#include "../include/module_abi.h"
 #include "nes_port.h"
 
 #ifndef IRAM_ATTR

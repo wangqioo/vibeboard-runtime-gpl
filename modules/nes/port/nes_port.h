@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "module_abi.h"
+#include "../include/module_abi.h"
 
 #ifdef __cplusplus
 extern "C" {
