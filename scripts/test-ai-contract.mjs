@@ -48,7 +48,12 @@ assert.deepEqual(appInfoCapabilities, plan.app.capabilities);
 for (const requiredBoundary of [
   /JSON is an intermediate generation plan/i,
   /on-disk package is app\.info \+ Lua\/assets directory/i,
-  /Runtime update required/
+  /Runtime update required/,
+  /Allowed Runtime Lua APIs/i,
+  /app\.launch\(id\)/,
+  /touch\.on\(callback\)/,
+  /gamepad\.push_state\(state\)/,
+  /i2s\.write/i
 ]) {
   assert.match(doc, requiredBoundary);
 }

@@ -71,6 +71,26 @@ Prefer Lua/LVGL app generation when the request is for:
 - AI widget;
 - network card using existing runtime APIs.
 
+## Allowed Runtime Lua APIs
+
+Generated apps must stay inside the Runtime Lua API surface below. If a request needs any other runtime module call, return `Runtime update required` instead of inventing a function.
+
+Allowed module calls:
+
+- `app.list()`, `app.rescan()`, `app.current()`, `app.exiting()`, `app.exit()`, `app.launch(id)`, `app.on("exit", callback)`
+- `file.exists(path)`, `file.open(path, mode)`, `file.read(path)`, `file.getcontents(path)`, `file.write(path, text)`, `file.list(path)`, `file.listdir(path)`
+- `gamepad.state()`, `gamepad.start(opts)`, `gamepad.stop()`, `gamepad.on(event, callback)`, `gamepad.off([event])`, `gamepad.rescan()`, `gamepad.push_state(state)`
+- `http.get(url[, opts], callback)`, `http.post(url[, opts], body, callback)`, `http.cubicserver.get(path, headers, callback)`
+- `i2s.start(id, opts)`, `i2s.read(id, max_bytes[, timeout_ms])`, `i2s.stop(id)`, `i2s.status(id)`
+- `json.decode(text)`, `json.encode(value)`, `sjson.decode(text)`, `sjson.encode(value)`
+- `key.on(callback)`, `key.off()`, `key.push(code, event)`
+- `time.get()`, `time.getlocal()`, `time.settimezone(tz)`, `time.initntp(host)`
+- `tmr.create()`, `tmr.now()`, `tmr.time()`, plus timer object `alarm/start/stop/unregister/state/interval`
+- `touch.on(callback)`, `touch.off()`, `touch.push(event, x, y[, ts_ms])`
+- `wifi.mode(mode)`, `wifi.start()`, `wifi.sta.config(opts)`, `wifi.sta.connect()`, `wifi.sta.getip()`
+
+Examples that must return `Runtime update required`: `app.set_home_exit(...)`, `gamepad.connect(...)`, `i2s.write(...)`, `tmr.delay(...)`, unsupported `lv_*` bindings, native ABI changes, or hardware driver work.
+
 Return or report `Runtime update required` when the request needs:
 
 - driver changes;
