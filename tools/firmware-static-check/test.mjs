@@ -318,12 +318,21 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const luaModule = readRequired(luaNativeModuleSourcePath);
 
     assert.match(loaderHeader, /vb_native_module_load/);
+    assert.match(loaderHeader, /vb_native_module_manifest_t/);
     assert.match(loaderHeader, /vb_native_module_result_t/);
     assert.match(loaderHeader, /VB_NATIVE_MODULE_ERROR_MAX/);
+    assert.match(loaderHeader, /VB_NATIVE_MODULE_MANIFEST_MAGIC\s+"VBNM"/);
     assert.match(loader, /Native module load failed/);
     assert.match(loader, /Native module symbol missing/);
     assert.match(loader, /Native module ABI mismatch/);
     assert.match(loader, /Native module host API unsupported/);
+    assert.match(loader, /parse_manifest_line/);
+    assert.match(loader, /magic\s*=\s*VBNM/);
+    assert.match(loader, /abi\s*=\s*vibeboard-native-module-abi@1/);
+    assert.match(loader, /symbol\s*=\s*vb_native_module_init/);
+    assert.match(loader, /min_host\s*=\s*vibeboard-native-host@1/);
+    assert.match(loader, /VB_NATIVE_MODULE_REQUIRED_SYMBOL\s+"vb_native_module_init"/);
+    assert.match(loader, /VB_NATIVE_MODULE_HOST_API_VERSION\s+"vibeboard-native-host@1"/);
     assert.match(luaModule, /package/);
     assert.match(luaModule, /searchers/);
     assert.match(luaModule, /vb_native_module_load/);

@@ -160,11 +160,11 @@ Firmware work should be split into separate vertical slices:
 1. Add `module` and `native` capabilities and route `nesgame` through `local nes = require("nes")`. **Done as the first Runtime slice.**
 2. Add static ABI headers under firmware source and expose `native_abi_version = vibeboard-native-module-abi@1` through `/status`. **Done as the first Runtime slice.**
 3. Add a native module searcher and loader failure surface that reports precise errors before the NES core is ported. **Done as the first Runtime slice.**
-4. Add an ESP-ELFLoader-backed loader that can open `/sd/modules/nes.so` and resolve the four required symbols.
-5. Add manifest checks:
+4. Add manifest checks. **Done as a manifest-first Runtime slice for the app-local `native/nes.vbn` payload descriptor:**
    - magic equals `MODULE_MANIFEST_MAGIC`;
    - `abi_version == MODULE_ABI_VERSION`;
    - `min_host_version` is supported.
+5. Add an ESP-ELFLoader-backed loader that can open `/sd/modules/nes.so` or an app-local native payload and resolve the required symbol.
 6. Add host API stubs group-by-group, starting with serial/time/heap/file, then display/task/Lua table.
 7. Only after the loader works, build/import `nes.so`.
 
@@ -188,7 +188,16 @@ install_service /status reports native_abi_version = vibeboard-native-module-abi
 apps/nesgame declares capabilities = lvgl,file,timer,input,module,native
 ```
 
-The current loader intentionally returns `Native module symbol missing: vb_native_module_init` once an app-local `native/nes.vbn` placeholder exists. Without the native payload it returns `Native module load failed: <path> errno=<n>`. This keeps failure behavior explicit while the real NES loader and host API are still pending.
+Current manifest descriptor format:
+
+```text
+magic = VBNM
+abi = vibeboard-native-module-abi@1
+symbol = vb_native_module_init
+min_host = vibeboard-native-host@1
+```
+
+The current loader validates this descriptor and reports `Native module load failed`, `Native module ABI mismatch`, `Native module symbol missing`, or `Native module host API unsupported` before any native code is executed. If the descriptor is valid, it still returns `Native module load failed: native executor pending`. This keeps failure behavior explicit while the real ELF/static native executor and NES host API are still pending.
 
 ## First Board Milestone
 
