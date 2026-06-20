@@ -339,6 +339,28 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(luaModule, /return\s+luaL_error\(L,\s*"%s",\s*result\.error\)/);
   });
 
+  it("returns a minimal NES Lua module after native manifest validation", () => {
+    const luaModule = readRequired(luaNativeModuleSourcePath);
+
+    assert.match(luaModule, /push_nes_stub_module/);
+    assert.match(luaModule, /"PLAYER_1"/);
+    assert.match(luaModule, /"BTN_UP"/);
+    assert.match(luaModule, /"BTN_DOWN"/);
+    assert.match(luaModule, /"BTN_LEFT"/);
+    assert.match(luaModule, /"BTN_RIGHT"/);
+    assert.match(luaModule, /"BTN_A"/);
+    assert.match(luaModule, /"BTN_B"/);
+    assert.match(luaModule, /"BTN_SELECT"/);
+    assert.match(luaModule, /"BTN_START"/);
+    assert.match(luaModule, /"state"/);
+    assert.match(luaModule, /"start"/);
+    assert.match(luaModule, /"stop"/);
+    assert.match(luaModule, /"input"/);
+    assert.match(luaModule, /"set_mask"/);
+    assert.match(luaModule, /"clear"/);
+    assert.match(luaModule, /"native executor pending"/);
+  });
+
   it("routes the migrated NES app through require('nes') instead of assuming a global module", () => {
     const app = readRequired(nesgameSourcePath);
     const info = readRequired(nesgameInfoPath);

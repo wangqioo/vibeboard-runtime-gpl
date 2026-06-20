@@ -197,7 +197,20 @@ symbol = vb_native_module_init
 min_host = vibeboard-native-host@1
 ```
 
-The current loader validates this descriptor and reports `Native module load failed`, `Native module ABI mismatch`, `Native module symbol missing`, or `Native module host API unsupported` before any native code is executed. If the descriptor is valid, it still returns `Native module load failed: native executor pending`. This keeps failure behavior explicit while the real ELF/static native executor and NES host API are still pending.
+The current loader validates this descriptor and reports `Native module load failed`, `Native module ABI mismatch`, `Native module symbol missing`, or `Native module host API unsupported` before any native code is exposed to Lua. If the descriptor is valid, `require("nes")` returns a minimal NES Lua stub table:
+
+```text
+PLAYER_1
+BTN_UP / BTN_DOWN / BTN_LEFT / BTN_RIGHT
+BTN_A / BTN_B / BTN_SELECT / BTN_START
+state()
+start(path, options)
+stop()
+input.set_mask(player, mask)
+input.clear(player)
+```
+
+The stub keeps `nesgame` bound to the final API shape, but `start(path, options)` still returns `false, "native executor pending"`. This keeps failure behavior explicit while the real ELF/static native executor and NES host API are still pending.
 
 ## First Board Milestone
 

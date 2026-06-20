@@ -276,7 +276,7 @@ Suggested commit split from the parallel worktree audit:
 - gamepad can remain Lua-side for the first milestone by mapping controller state to `nes.input.set_mask`;
 - first loader slice is implemented: `module_abi.h`, `native_module_loader.*`, `lua_native_module.*`, `/status.native_abi_version = vibeboard-native-module-abi@1`, and `apps/nesgame` now uses `local nes = require("nes")`;
 - manifest-first loader validation is implemented for app-local `native/nes.vbn` descriptors with `magic = VBNM`, `abi = vibeboard-native-module-abi@1`, `symbol = vb_native_module_init`, and `min_host = vibeboard-native-host@1`;
-- current loader intentionally returns precise missing payload/symbol/ABI/host API/native-executor-pending errors and does not include the NES emulator core.
+- current loader intentionally returns precise missing payload/symbol/ABI/host API errors and, after a valid descriptor, exposes a minimal NES Lua stub table whose `start(...)` returns `false, "native executor pending"`; it does not include the NES emulator core.
 
 The next NES implementation slice should be ELF/static native payload execution and the first host API group, not full emulation:
 
