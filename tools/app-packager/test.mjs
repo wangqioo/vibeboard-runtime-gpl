@@ -8,6 +8,7 @@ import {
   symlinkSync,
   writeFileSync
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,6 +46,15 @@ function writeApp(root, appPath, appInfo, mainLua = "print('ok')\n") {
   writeFileSync(join(fullPath, "app.info"), appInfo);
   writeFileSync(join(fullPath, "main.lua"), mainLua);
   return fullPath;
+}
+
+function digestManifestFiles(files) {
+  const canonicalFiles = files.map((file) => ({
+    path: file.path,
+    size: file.size,
+    sha256: file.sha256
+  }));
+  return createHash("sha256").update(`${JSON.stringify(canonicalFiles)}\n`).digest("hex");
 }
 
 describe("slugifyAppId", () => {
@@ -97,6 +107,10 @@ describe("packageApp", () => {
       assert.equal(manifest.install.sdPath, "/sd/apps/weather");
       assert.ok(manifest.files.some((file) => file.path === "app.info" && file.sha256));
       assert.ok(manifest.files.some((file) => file.path === "install-notes.txt"));
+      assert.deepEqual(manifest.integrity, {
+        algorithm: "sha256",
+        filesDigest: digestManifestFiles(manifest.files)
+      });
 
       const notes = readFileSync(join(result.outputPath, "install-notes.txt"), "utf8");
       assert.match(notes, /Copy all files/);

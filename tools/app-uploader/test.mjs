@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it, mock } from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseDeleteCliArgs } from "./delete.mjs";
@@ -21,6 +22,14 @@ function makePackage() {
   writeFileSync(join(appDir, "main.lua"), "print('demo')\n");
   writeFileSync(join(appDir, "assets/icon.txt"), "icon\n");
   return { root, appDir };
+}
+
+function sha256(text) {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+function byteLength(text) {
+  return Buffer.byteLength(text);
 }
 
 describe("listUploadFiles", () => {
@@ -213,6 +222,41 @@ describe("uploadApp", () => {
         }),
         /Uploaded app demo was not found after rescan/,
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a packaged app when local files no longer match manifest hashes", async () => {
+    const { root, appDir } = makePackage();
+    const calls = [];
+    try {
+      const appInfo = "name = demo\nentry = main.lua\ndescription = Demo\n";
+      const mainLua = "print('demo')\n";
+      const icon = "icon\n";
+      writeFileSync(join(appDir, "manifest.json"), JSON.stringify({
+        schema: "vibeboard-runtime-app-package@2",
+        files: [
+          { path: "app.info", size: byteLength(appInfo), sha256: sha256(appInfo) },
+          { path: "main.lua", size: byteLength(mainLua), sha256: sha256(mainLua) },
+          { path: "assets/icon.txt", size: byteLength(icon), sha256: sha256(icon) }
+        ]
+      }));
+      writeFileSync(join(appDir, "main.lua"), "print('nope')\n");
+
+      await assert.rejects(
+        uploadApp({
+          appDir,
+          appId: "demo",
+          boardUrl: "http://192.168.1.32:8080",
+          requestImpl: async (url) => {
+            calls.push(url);
+            return { ok: true, status: 200, text: "ok\n" };
+          },
+        }),
+        /Package integrity check failed: main\.lua sha256 mismatch/,
+      );
+      assert.equal(calls.length, 0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

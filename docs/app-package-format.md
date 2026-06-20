@@ -57,6 +57,10 @@ current schema is:
   },
   "provides": {
     "services": []
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "filesDigest": "..."
   }
 }
 ```
@@ -76,6 +80,13 @@ provides.services = devtools,httpd
 The current firmware still launches apps from `app.info`; device-side
 manifest compatibility checks are a later productization step. The v2 manifest
 is the toolchain contract for that runtime work.
+
+`files[]` lists each packaged file with `path`, `size`, and `sha256`. The
+`integrity.filesDigest` value is a sha256 over the canonical `files[]` list.
+`tools/app-uploader` verifies these hashes before sending a packaged app to the
+board, so a locally modified `dist/apps/<id>` package fails before staged upload
+or commit. Direct uploads of ad-hoc directories without `manifest.json` remain
+supported for development, but do not get this preflight.
 
 ## File Paths
 

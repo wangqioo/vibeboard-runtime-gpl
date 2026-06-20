@@ -201,8 +201,8 @@ AI 生成一个受限 Lua/LVGL App
 第五优先级：设备端 App 管理。
 
 - Lua 侧 `app.list()`、`app.current()`、`app.rescan()`、`app.exiting()`、`app.exit()`、`app.launch(id)` 已 build-verified；
-- HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime/API/App schema 版本查询和不兼容 App 拒绝启动已经完成第一版；
-- 后续补真实 `app.launch(id)` 上板 handoff smoke、App 包 hash 校验、更严格的工具侧版本拒绝和升级提示。
+- HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime/API/App schema 版本查询、不兼容 App 拒绝启动、以及工具侧 App 包 hash preflight 已完成第一版；
+- 后续补真实 `app.launch(id)` 上板 handoff smoke、板端 manifest/hash 校验、更严格的工具侧版本拒绝和升级提示。
 
 第六优先级：上游兼容和高级能力。
 

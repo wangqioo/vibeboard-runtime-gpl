@@ -128,6 +128,15 @@ function listFiles(rootDir) {
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+function digestManifestFiles(files) {
+  const canonicalFiles = files.map((file) => ({
+    path: file.path,
+    size: file.size,
+    sha256: file.sha256
+  }));
+  return createHash("sha256").update(`${JSON.stringify(canonicalFiles)}\n`).digest("hex");
+}
+
 function writeInstallNotes(outputDir, metadata, appId) {
   const notes = [
     "VibeBoard Runtime App Package",
@@ -212,6 +221,7 @@ export function packageApp({ repoRoot = process.cwd(), appDir }) {
   writeInstallNotes(tmpPath, validation.metadata, appId);
 
   const compatibility = buildManifestCompatibility(validation.metadata, appId, validation.capabilities);
+  const files = listFiles(tmpPath);
   const manifest = {
     schema: PACKAGE_SCHEMA,
     appId,
@@ -222,7 +232,11 @@ export function packageApp({ repoRoot = process.cwd(), appDir }) {
     description: validation.metadata.description,
     ...compatibility,
     capabilities: validation.capabilities,
-    files: listFiles(tmpPath),
+    files,
+    integrity: {
+      algorithm: "sha256",
+      filesDigest: digestManifestFiles(files)
+    },
     install: {
       sdPath: `/sd/apps/${appId}`,
       copy: `Copy the contents of this directory to /sd/apps/${appId} on the device storage.`

@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { basename, join, relative, sep } from "node:path";
 import { spawn } from "node:child_process";
@@ -37,6 +38,62 @@ export function listUploadFiles(appDir) {
 
   walk(appDir);
   return files.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+}
+
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+function digestManifestFiles(files) {
+  const canonicalFiles = files.map((file) => ({
+    path: file.path,
+    size: file.size,
+    sha256: file.sha256
+  }));
+  return createHash("sha256").update(`${JSON.stringify(canonicalFiles)}\n`).digest("hex");
+}
+
+function readPackageManifest(appDir) {
+  const manifestPath = join(appDir, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    return null;
+  }
+  return JSON.parse(readFileSync(manifestPath, "utf8"));
+}
+
+export function verifyPackageIntegrity(appDir) {
+  const manifest = readPackageManifest(appDir);
+  if (manifest == null || !Array.isArray(manifest.files)) {
+    return { checked: false, manifest };
+  }
+
+  for (const file of manifest.files) {
+    assertSafeRelativePath(file.path);
+    const fullPath = join(appDir, file.path);
+    if (!existsSync(fullPath)) {
+      throw new Error(`Package integrity check failed: ${file.path} missing`);
+    }
+    const stat = statSync(fullPath);
+    if (!stat.isFile()) {
+      throw new Error(`Package integrity check failed: ${file.path} is not a file`);
+    }
+    if (stat.size !== file.size) {
+      throw new Error(`Package integrity check failed: ${file.path} size mismatch`);
+    }
+    const actualHash = sha256File(fullPath);
+    if (actualHash !== file.sha256) {
+      throw new Error(`Package integrity check failed: ${file.path} sha256 mismatch`);
+    }
+  }
+
+  if (manifest.integrity?.filesDigest) {
+    const actualDigest = digestManifestFiles(manifest.files);
+    if (actualDigest !== manifest.integrity.filesDigest) {
+      throw new Error("Package integrity check failed: manifest files digest mismatch");
+    }
+  }
+
+  return { checked: true, manifest };
 }
 
 export function postFile(url, body) {
@@ -218,6 +275,7 @@ export async function uploadApp({
   assertSafeRelativePath(appId);
 
   const base = boardUrl.replace(/\/+$/, "");
+  const integrity = verifyPackageIntegrity(appDir);
   const files = listUploadFiles(appDir);
   try {
     for (const file of files) {
@@ -293,7 +351,7 @@ export async function uploadApp({
     }
   }
 
-  return { appId, files, confirmed: confirm, apps, staged, stageId: staged ? stageId : null };
+  return { appId, files, confirmed: confirm, apps, staged, stageId: staged ? stageId : null, integrityChecked: integrity.checked };
 }
 
 export async function launchApp({
