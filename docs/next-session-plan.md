@@ -71,8 +71,9 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
 - Runtime-owned config writes are implemented and build-verified:
   - `POST /runtime/config?name=cubicserver` still writes `/sdcard/runtime/cubicserver.json`;
   - `POST /runtime/config?name=wifi` now writes `/sdcard/runtime/wifi.json`;
-  - `npm run runtime:config -- <board-url> <wifi|cubicserver> <json-file|-|json>` provides the local tool wrapper;
-  - board verification of writing WiFi credentials, rebooting, and joining WiFi from `/sdcard/runtime/wifi.json` without the legacy smoke-network fallback remains pending.
+  - `POST /runtime/config?name=i2s` writes `/sdcard/runtime/i2s.json`;
+  - `npm run runtime:config -- <board-url> <wifi|cubicserver|i2s> <json-file|-|json>` provides the local tool wrapper;
+  - board verification of writing WiFi credentials, rebooting, and joining WiFi from `/sdcard/runtime/wifi.json` without the legacy smoke-network fallback remains pending; writing real I2S pins and confirming non-zero PCM through `apps/smoke_i2s` also remains pending.
 - Weather migration API gap first slices are build-verified:
   - Runtime now exposes `json.decode` and `json.encode` as aliases of existing `sjson.decode` and `sjson.encode`;
   - Runtime now exposes `http.cubicserver.get(path, headers, callback)` for migrated `weather` compatibility;
@@ -272,8 +273,10 @@ Implemented 2026-06-20:
 Implemented 2026-06-21:
 
 - `POST /runtime/config?name=wifi` writes `/sdcard/runtime/wifi.json` through the same bounded install-service path used by Cubicserver config;
+- `POST /runtime/config?name=i2s` writes `/sdcard/runtime/i2s.json` through the same bounded install-service path for Voice AI microphone pin bring-up;
 - `npm run runtime:config -- http://192.168.1.32:8080 wifi runtime/wifi.local.json` can push runtime-owned WiFi config without editing the SD card by hand;
-- `npm run runtime:config -- http://192.168.1.32:8080 cubicserver runtime/cubicserver.local.json` uses the same tool for weather/Cubicserver base URL changes.
+- `npm run runtime:config -- http://192.168.1.32:8080 cubicserver runtime/cubicserver.local.json` uses the same tool for weather/Cubicserver base URL changes;
+- `npm run runtime:config -- http://192.168.1.32:8080 i2s runtime/i2s.local.json` uses the same tool for board-specific microphone pin changes.
 
 Suggested commit split from the parallel worktree audit:
 

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createNcRequest, setRuntimeConfig } from "./index.mjs";
 
 function usage() {
-  console.error("Usage: node tools/app-uploader/runtime-config.mjs [--transport native|nc] <board-url> <wifi|cubicserver> <json-file|-|json>");
+  console.error("Usage: node tools/app-uploader/runtime-config.mjs [--transport native|nc] <board-url> <wifi|cubicserver|i2s> <json-file|-|json>");
   console.error("Example: node tools/app-uploader/runtime-config.mjs http://192.168.1.32:8080 wifi runtime/wifi.local.json");
 }
 

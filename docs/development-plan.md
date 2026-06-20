@@ -156,7 +156,7 @@ AI 生成一个受限 Lua/LVGL App
 但当前还不是面向普通用户的完整产品：
 
 - 已经有可用的 Launcher、生命周期、浏览器管理 UI 和 staged install/delete，但还需要长期稳定性回归和更完整的错误恢复体验；
-- Runtime-owned WiFi/Cubicserver 配置已经可以通过 `POST /runtime/config?name=wifi|cubicserver` 和 `npm run runtime:config` 写入 SD；WiFi 配置写入后的重启联网仍需上板 smoke；
+- Runtime-owned WiFi/Cubicserver/I2S 配置已经可以通过 `POST /runtime/config?name=wifi|cubicserver|i2s` 和 `npm run runtime:config` 写入 SD；WiFi 配置写入后的重启联网、I2S 真实麦克风引脚写入后的非零 PCM 录音仍需上板 smoke；
 - Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()` / `app.launch(id)` / `app.set_home_exit(enabled)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App；`app.set_home_exit(false)` 允许 `voice_ai`、`nesgame` 这类 App 接管 HOME/EXIT 输入而不触发 runner 默认退出。该能力已 build-verified，真实 app-to-app 上板切换仍待 smoke；
 - 还不能直接运行完整上游 HoloCubic 全量 App，只能按 App 驱动逐个补兼容层；
 - LVGL 绑定覆盖还不够广，尤其 list/arc/switch/dropdown/textarea/roller/slider、flex/grid、字体和 canvas 高级效果；
@@ -245,7 +245,7 @@ AI 生成一个受限 Lua/LVGL App
 
    验收：
 
-   - `/sdcard/runtime/i2s.json` 写入真实麦克风引脚；
+   - `/sdcard/runtime/i2s.json` 通过 `npm run runtime:config -- <board-url> i2s <json-file|-|json>` 写入真实麦克风引脚；
    - `apps/smoke_i2s` 能录到非零 PCM；
    - `desktop-bridge/server.mjs` 能被板端访问；
    - `apps/voice_ai` 能录音、上传、拿到 bridge 回复并更新 UI；

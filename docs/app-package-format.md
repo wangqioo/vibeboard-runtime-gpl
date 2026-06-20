@@ -238,3 +238,33 @@ Example:
 ```
 
 The runtime treats this file as optional. If it is absent, malformed, too large, or contains a non-HTTP URL, `http.cubicserver.get` falls back to `http://cubicserver.local`. Absolute URLs passed by the Lua app are used directly.
+
+## Runtime I2S Config
+
+Voice AI and I2S smoke apps use a runtime-owned microphone pin config so firmware does not hard-code board-specific microphone wiring.
+
+Runtime-owned local config path:
+
+```text
+/sdcard/runtime/i2s.json
+```
+
+Example:
+
+```json
+{
+  "bclk_pin": 1,
+  "ws_pin": 2,
+  "din_pin": 3,
+  "mclk_pin": -1
+}
+```
+
+The config can be updated over the install service without manually editing the SD card:
+
+```text
+POST /runtime/config?name=i2s
+npm run runtime:config -- http://192.168.1.32:8080 i2s runtime/i2s.local.json
+```
+
+The write path is build-verified. Real board microphone pins still need to be written, followed by `apps/smoke_i2s` board smoke confirming non-zero PCM capture.

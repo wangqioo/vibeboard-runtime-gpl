@@ -458,6 +458,18 @@ describe("parseRuntimeConfigCliArgs", () => {
       },
     );
   });
+
+  it("parses I2S runtime config updates", () => {
+    assert.deepEqual(
+      parseRuntimeConfigCliArgs(["http://192.168.1.32:8080", "i2s", '{"bclk_pin":1,"ws_pin":2,"din_pin":3}']),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        name: "i2s",
+        source: '{"bclk_pin":1,"ws_pin":2,"din_pin":3}',
+        transport: "native",
+      },
+    );
+  });
 });
 
 describe("createNcRequest", () => {
@@ -565,6 +577,25 @@ describe("setRuntimeConfig", () => {
     assert.equal(calls[0].url, "http://192.168.1.32:8080/runtime/config?name=wifi");
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].body, '{"ssid":"test-ssid","password":"test-pass"}');
+  });
+
+  it("posts runtime I2S config to the board-owned config path", async () => {
+    const calls = [];
+    const body = JSON.stringify({ bclk_pin: 1, ws_pin: 2, din_pin: 3, mclk_pin: -1 });
+    const result = await setRuntimeConfig({
+      boardUrl: "http://192.168.1.32:8080/",
+      name: "i2s",
+      body,
+      requestImpl: async (url, requestBody, options = {}) => {
+        calls.push({ url, method: options.method, body: requestBody.toString("utf8") });
+        return { ok: true, status: 200, text: '{"ok":true,"config":"i2s"}' };
+      },
+    });
+
+    assert.deepEqual(result, { ok: true, config: "i2s" });
+    assert.equal(calls[0].url, "http://192.168.1.32:8080/runtime/config?name=i2s");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].body, body);
   });
 
   it("rejects unknown runtime config names before sending", async () => {

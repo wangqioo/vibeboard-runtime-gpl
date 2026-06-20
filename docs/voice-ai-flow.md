@@ -92,7 +92,11 @@ Set `apps/voice_ai/config.json` on SD to point at the computer running the bridg
 }
 ```
 
-The runtime-owned microphone pins still come from `/sdcard/runtime/i2s.json`.
+The runtime-owned microphone pins still come from `/sdcard/runtime/i2s.json`, which can be written with:
+
+```text
+npm run runtime:config -- http://192.168.1.32:8080 i2s runtime/i2s.local.json
+```
 
 ## Remaining Work
 

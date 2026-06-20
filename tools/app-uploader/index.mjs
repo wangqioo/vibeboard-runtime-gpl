@@ -460,7 +460,7 @@ export async function setRuntimeConfig({
   if (!boardUrl) {
     throw new Error("boardUrl is required");
   }
-  if (!["cubicserver", "wifi"].includes(name)) {
+  if (!["cubicserver", "wifi", "i2s"].includes(name)) {
     throw new Error(`Unsupported runtime config: ${name}`);
   }
 

@@ -31,6 +31,7 @@ static const char *TAG = "install_service";
 #define VB_RUNTIME_NATIVE_ABI_VERSION VB_NATIVE_MODULE_ABI_VERSION
 #define VB_RUNTIME_CUBICSERVER_CONFIG_PATH "/sdcard/runtime/cubicserver.json"
 #define VB_RUNTIME_WIFI_CONFIG_PATH "/sdcard/runtime/wifi.json"
+#define VB_RUNTIME_I2S_CONFIG_PATH "/sdcard/runtime/i2s.json"
 #define VB_RUNTIME_CONFIG_MAX_BYTES 512
 #define VB_MANIFEST_MAX_BYTES 16384
 #define VB_SHA256_BYTES 32
@@ -614,6 +615,8 @@ static esp_err_t runtime_config_handler(httpd_req_t *req)
         path = VB_RUNTIME_CUBICSERVER_CONFIG_PATH;
     } else if (strcmp(name, "wifi") == 0) {
         path = VB_RUNTIME_WIFI_CONFIG_PATH;
+    } else if (strcmp(name, "i2s") == 0) {
+        path = VB_RUNTIME_I2S_CONFIG_PATH;
     } else {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsupported config");
         return ESP_FAIL;
