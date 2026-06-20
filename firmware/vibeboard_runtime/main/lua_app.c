@@ -91,6 +91,20 @@ static int lua_app_exiting(lua_State *L)
     return 1;
 }
 
+static int lua_app_exit(lua_State *L)
+{
+    vb_lua_app_state_t *state = check_app_state(L);
+    if (state->stop_requested == NULL) {
+        lua_pushboolean(L, false);
+        lua_pushliteral(L, "stop flag missing");
+        return 2;
+    }
+
+    *state->stop_requested = true;
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 static int lua_app_on(lua_State *L)
 {
     vb_lua_app_state_t *state = check_app_state(L);
@@ -144,6 +158,7 @@ void vb_lua_app_register(lua_State *L, vb_lua_app_state_t *state)
         {"rescan", lua_app_rescan},
         {"current", lua_app_current},
         {"exiting", lua_app_exiting},
+        {"exit", lua_app_exit},
         {"on", lua_app_on},
         {NULL, NULL},
     };

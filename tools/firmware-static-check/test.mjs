@@ -661,7 +661,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /"rescan",\s*lua_app_rescan/);
     assert.match(source, /"current"/);
     assert.match(source, /"exiting"/);
+    assert.match(source, /"exit",\s*lua_app_exit/);
     assert.match(source, /"on"/);
+    assert.match(source, /\*state->stop_requested\s*=\s*true/);
     assert.match(source, /vb_app_registry_scan/);
     assert.match(source, /vb_app_runner_current_id/);
     assert.match(source, /vb_app_runner_current_state_name/);
@@ -1562,6 +1564,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /app\.rescan\(\)/);
     assert.match(source, /app\.current\(\)/);
     assert.match(source, /app\.exiting\(\)/);
+    assert.match(source, /type\(app\.exit\)\s*==\s*["']function["']/);
     assert.match(source, /app\.on\(["']exit["']/);
     assert.match(source, /tmr\.create\(\):alarm/);
   });
