@@ -7,6 +7,7 @@
 #include "lauxlib.h"
 #include "lua.h"
 #include "native_module_loader.h"
+#include "nes_native_adapter.h"
 
 #define VB_NATIVE_MODULE_PATH_MAX 192
 #define VB_NES_BTN_UP (1 << 0)
@@ -30,48 +31,34 @@ static void build_native_module_path(const vb_app_registry_result_t *app,
              module_name ? module_name : "");
 }
 
-static int nes_stub_state(lua_State *L)
+static void *nes_module_from_upvalue(lua_State *L)
 {
-    lua_newtable(L);
-    lua_pushboolean(L, false);
-    lua_setfield(L, -2, "running");
-    lua_pushinteger(L, 0);
-    lua_setfield(L, -2, "frames");
-    lua_pushstring(L, "native executor pending");
-    lua_setfield(L, -2, "status");
-    return 1;
+    return lua_touserdata(L, lua_upvalueindex(1));
 }
 
 static int nes_stub_start(lua_State *L)
 {
-    luaL_checkstring(L, 1);
-    if (!lua_isnoneornil(L, 2)) {
-        luaL_checktype(L, 2, LUA_TTABLE);
-    }
-    lua_pushboolean(L, false);
-    lua_pushstring(L, "native executor pending");
-    return 2;
+    return vb_nes_native_module_start(L, nes_module_from_upvalue(L));
+}
+
+static int nes_stub_state(lua_State *L)
+{
+    return vb_nes_native_module_state(L, nes_module_from_upvalue(L));
 }
 
 static int nes_stub_stop(lua_State *L)
 {
-    (void)L;
-    return 0;
+    return vb_nes_native_module_stop(L, nes_module_from_upvalue(L));
 }
 
 static int nes_stub_input_set_mask(lua_State *L)
 {
-    luaL_checkinteger(L, 1);
-    luaL_checkinteger(L, 2);
-    lua_pushboolean(L, true);
-    return 1;
+    return vb_nes_native_module_input_set_mask(L, nes_module_from_upvalue(L));
 }
 
 static int nes_stub_input_clear(lua_State *L)
 {
-    luaL_checkinteger(L, 1);
-    lua_pushboolean(L, true);
-    return 1;
+    return vb_nes_native_module_input_clear(L, nes_module_from_upvalue(L));
 }
 
 static void set_integer_field(lua_State *L, const char *name, lua_Integer value)
@@ -80,7 +67,14 @@ static void set_integer_field(lua_State *L, const char *name, lua_Integer value)
     lua_setfield(L, -2, name);
 }
 
-static void push_nes_stub_module(lua_State *L)
+static void set_module_function(lua_State *L, const char *name, void *module, lua_CFunction fn)
+{
+    lua_pushlightuserdata(L, module);
+    lua_pushcclosure(L, fn, 1);
+    lua_setfield(L, -2, name);
+}
+
+static void push_nes_stub_module(lua_State *L, void *module)
 {
     lua_newtable(L);
 
@@ -94,18 +88,13 @@ static void push_nes_stub_module(lua_State *L)
     set_integer_field(L, "BTN_SELECT", VB_NES_BTN_SELECT);
     set_integer_field(L, "BTN_START", VB_NES_BTN_START);
 
-    lua_pushcfunction(L, nes_stub_state);
-    lua_setfield(L, -2, "state");
-    lua_pushcfunction(L, nes_stub_start);
-    lua_setfield(L, -2, "start");
-    lua_pushcfunction(L, nes_stub_stop);
-    lua_setfield(L, -2, "stop");
+    set_module_function(L, "state", module, nes_stub_state);
+    set_module_function(L, "start", module, nes_stub_start);
+    set_module_function(L, "stop", module, nes_stub_stop);
 
     lua_newtable(L);
-    lua_pushcfunction(L, nes_stub_input_set_mask);
-    lua_setfield(L, -2, "set_mask");
-    lua_pushcfunction(L, nes_stub_input_clear);
-    lua_setfield(L, -2, "clear");
+    set_module_function(L, "set_mask", module, nes_stub_input_set_mask);
+    set_module_function(L, "clear", module, nes_stub_input_clear);
     lua_setfield(L, -2, "input");
 }
 
@@ -127,7 +116,7 @@ static int native_module_loader(lua_State *L)
     }
 
     if (strcmp(module_name, "nes") == 0) {
-        push_nes_stub_module(L);
+        push_nes_stub_module(L, result.module);
         return 1;
     }
 
