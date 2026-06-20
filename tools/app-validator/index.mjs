@@ -13,6 +13,10 @@ const CAPABILITY_USAGE_PATTERNS = [
 ];
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
+export const CURRENT_RUNTIME_VERSION = "0.1.0";
+export const CURRENT_LUA_API_VERSION = "0.1.0";
+export const CURRENT_LVGL_API_VERSION = "0.1.0";
+export const CURRENT_NATIVE_ABI = "vibeboard-native-module-abi@1";
 const LVGL_BINDING_SOURCE_PATHS = [
   join(repoRoot, "firmware/vibeboard_runtime/main/lua_lvgl.c"),
   join(repoRoot, "firmware/vibeboard_runtime/main/lua_lvgl_canvas.c"),
@@ -57,6 +61,52 @@ function findUnsupportedLvglSymbols(entryContent) {
     }
   }
   return [...unsupported].sort();
+}
+
+function parseSemver(value) {
+  const match = String(value).trim().match(/^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$/);
+  if (!match) return null;
+  return [
+    Number.parseInt(match[1], 10),
+    Number.parseInt(match[2] || "0", 10),
+    Number.parseInt(match[3] || "0", 10)
+  ];
+}
+
+function compareSemver(left, right) {
+  for (let index = 0; index < 3; index++) {
+    if (left[index] > right[index]) return 1;
+    if (left[index] < right[index]) return -1;
+  }
+  return 0;
+}
+
+function satisfiesMinimumRequirement(requirement, currentVersion) {
+  if (!requirement) return true;
+  const trimmed = String(requirement).trim();
+  const exact = parseSemver(trimmed);
+  if (exact) {
+    const current = parseSemver(currentVersion);
+    return current != null && compareSemver(current, exact) === 0;
+  }
+  const minMatch = trimmed.match(/^>=\s*(.+)$/);
+  if (!minMatch) return false;
+  const minimum = parseSemver(minMatch[1]);
+  const current = parseSemver(currentVersion);
+  return minimum != null && current != null && compareSemver(current, minimum) >= 0;
+}
+
+function parseNativeAbiMajor(value) {
+  const match = String(value).trim().match(/(?:vibeboard-native-module-abi@|>=\s*)?(\d+)(?:\.\d+){0,2}$/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function satisfiesNativeAbiRequirement(requirement, currentAbi) {
+  if (!requirement) return true;
+  const currentMajor = parseNativeAbiMajor(currentAbi);
+  const requiredMajor = parseNativeAbiMajor(requirement);
+  if (currentMajor == null || requiredMajor == null) return false;
+  return currentMajor >= requiredMajor;
 }
 
 export function parseAppInfo(text) {
@@ -139,6 +189,18 @@ export function validateAppDirectory(appDir) {
 
   if (metadata.kind === "service" && !capabilities.includes("service")) {
     warnings.push("Service apps should declare capabilities = service");
+  }
+
+  const versionRequirements = [
+    ["runtime", metadata["requires.runtime"], CURRENT_RUNTIME_VERSION, satisfiesMinimumRequirement],
+    ["luaApi", metadata["requires.luaApi"], CURRENT_LUA_API_VERSION, satisfiesMinimumRequirement],
+    ["lvglApi", metadata["requires.lvglApi"], CURRENT_LVGL_API_VERSION, satisfiesMinimumRequirement],
+    ["nativeAbi", metadata["requires.nativeAbi"], CURRENT_NATIVE_ABI, satisfiesNativeAbiRequirement]
+  ];
+  for (const [label, requirement, current, satisfies] of versionRequirements) {
+    if (requirement && !satisfies(requirement, current)) {
+      errors.push(`Runtime update required: requires ${label} ${requirement}, current ${current}`);
+    }
   }
 
   if (validatedEntryPath) {

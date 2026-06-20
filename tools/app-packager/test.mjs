@@ -182,10 +182,10 @@ describe("packageApp", () => {
           "version = 1.2.3",
           "kind = service",
           "capabilities = file,service",
-          "requires.runtime = >=0.2.0",
-          "requires.luaApi = >=0.3.0",
-          "requires.lvglApi = >=0.4.0",
-          "requires.nativeAbi = >=2.0.2",
+          "requires.runtime = >=0.1.0",
+          "requires.luaApi = >=0.1.0",
+          "requires.lvglApi = >=0.1.0",
+          "requires.nativeAbi = >=1.0.0",
           "provides.services = devtools,httpd",
           ""
         ].join("\n"),
@@ -202,11 +202,11 @@ describe("packageApp", () => {
         kind: "service"
       });
       assert.deepEqual(manifest.requires, {
-        runtime: ">=0.2.0",
-        luaApi: ">=0.3.0",
-        lvglApi: ">=0.4.0",
+        runtime: ">=0.1.0",
+        luaApi: ">=0.1.0",
+        lvglApi: ">=0.1.0",
         packageSchema: "vibeboard-runtime-app-package@2",
-        nativeAbi: ">=2.0.2",
+        nativeAbi: ">=1.0.0",
         capabilities: ["file", "service"]
       });
       assert.deepEqual(manifest.provides, {

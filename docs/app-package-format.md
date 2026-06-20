@@ -31,7 +31,7 @@ Apps must declare special capabilities before using restricted runtime APIs in t
 - `module`: required for `require(` usage.
 - `native`: required for apps that expect Runtime native ABI support such as `require("nes")`.
 
-Package validation rejects missing metadata, missing entry files, entry paths outside the app directory, restricted API usage without the matching capability declaration, and direct LVGL API calls that the current Runtime does not expose. Unsupported direct LVGL calls are reported as `Runtime update required: unsupported LVGL API <name>`.
+Package validation rejects missing metadata, missing entry files, entry paths outside the app directory, restricted API usage without the matching capability declaration, `requires.*` version ranges above the current Runtime, and direct LVGL API calls that the current Runtime does not expose. Unsupported direct LVGL calls are reported as `Runtime update required: unsupported LVGL API <name>`. Unsupported version requirements are reported as `Runtime update required: requires <field> <range>, current <version>`.
 
 ## Package Manifest
 

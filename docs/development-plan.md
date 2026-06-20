@@ -162,7 +162,7 @@ AI 生成一个受限 Lua/LVGL App
 - 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；还没有 BOOT/长按/repeat 的完整 Lua 输入语义，`smoke_key` 还需要补物理触摸手势的独立上板记录；
 - Native NES 已经 build-verified 到核心启动路径，但还缺合法 ROM 上板、真实显示所有权压力测试、音频输出和 native gamepad；
 - Voice AI 只有本地 bridge skeleton 和 I2S/GIF build verification，真实麦克风、真实 STT/LLM、凭证策略和端到端上板还没完成；
-- Runtime/API/App schema 版本兼容已经有基础元数据；工具侧现在会拒绝 entry Lua 里直接调用当前 Runtime 未暴露的 LVGL API，并返回 `Runtime update required: unsupported LVGL API <name>`。后续还需要把同类严格拒绝扩展到更多 Lua 模块和版本范围。
+- Runtime/API/App schema 版本兼容已经有基础元数据；工具侧现在会拒绝 entry Lua 里直接调用当前 Runtime 未暴露的 LVGL API，并返回 `Runtime update required: unsupported LVGL API <name>`；也会拒绝 `requires.runtime`、`requires.luaApi`、`requires.lvglApi` 或 `requires.nativeAbi` 高于当前 Runtime 的 App。后续还需要把同类严格拒绝扩展到更多 Lua 模块和生成器白名单。
 
 ### 下一阶段必须补的核心能力
 
@@ -197,13 +197,13 @@ AI 生成一个受限 Lua/LVGL App
 - 补常用样式：font、opacity、shadow、line、flex/grid 基础；
 - 补图片/字体资源加载的稳定路径；
 - 建立 “AI 可以生成的 UI API 白名单”；
-- 工具侧已能在 App entry 直接调用未暴露 LVGL API 时提前报 `Runtime update required`；后续继续扩展到更多 Lua 模块、版本范围和生成器白名单。
+- 工具侧已能在 App entry 直接调用未暴露 LVGL API 或声明高于当前 Runtime 的版本/ABI 要求时提前报 `Runtime update required`；后续继续扩展到更多 Lua 模块和生成器白名单。
 
 第五优先级：设备端 App 管理。
 
 - Lua 侧 `app.list()`、`app.current()`、`app.rescan()`、`app.exiting()`、`app.exit()`、`app.launch(id)` 已 build-verified；
-- HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime/API/App schema 版本查询、不兼容 App 拒绝启动、工具侧 App 包 hash preflight、以及板端 staged manifest 文件 hash 校验已完成第一版；
-- 后续补真实 `app.launch(id)` 上板 handoff smoke、staged manifest hash 失败场景真机 smoke、更严格的工具侧版本拒绝和升级提示。
+- HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime/API/App schema 版本查询、不兼容 App 拒绝启动、工具侧 App 包 hash preflight、工具侧版本/ABI 要求拒绝、以及板端 staged manifest 文件 hash 校验已完成第一版；
+- 后续补真实 `app.launch(id)` 上板 handoff smoke、staged manifest hash 失败场景真机 smoke、以及更完整的升级提示 UI。
 
 第六优先级：上游兼容和高级能力。
 

@@ -170,6 +170,37 @@ describe("validateAppDirectory", () => {
     }
   });
 
+  it("rejects apps that require newer runtime API versions", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-runtime-version-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = Future Runtime",
+        "entry = main.lua",
+        "description = Requires a newer runtime",
+        "requires.runtime = >=0.2.0",
+        "requires.luaApi = >=0.3.0",
+        "requires.lvglApi = >=0.4.0",
+        "requires.nativeAbi = >=2.0.0",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), "print('future')\n");
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, [
+        "Runtime update required: requires runtime >=0.2.0, current 0.1.0",
+        "Runtime update required: requires luaApi >=0.3.0, current 0.1.0",
+        "Runtime update required: requires lvglApi >=0.4.0, current 0.1.0",
+        "Runtime update required: requires nativeAbi >=2.0.0, current vibeboard-native-module-abi@1"
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps migrated app capabilities aligned with static API usage", () => {
     for (const [appPath, expectedCapabilities] of MIGRATED_APP_EXPECTED_CAPABILITIES) {
       const result = validateAppDirectory(join(repoRoot, appPath));
