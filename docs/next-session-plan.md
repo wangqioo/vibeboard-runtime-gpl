@@ -147,6 +147,7 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
 - Tooling guardrails:
   - `npm run device:check` performs the non-destructive shared-board preflight;
   - validator tests keep migrated App capabilities aligned with static API usage;
+  - validator now treats `key.*`, `touch.*`, and `gamepad.*` as input API usage that requires `capabilities = input`;
   - validator now rejects unsupported direct Runtime Lua module API calls in entry Lua for `app`, `file`, `gamepad`, `http`, `i2s`, `json`, `key`, `sjson`, `time`, `tmr`, `touch`, and `wifi`, while allowing optional compatibility probes;
   - firmware static tests now track migrated-App Runtime API gaps before board runs.
 

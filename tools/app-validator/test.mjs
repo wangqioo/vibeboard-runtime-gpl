@@ -120,6 +120,28 @@ describe("validateAppDirectory", () => {
     }
   });
 
+  it("requires input capability for gamepad usage", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-gamepad-input-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = Gamepad",
+        "entry = main.lua",
+        "description = Gamepad app",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), "local state = gamepad.state()\n");
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, ["Missing capability declaration: input"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("requires lvgl capability for LVGL usage", () => {
     const root = mkdtempSync(join(tmpdir(), "app-validator-lvgl-"));
     try {

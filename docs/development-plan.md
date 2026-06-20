@@ -163,7 +163,7 @@ AI 生成一个受限 Lua/LVGL App
 - 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；Lua `touch.on/off/push` 坐标事件模块和 `apps/smoke_touch` 已进入 build-verified。还没有 BOOT/长按/repeat 的完整 Lua 输入语义，`smoke_touch` 真实坐标显示还需要上板记录；
 - Native NES 已经 build-verified 到核心启动路径，但还缺合法 ROM 上板、真实显示所有权压力测试、音频输出和 native gamepad；
 - Voice AI 只有本地 bridge skeleton 和 I2S/GIF build verification，真实麦克风、真实 STT/LLM、凭证策略和端到端上板还没完成；
-- Runtime/API/App schema 版本兼容已经有基础元数据；工具侧现在会拒绝 entry Lua 里直接调用当前 Runtime 未暴露的 LVGL API，并返回 `Runtime update required: unsupported LVGL API <name>`；也会拒绝 `requires.runtime`、`requires.luaApi`、`requires.lvglApi` 或 `requires.nativeAbi` 高于当前 Runtime 的 App；第一版 Lua 模块 API 白名单也已覆盖 `app`、`file`、`gamepad`、`http`、`i2s`、`json`、`key`、`sjson`、`time`、`tmr`、`touch`、`wifi` 的直接调用，能在打包前拒绝 `Runtime update required: unsupported Lua API <module.fn>`。后续还需要把同类严格拒绝扩展到生成器白名单和更深层 Lua 解析。
+- Runtime/API/App schema 版本兼容已经有基础元数据；工具侧现在会拒绝 entry Lua 里直接调用当前 Runtime 未暴露的 LVGL API，并返回 `Runtime update required: unsupported LVGL API <name>`；也会拒绝 `requires.runtime`、`requires.luaApi`、`requires.lvglApi` 或 `requires.nativeAbi` 高于当前 Runtime 的 App；第一版 Lua 模块 API 白名单也已覆盖 `app`、`file`、`gamepad`、`http`、`i2s`、`json`、`key`、`sjson`、`time`、`tmr`、`touch`、`wifi` 的直接调用，能在打包前拒绝 `Runtime update required: unsupported Lua API <module.fn>`；capability guardrail 现在会把 `key.*`、`touch.*` 和 `gamepad.*` 都归入 `capabilities = input`。后续还需要把同类严格拒绝扩展到生成器白名单和更深层 Lua 解析。
 
 ### 下一阶段必须补的核心能力
 
