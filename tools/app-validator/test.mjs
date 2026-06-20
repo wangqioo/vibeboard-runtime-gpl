@@ -170,6 +170,40 @@ describe("validateAppDirectory", () => {
     }
   });
 
+  it("rejects calls to unsupported Lua module APIs", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-lua-api-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = Missing Lua APIs",
+        "entry = main.lua",
+        "description = Missing Lua module bindings",
+        "capabilities = input,audio,timer",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), [
+        "gamepad.connect('AA:BB:CC:DD:EE:FF')",
+        "app.set_home_exit(false)",
+        "i2s.write(0, 'pcm')",
+        "tmr.delay(100)",
+        ""
+      ].join("\n"));
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, [
+        "Runtime update required: unsupported Lua API app.set_home_exit",
+        "Runtime update required: unsupported Lua API gamepad.connect",
+        "Runtime update required: unsupported Lua API i2s.write",
+        "Runtime update required: unsupported Lua API tmr.delay"
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects apps that require newer runtime API versions", () => {
     const root = mkdtempSync(join(tmpdir(), "app-validator-runtime-version-"));
     try {

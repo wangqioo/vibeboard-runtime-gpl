@@ -40,6 +40,72 @@ function readSupportedLvglSymbols() {
 }
 
 const SUPPORTED_LVGL_SYMBOLS = readSupportedLvglSymbols();
+const SUPPORTED_LUA_API_SYMBOLS = new Set([
+  "app.current",
+  "app.exiting",
+  "app.exit",
+  "app.launch",
+  "app.list",
+  "app.on",
+  "app.rescan",
+  "file.exists",
+  "file.getcontents",
+  "file.listdir",
+  "file.list",
+  "file.open",
+  "file.read",
+  "file.write",
+  "gamepad.off",
+  "gamepad.on",
+  "gamepad.push_state",
+  "gamepad.rescan",
+  "gamepad.start",
+  "gamepad.state",
+  "gamepad.stop",
+  "http.cubicserver.get",
+  "http.get",
+  "http.post",
+  "i2s.read",
+  "i2s.start",
+  "i2s.status",
+  "i2s.stop",
+  "json.decode",
+  "json.encode",
+  "key.off",
+  "key.on",
+  "key.push",
+  "sjson.decode",
+  "sjson.encode",
+  "time.get",
+  "time.getlocal",
+  "time.initntp",
+  "time.settimezone",
+  "tmr.create",
+  "tmr.now",
+  "tmr.time",
+  "touch.off",
+  "touch.on",
+  "touch.push",
+  "wifi.mode",
+  "wifi.start",
+  "wifi.sta.config",
+  "wifi.sta.connect",
+  "wifi.sta.getip"
+]);
+const CHECKED_LUA_API_MODULES = [
+  "app",
+  "file",
+  "gamepad",
+  "http",
+  "i2s",
+  "json",
+  "key",
+  "sjson",
+  "time",
+  "tmr",
+  "touch",
+  "wifi"
+];
 
 function findUnsupportedLvglSymbols(entryContent) {
   const unsupported = new Set();
@@ -59,6 +125,27 @@ function findUnsupportedLvglSymbols(entryContent) {
     if (!SUPPORTED_LVGL_SYMBOLS.has(symbol)) {
       unsupported.add(symbol);
     }
+  }
+  return [...unsupported].sort();
+}
+
+function isOptionalLuaApiProbe(entryContent, symbol) {
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const guardPattern = new RegExp(`\\bif\\s+[^\\n]*\\b${escaped}\\b[^\\n]*\\bthen\\b`);
+  return guardPattern.test(entryContent);
+}
+
+function findUnsupportedLuaApiSymbols(entryContent) {
+  const unsupported = new Set();
+  const modulePattern = CHECKED_LUA_API_MODULES.join("|");
+  const apiPattern = new RegExp(`(?<![A-Za-z0-9_\\.])((?:${modulePattern})(?:\\.[A-Za-z_][A-Za-z0-9_]*){1,2})\\s*\\(`, "g");
+
+  for (const match of entryContent.matchAll(apiPattern)) {
+    const symbol = match[1];
+    if (SUPPORTED_LUA_API_SYMBOLS.has(symbol) || isOptionalLuaApiProbe(entryContent, symbol)) {
+      continue;
+    }
+    unsupported.add(symbol);
   }
   return [...unsupported].sort();
 }
@@ -214,6 +301,9 @@ export function validateAppDirectory(appDir) {
       for (const symbol of findUnsupportedLvglSymbols(entryContent)) {
         errors.push(`Runtime update required: unsupported LVGL API ${symbol}`);
       }
+    }
+    for (const symbol of findUnsupportedLuaApiSymbols(entryContent)) {
+      errors.push(`Runtime update required: unsupported Lua API ${symbol}`);
     }
   }
 

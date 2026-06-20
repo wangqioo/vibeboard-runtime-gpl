@@ -33,6 +33,8 @@ Apps must declare special capabilities before using restricted runtime APIs in t
 
 Package validation rejects missing metadata, missing entry files, entry paths outside the app directory, restricted API usage without the matching capability declaration, `requires.*` version ranges above the current Runtime, and direct LVGL API calls that the current Runtime does not expose. Unsupported direct LVGL calls are reported as `Runtime update required: unsupported LVGL API <name>`. Unsupported version requirements are reported as `Runtime update required: requires <field> <range>, current <version>`.
 
+Package validation also rejects direct calls to unsupported Runtime Lua module APIs in the entry Lua file for the currently whitelisted modules: `app`, `file`, `gamepad`, `http`, `i2s`, `json`, `key`, `sjson`, `time`, `tmr`, `touch`, and `wifi`. These are reported as `Runtime update required: unsupported Lua API <module.fn>`. Optional compatibility probes such as `if app and app.set_home_exit then ... end` are allowed so migrated apps can degrade gracefully on older runtimes.
+
 ## Package Manifest
 
 `tools/app-packager` writes `manifest.json` beside the packaged app files. The
