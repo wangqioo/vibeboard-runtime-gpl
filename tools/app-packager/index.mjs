@@ -32,6 +32,7 @@ export const DEMO_APP_DIRS = [
   "apps/conway_life",
   "apps/fluid_pendant",
   "apps/smoke_key",
+  "apps/smoke_nes",
   "apps/2048"
 ];
 export const PACKAGE_SCHEMA = "vibeboard-runtime-app-package@2";

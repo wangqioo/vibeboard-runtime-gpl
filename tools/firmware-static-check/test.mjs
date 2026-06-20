@@ -66,6 +66,9 @@ const smokeTimerInfoPath = join(repoRoot, "apps/smoke_timer/app.info");
 const smokeTimerSourcePath = join(repoRoot, "apps/smoke_timer/main.lua");
 const smokeKeyInfoPath = join(repoRoot, "apps/smoke_key/app.info");
 const smokeKeySourcePath = join(repoRoot, "apps/smoke_key/main.lua");
+const smokeNesInfoPath = join(repoRoot, "apps/smoke_nes/app.info");
+const smokeNesSourcePath = join(repoRoot, "apps/smoke_nes/main.lua");
+const smokeNesNativeManifestPath = join(repoRoot, "apps/smoke_nes/native/nes.vbn");
 const matrixRainInfoPath = join(repoRoot, "apps/matrix_rain/app.info");
 const matrixRainSourcePath = join(repoRoot, "apps/matrix_rain/main.lua");
 const nixieClockInfoPath = join(repoRoot, "apps/nixie_clock/app.info");
@@ -1239,6 +1242,25 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /lv_anim_start/);
     assert.doesNotMatch(source, /lv_canvas_create/);
     assert.ok(font.length > 0);
+  });
+
+  it("ships a NES native module smoke app", () => {
+    const info = readRequired(smokeNesInfoPath);
+    const source = readRequired(smokeNesSourcePath);
+    const nativeManifest = readRequired(smokeNesNativeManifestPath);
+
+    assert.match(info, /name\s*=\s*smoke_nes/);
+    assert.match(info, /entry\s*=\s*main\.lua/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,module,native/);
+    assert.match(source, /local\s+nes\s*=\s*require\(["']nes["']\)/);
+    assert.match(source, /nes\.state\(\)/);
+    assert.match(source, /nes\.start\(/);
+    assert.match(source, /nes\.input\.set_mask/);
+    assert.match(source, /native executor pending/);
+    assert.match(nativeManifest, /magic\s*=\s*VBNM/);
+    assert.match(nativeManifest, /abi\s*=\s*vibeboard-native-module-abi@1/);
+    assert.match(nativeManifest, /symbol\s*=\s*vb_native_module_init/);
+    assert.match(nativeManifest, /min_host\s*=\s*vibeboard-native-host@1/);
   });
 
   it("keeps input declarations on migrated interactive apps", () => {

@@ -28,6 +28,7 @@ const EXPECTED_DEMO_APP_DIRS = [
   "apps/conway_life",
   "apps/fluid_pendant",
   "apps/smoke_key",
+  "apps/smoke_nes",
   "apps/2048"
 ];
 
@@ -208,6 +209,6 @@ describe("packageDemoApps", () => {
   it("packages the curated demo and migrated apps", () => {
     const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
     const result = packageDemoApps({ repoRoot });
-    assert.deepEqual(result.map((item) => item.appId).sort(), ["2048", "clock", "conway_life", "fluid_pendant", "matrix_rain", "nesgame", "nixie_clock", "smoke_key", "voice_ai", "weather"]);
+    assert.deepEqual(result.map((item) => item.appId).sort(), ["2048", "clock", "conway_life", "fluid_pendant", "matrix_rain", "nesgame", "nixie_clock", "smoke_key", "smoke_nes", "voice_ai", "weather"]);
   });
 });
