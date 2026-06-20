@@ -11,6 +11,7 @@
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
 #include "board_lckfb_szpi_s3.h"
+#include "lua_app.h"
 #include "lua_file.h"
 #include "lua_http.h"
 #include "lua_key.h"
@@ -42,6 +43,7 @@ static vb_app_runner_state_t s_runner_state;
 static portMUX_TYPE s_runner_state_mux = portMUX_INITIALIZER_UNLOCKED;
 
 typedef struct {
+    vb_lua_app_state_t app;
     vb_lua_key_state_t key;
     vb_lua_tmr_state_t tmr;
 } vb_lua_runtime_t;
@@ -205,7 +207,9 @@ static void runner_input_cb(int code, int event, int timestamp_ms, void *user_da
 
 static void cleanup_lua_runtime(lua_State *L, vb_lua_runtime_t *runtime)
 {
+    vb_lua_app_dispatch_exit(L, &runtime->app);
     vb_board_input_stop();
+    vb_lua_app_cleanup(L, &runtime->app);
     vb_lua_key_cleanup(L, &runtime->key);
     vb_lua_tmr_cleanup(L, &runtime->tmr);
 }
@@ -308,12 +312,15 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner
 
     luaL_openlibs(L);
     vb_lua_runtime_t runtime = {0};
+    vb_lua_app_init(&runtime.app);
     vb_lua_key_init(&runtime.key);
     vb_lua_tmr_init(&runtime.tmr);
+    vb_lua_app_set_stop_flag(&runtime.app, &s_runner_state.stop_requested);
     vb_lua_tmr_set_stop_flag(&runtime.tmr, &s_runner_state.stop_requested);
 
     lua_pushcfunction(L, vb_lua_print);
     lua_setglobal(L, "print");
+    vb_lua_app_register(L, &runtime.app);
     vb_lua_tmr_register(L, &runtime.tmr);
     vb_lua_key_register(L, &runtime.key);
     lua_pushlightuserdata(L, &runtime.key);

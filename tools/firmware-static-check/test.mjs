@@ -35,6 +35,8 @@ const luaKeySourcePath = join(firmwareRoot, "main/lua_key.c");
 const luaKeyHeaderPath = join(firmwareRoot, "main/lua_key.h");
 const luaNativeModuleSourcePath = join(firmwareRoot, "main/lua_native_module.c");
 const luaNativeModuleHeaderPath = join(firmwareRoot, "main/lua_native_module.h");
+const luaAppSourcePath = join(firmwareRoot, "main/lua_app.c");
+const luaAppHeaderPath = join(firmwareRoot, "main/lua_app.h");
 const nativeModuleLoaderSourcePath = join(firmwareRoot, "main/native_module_loader.c");
 const nativeModuleLoaderHeaderPath = join(firmwareRoot, "main/native_module_loader.h");
 const moduleHostApiSourcePath = join(firmwareRoot, "main/module_host_api.c");
@@ -82,6 +84,8 @@ const smokeKeySourcePath = join(repoRoot, "apps/smoke_key/main.lua");
 const smokeNesInfoPath = join(repoRoot, "apps/smoke_nes/app.info");
 const smokeNesSourcePath = join(repoRoot, "apps/smoke_nes/main.lua");
 const smokeNesNativeManifestPath = join(repoRoot, "apps/smoke_nes/native/nes.vbn");
+const smokeAppManagerInfoPath = join(repoRoot, "apps/smoke_app_manager/app.info");
+const smokeAppManagerSourcePath = join(repoRoot, "apps/smoke_app_manager/main.lua");
 const matrixRainInfoPath = join(repoRoot, "apps/matrix_rain/app.info");
 const matrixRainSourcePath = join(repoRoot, "apps/matrix_rain/main.lua");
 const nixieClockInfoPath = join(repoRoot, "apps/nixie_clock/app.info");
@@ -634,6 +638,30 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /Lua app ok/);
     assert.doesNotMatch(main, /vb_app_runner_run\(s_apps,\s*&run\)/);
     assert.match(main, /vb_launcher_ui_show\(s_apps,\s*scan_err\)/);
+  });
+
+  it("registers a read-only Lua app manager module", () => {
+    const source = readRequired(luaAppSourcePath);
+    const header = readRequired(luaAppHeaderPath);
+    const runner = readRequired(runnerSourcePath);
+    const cmake = readRequired(cmakePath);
+
+    assert.match(header, /vb_lua_app_register/);
+    assert.match(header, /vb_lua_app_set_stop_flag/);
+    assert.match(source, /luaL_Reg\s+functions/);
+    assert.match(source, /"list"/);
+    assert.match(source, /"current"/);
+    assert.match(source, /"exiting"/);
+    assert.match(source, /"on"/);
+    assert.match(source, /vb_app_registry_scan/);
+    assert.match(source, /vb_app_runner_current_id/);
+    assert.match(source, /vb_app_runner_current_state_name/);
+    assert.match(source, /vb_lua_app_dispatch_exit/);
+    assert.match(runner, /#include\s+"lua_app\.h"/);
+    assert.match(runner, /vb_lua_app_set_stop_flag\(&runtime\.app,\s*&s_runner_state\.stop_requested\)/);
+    assert.match(runner, /vb_lua_app_register\(L,\s*&runtime\.app\)/);
+    assert.match(runner, /vb_lua_app_dispatch_exit\(L,\s*&runtime->app\)/);
+    assert.match(cmake, /"lua_app\.c"/);
   });
 
   it("exposes the last Lua runner result for launcher failure feedback", () => {
@@ -1442,6 +1470,20 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nativeManifest, /abi\s*=\s*vibeboard-native-module-abi@1/);
     assert.match(nativeManifest, /symbol\s*=\s*vb_native_module_init/);
     assert.match(nativeManifest, /min_host\s*=\s*vibeboard-native-host@1/);
+  });
+
+  it("ships a Lua app manager smoke app", () => {
+    const info = readRequired(smokeAppManagerInfoPath);
+    const source = readRequired(smokeAppManagerSourcePath);
+
+    assert.match(info, /name\s*=\s*smoke_app_manager/);
+    assert.match(info, /entry\s*=\s*main\.lua/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer/);
+    assert.match(source, /app\.list\(\)/);
+    assert.match(source, /app\.current\(\)/);
+    assert.match(source, /app\.exiting\(\)/);
+    assert.match(source, /app\.on\(["']exit["']/);
+    assert.match(source, /tmr\.create\(\):alarm/);
   });
 
   it("keeps input declarations on migrated interactive apps", () => {
