@@ -1,0 +1,6 @@
+name = 2048
+entry = main.lua
+description = 2048 game
+capabilities = lvgl,file,timer,input
+version = 0.1.0
+kind = app

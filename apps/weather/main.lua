@@ -186,11 +186,11 @@
     end
 
     local function qweather_icon_path(kind)
-    return sd_to_lv(APP.ASSET_DIR .. "/icons/set2/" .. qweather_icon_code(kind) .. ".png")
+    return asset_path("icons", kind)
     end
 
     local function qweather_icon_path_for(kind, code)
-    return sd_to_lv(APP.ASSET_DIR .. "/icons/set2/" .. qweather_icon_code_for(kind, code) .. ".png")
+    return qweather_icon_path(kind)
     end
 
     local function font_load_now_ms()
@@ -728,120 +728,12 @@
     APP.state.forecast_glass_snapshot = nil
     end
 
-    local function canvas_frame_begin(id)
-    local fn = rawget(_G, "lv_canvas_frame_begin") or rawget(_G, "lv_canvas_begin")
-    if not id or not fn then
-        return false
-    end
-    return call(fn, id)
-    end
-
-    local function canvas_frame_end(id)
-    local fn = rawget(_G, "lv_canvas_frame_end") or rawget(_G, "lv_canvas_end")
-    if id and fn then
-        call(fn, id)
-        return
-    end
-
-    if id and lv_obj_invalidate then
-        call(lv_obj_invalidate, id)
-    end
-    end
-
-    local function canvas_clear(id, color, opa)
-    local fn = rawget(_G, "lv_canvas_fill_bg") or rawget(_G, "lv_canvas_fill")
-    if fn then
-        call(fn, id, color, opa)
-    end
-    end
-
-    local function canvas_rect(id, x, y, w, h, color, opa)
-    if lv_canvas_draw_rect then
-        call(lv_canvas_draw_rect, id, x, y, w, h, color, opa)
-    end
-    end
-
     local function refresh_glass_panel()
-    local cvs = APP.ui.strip_blur
-    local root = APP.ui.root
-    local strip = APP.ui.strip
-    if not cvs or not root or not strip then
-        return
-    end
-    if APP.state.startup_visible then
-        return
-    end
-
     release_glass_snapshot()
-    if not canvas_frame_begin(cvs) then
-        return
-    end
-
-    canvas_clear(cvs, C.strip, 255)
-    set_obj_hidden(strip, true)
-
-    local ok, snapshot = pcall_fn(function()
-        return lv_snapshot_take(root, CANVAS_FMT)
-    end)
-
-    set_obj_hidden(strip, false)
-
-    if ok and snapshot then
-        APP.state.glass_snapshot = snapshot
-        call(lv_canvas_draw_img, cvs, -GLASS_X, -GLASS_Y, { handle = snapshot }, { opa = 255 })
-        call(lv_canvas_blur_hor, cvs, nil, GLASS_BLUR)
-        call(lv_canvas_blur_ver, cvs, nil, GLASS_BLUR)
-    end
-
-    canvas_rect(cvs, 0, 0, GLASS_W, GLASS_H, 0xFFFFFF, 30)
-    canvas_rect(cvs, 0, 0, GLASS_W, GLASS_H, C.strip, 82)
-    canvas_rect(cvs, 0, GLASS_H - 1, GLASS_W, 1, C.black, 42)
-    canvas_frame_end(cvs)
     end
 
     local function refresh_forecast_glass_panel()
-    local cvs = APP.ui.forecast_blur
-    local root = APP.ui.root
-    local panel = APP.ui.forecast_panel
-    if not cvs or not root or not panel then
-        return
-    end
-    if APP.state.startup_visible then
-        return
-    end
-
     release_forecast_glass_snapshot()
-    if not canvas_frame_begin(cvs) then
-        return
-    end
-
-    canvas_clear(cvs, C.strip, 255)
-    local hidden = set_obj_hidden(panel, true)
-    if not hidden then
-        call(lv_obj_set_pos, panel, APP.SCREEN_W, FORECAST_GLASS_Y)
-    end
-
-    local ok, snapshot = pcall_fn(function()
-        return lv_snapshot_take(root, CANVAS_FMT)
-    end)
-
-    if hidden then
-        set_obj_hidden(panel, false)
-    else
-        call(lv_obj_set_pos, panel, FORECAST_GLASS_X, FORECAST_GLASS_Y)
-    end
-
-    if ok and snapshot then
-        APP.state.forecast_glass_snapshot = snapshot
-        call(lv_canvas_draw_img, cvs, -FORECAST_GLASS_X, -FORECAST_GLASS_Y, { handle = snapshot }, { opa = 255 })
-        call(lv_canvas_blur_hor, cvs, nil, FORECAST_GLASS_BLUR)
-        call(lv_canvas_blur_ver, cvs, nil, FORECAST_GLASS_BLUR)
-    end
-
-    canvas_rect(cvs, 0, 0, FORECAST_GLASS_W, FORECAST_GLASS_H, 0xFFFFFF, 18)
-    canvas_rect(cvs, 0, 0, FORECAST_GLASS_W, FORECAST_GLASS_H, C.strip, 54)
-    canvas_rect(cvs, 0, FORECAST_GLASS_H - 1, FORECAST_GLASS_W, 1, C.black, 32)
-    canvas_frame_end(cvs)
     end
 
     local function create_bottom_item(parent, x, icon_name, small_icon, width)
@@ -904,18 +796,6 @@
     style_panel(panel, C.strip, 56, 12, 56)
     call(lv_obj_set_pos, panel, FORECAST_GLASS_X, FORECAST_GLASS_Y)
     call(lv_obj_set_size, panel, FORECAST_GLASS_W, FORECAST_GLASS_H)
-
-    if lv_canvas_create then
-        if CANVAS_FMT then
-        APP.ui.forecast_blur = lv_canvas_create(panel, FORECAST_GLASS_W, FORECAST_GLASS_H, CANVAS_FMT)
-        else
-        APP.ui.forecast_blur = lv_canvas_create(panel, FORECAST_GLASS_W, FORECAST_GLASS_H)
-        end
-        call(lv_obj_set_pos, APP.ui.forecast_blur, 0, 0)
-        if lv_obj_clear_flag and rawget(_G, "LV_OBJ_FLAG_SCROLLABLE") then
-        call(lv_obj_clear_flag, APP.ui.forecast_blur, rawget(_G, "LV_OBJ_FLAG_SCROLLABLE"))
-        end
-    end
 
     APP.ui.forecast_sep1 = create_glass_line(panel, 100, 16, 1, 138, 28)
     APP.ui.forecast_sep2 = create_glass_line(panel, 199, 16, 1, 138, 28)
@@ -1064,18 +944,6 @@
     style_frosted_panel(strip)
     call(lv_obj_set_pos, strip, GLASS_X, GLASS_Y)
     call(lv_obj_set_size, strip, GLASS_W, GLASS_H)
-
-    if lv_canvas_create then
-        if CANVAS_FMT then
-        APP.ui.strip_blur = lv_canvas_create(strip, GLASS_W, GLASS_H, CANVAS_FMT)
-        else
-        APP.ui.strip_blur = lv_canvas_create(strip, GLASS_W, GLASS_H)
-        end
-        call(lv_obj_set_pos, APP.ui.strip_blur, 0, 0)
-        if lv_obj_clear_flag and rawget(_G, "LV_OBJ_FLAG_SCROLLABLE") then
-        call(lv_obj_clear_flag, APP.ui.strip_blur, rawget(_G, "LV_OBJ_FLAG_SCROLLABLE"))
-        end
-    end
 
     APP.ui.strip_bottom = create_glass_line(strip, 24, 63, 252, 1, 16)
     APP.ui.strip_sep1 = create_glass_line(strip, 100, 12, 1, 42, 28)
@@ -1245,21 +1113,9 @@ end
     APP.state.startup_visible = false
     end
 
-    local function maybe_gunzip_body(body)
+    local function normalize_weather_body(body)
     if not body then
         return nil, "body nil"
-    end
-
-    if zlib and zlib.isgzip and zlib.isgzip(body) then
-        if not zlib.gunzip then
-        return nil, "gzip unsupported"
-        end
-
-        local plain, err = zlib.gunzip(body)
-        if not plain then
-        return nil, "gunzip " .. tostring(err)
-        end
-        return plain
     end
 
     return body
@@ -1409,14 +1265,14 @@ end
 
     log("request", url)
 
-    http.cubicserver.get(url, "Accept-Encoding: gzip\r\n", function(status_code, body, headers)
+    http.cubicserver.get(url, "", function(status_code, body, headers)
         APP.state.request_inflight = false
 
         if not APP.running then
         return
         end
 
-        local plain, err = maybe_gunzip_body(body)
+        local plain, err = normalize_weather_body(body)
         if not plain then
         APP.state.valid = false
         APP.state.last_http_code = status_code
