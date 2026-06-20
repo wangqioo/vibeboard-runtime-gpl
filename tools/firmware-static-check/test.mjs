@@ -686,6 +686,23 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cmake, /"lua_app\.c"/);
   });
 
+  it("queues Lua app manager launch handoff without re-entering the active runner", () => {
+    const source = readRequired(luaAppSourcePath);
+    const header = readRequired(luaAppHeaderPath);
+    const runner = readRequired(runnerSourcePath);
+
+    assert.match(header, /pending_launch/);
+    assert.match(source, /lua_app_launch/);
+    assert.match(source, /"launch",\s*lua_app_launch/);
+    assert.match(source, /vb_lua_app_take_pending_launch/);
+    assert.match(source, /strcmp\(id,\s*vb_app_runner_current_id\(\)\)\s*==\s*0/);
+    assert.match(source, /state->pending_launch\s*=\s*\*entry/);
+    assert.match(source, /\*state->stop_requested\s*=\s*true/);
+    assert.match(runner, /vb_lua_app_take_pending_launch/);
+    assert.match(runner, /vb_app_runner_launch_async\(&pending_launch\)/);
+    assert.doesNotMatch(source, /lua_app_launch[\s\S]*vb_app_runner_launch_async/);
+  });
+
   it("exposes the last Lua runner result for launcher failure feedback", () => {
     const header = readRequired(runnerHeaderPath);
     const runner = readRequired(runnerSourcePath);
@@ -1584,6 +1601,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /app\.current\(\)/);
     assert.match(source, /app\.exiting\(\)/);
     assert.match(source, /type\(app\.exit\)\s*==\s*["']function["']/);
+    assert.match(source, /type\(app\.launch\)\s*==\s*["']function["']/);
     assert.match(source, /app\.on\(["']exit["']/);
     assert.match(source, /tmr\.create\(\):alarm/);
   });

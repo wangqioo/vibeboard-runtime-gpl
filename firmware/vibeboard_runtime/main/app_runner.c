@@ -303,7 +303,9 @@ static void entry_to_registry(const vb_app_registry_entry_t *entry, vb_app_regis
     strlcpy(app->first_app_path, entry->path, sizeof(app->first_app_path));
 }
 
-static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner_result_t *result)
+static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
+                              vb_app_runner_result_t *result,
+                              vb_app_registry_entry_t *pending_launch)
 {
     ESP_LOGI(TAG, "Lua app start: %s", app->first_app_name);
     lua_State *L = luaL_newstate();
@@ -363,6 +365,9 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner
     esp_err_t loop_err = vb_lua_tmr_run_loop(L, &runtime.tmr, loop_error, sizeof(loop_error));
     if (loop_err != ESP_OK) {
         set_result(result, true, loop_err, loop_error[0] ? loop_error : "lua timer failed");
+        if (pending_launch != NULL) {
+            (void)vb_lua_app_take_pending_launch(&runtime.app, pending_launch);
+        }
         cleanup_lua_runtime(L, &runtime);
         lua_close(L);
         return loop_err;
@@ -370,6 +375,9 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner
 
     ESP_LOGI(TAG, "Lua app ok");
     set_result(result, true, ESP_OK, "ok");
+    if (pending_launch != NULL) {
+        (void)vb_lua_app_take_pending_launch(&runtime.app, pending_launch);
+    }
     cleanup_lua_runtime(L, &runtime);
     lua_close(L);
     return ESP_OK;
@@ -378,10 +386,18 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner
 static void lua_task(void *arg)
 {
     vb_lua_task_context_t *context = (vb_lua_task_context_t *)arg;
+    vb_app_registry_entry_t pending_launch = {0};
     set_running_if_starting();
-    context->status = run_lua_file(context->app, context->result);
+    context->status = run_lua_file(context->app, context->result, &pending_launch);
     const char *message = context->result->message[0] ? context->result->message : esp_err_to_name(context->status);
     finish_runner_from_task(context->status, message);
+    if (pending_launch.id[0] != '\0') {
+        ESP_LOGI(TAG, "Lua app handoff: %s", pending_launch.id);
+        esp_err_t launch_err = vb_app_runner_launch_async(&pending_launch);
+        if (launch_err != ESP_OK) {
+            ESP_LOGW(TAG, "Lua app handoff failed: %s", esp_err_to_name(launch_err));
+        }
+    }
     xTaskNotifyGive(context->caller);
     vTaskDelete(NULL);
 }
@@ -389,10 +405,18 @@ static void lua_task(void *arg)
 static void lua_async_task(void *arg)
 {
     vb_lua_async_context_t *context = (vb_lua_async_context_t *)arg;
+    vb_app_registry_entry_t pending_launch = {0};
     set_running_if_starting();
-    esp_err_t status = run_lua_file(&context->app, &context->result);
+    esp_err_t status = run_lua_file(&context->app, &context->result, &pending_launch);
     const char *message = context->result.message[0] ? context->result.message : esp_err_to_name(status);
     finish_runner_from_task(status, message);
+    if (pending_launch.id[0] != '\0') {
+        ESP_LOGI(TAG, "Lua app handoff: %s", pending_launch.id);
+        esp_err_t launch_err = vb_app_runner_launch_async(&pending_launch);
+        if (launch_err != ESP_OK) {
+            ESP_LOGW(TAG, "Lua app handoff failed: %s", esp_err_to_name(launch_err));
+        }
+    }
     ESP_LOGI(TAG,
              "Lua async finished: %s status=%s message=%s",
              context->app.first_app_name,

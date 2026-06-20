@@ -155,7 +155,7 @@ AI 生成一个受限 Lua/LVGL App
 但当前还不是面向普通用户的完整产品：
 
 - 已经有可用的 Launcher、生命周期、浏览器管理 UI 和 staged install/delete，但还需要长期稳定性回归和更完整的错误恢复体验；
-- Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()`，但还没有安全的 `app.launch(id)` app-to-app handoff；
+- Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()` / `app.launch(id)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App。该能力已 build-verified，真实 app-to-app 上板切换仍待 smoke；
 - 还不能直接运行完整上游 HoloCubic 全量 App，只能按 App 驱动逐个补兼容层；
 - LVGL 绑定覆盖还不够广，尤其 list/arc/switch/dropdown/textarea/roller/slider、flex/grid、字体和 canvas 高级效果；
 - 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；还没有 BOOT/长按/repeat 的完整 Lua 输入语义，`smoke_key` 还需要补物理触摸手势的独立上板记录；
@@ -200,9 +200,9 @@ AI 生成一个受限 Lua/LVGL App
 
 第五优先级：设备端 App 管理。
 
-- Lua 侧 `app.list()`、`app.current()`、`app.rescan()`、`app.exiting()`、`app.exit()` 已 build-verified；
+- Lua 侧 `app.list()`、`app.current()`、`app.rescan()`、`app.exiting()`、`app.exit()`、`app.launch(id)` 已 build-verified；
 - HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime/API/App schema 版本查询和不兼容 App 拒绝启动已经完成第一版；
-- 后续补 `app.launch(id)` 的非重入 handoff 设计、App 包 hash 校验、更严格的工具侧版本拒绝和升级提示。
+- 后续补真实 `app.launch(id)` 上板 handoff smoke、App 包 hash 校验、更严格的工具侧版本拒绝和升级提示。
 
 第六优先级：上游兼容和高级能力。
 

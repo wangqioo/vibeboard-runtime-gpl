@@ -105,6 +105,54 @@ static int lua_app_exit(lua_State *L)
     return 1;
 }
 
+static int lua_app_launch(lua_State *L)
+{
+    vb_lua_app_state_t *state = check_app_state(L);
+    const char *id = luaL_checkstring(L, 1);
+    if (state->stop_requested == NULL) {
+        lua_pushboolean(L, false);
+        lua_pushliteral(L, "stop flag missing");
+        return 2;
+    }
+    if (strcmp(id, vb_app_runner_current_id()) == 0) {
+        lua_pushboolean(L, false);
+        lua_pushliteral(L, "app already running");
+        return 2;
+    }
+
+    vb_app_registry_result_t result;
+    esp_err_t err = vb_app_registry_scan(&result);
+    if (err != ESP_OK) {
+        lua_pushboolean(L, false);
+        lua_pushstring(L, esp_err_to_name(err));
+        return 2;
+    }
+
+    const vb_app_registry_entry_t *entry = NULL;
+    for (int i = 0; i < result.stored_app_count; i++) {
+        if (strcmp(result.apps[i].id, id) == 0) {
+            entry = &result.apps[i];
+            break;
+        }
+    }
+    if (entry == NULL) {
+        lua_pushboolean(L, false);
+        lua_pushliteral(L, "app not found");
+        return 2;
+    }
+    if (!entry->compatible) {
+        lua_pushboolean(L, false);
+        lua_pushliteral(L, "app incompatible");
+        return 2;
+    }
+
+    state->pending_launch = *entry;
+    state->has_pending_launch = true;
+    *state->stop_requested = true;
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 static int lua_app_on(lua_State *L)
 {
     vb_lua_app_state_t *state = check_app_state(L);
@@ -131,6 +179,8 @@ void vb_lua_app_init(vb_lua_app_state_t *state)
     }
     state->stop_requested = NULL;
     state->exit_callback_ref = LUA_NOREF;
+    state->has_pending_launch = false;
+    memset(&state->pending_launch, 0, sizeof(state->pending_launch));
 }
 
 void vb_lua_app_set_stop_flag(vb_lua_app_state_t *state, volatile bool *stop_requested)
@@ -159,6 +209,7 @@ void vb_lua_app_register(lua_State *L, vb_lua_app_state_t *state)
         {"current", lua_app_current},
         {"exiting", lua_app_exiting},
         {"exit", lua_app_exit},
+        {"launch", lua_app_launch},
         {"on", lua_app_on},
         {NULL, NULL},
     };
@@ -167,6 +218,18 @@ void vb_lua_app_register(lua_State *L, vb_lua_app_state_t *state)
     lua_setfield(L, LUA_REGISTRYINDEX, "vb_lua_app_state");
     luaL_newlib(L, functions);
     lua_setglobal(L, "app");
+}
+
+bool vb_lua_app_take_pending_launch(vb_lua_app_state_t *state, vb_app_registry_entry_t *entry)
+{
+    if (state == NULL || entry == NULL || !state->has_pending_launch) {
+        return false;
+    }
+
+    *entry = state->pending_launch;
+    state->has_pending_launch = false;
+    memset(&state->pending_launch, 0, sizeof(state->pending_launch));
+    return true;
 }
 
 void vb_lua_app_dispatch_exit(lua_State *L, vb_lua_app_state_t *state)

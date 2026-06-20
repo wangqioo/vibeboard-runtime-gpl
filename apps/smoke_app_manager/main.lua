@@ -22,6 +22,7 @@ local function render()
   local current = app.current()
   local exiting = app.exiting()
   local exit_available = type(app.exit) == "function"
+  local launch_available = type(app.launch) == "function"
 
   lines[#lines + 1] = "count: " .. tostring(type(apps) == "table" and #apps or 0)
   lines[#lines + 1] = "rescan: " .. tostring(type(rescanned) == "table" and #rescanned or 0)
@@ -29,6 +30,7 @@ local function render()
   lines[#lines + 1] = "id: " .. tostring(current and current.id)
   lines[#lines + 1] = "exiting: " .. tostring(exiting)
   lines[#lines + 1] = "exit fn: " .. tostring(exit_available)
+  lines[#lines + 1] = "launch fn: " .. tostring(launch_available)
   if err then
     lines[#lines + 1] = "err: " .. tostring(err)
   end
