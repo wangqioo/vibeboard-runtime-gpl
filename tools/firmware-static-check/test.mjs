@@ -404,6 +404,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(staticAdapter, /vb_module_host_api_init/);
     assert.match(staticAdapter, /strcmp\(module_name,\s*"nes"\)/);
     assert.match(staticAdapter, /vb_native_module_init/);
+    assert.match(staticAdapter, /void\s+\*module\s*=\s*NULL/);
+    assert.match(staticAdapter, /vb_native_module_init\(&host_api,\s*&module\)/);
+    assert.match(staticAdapter, /init_err\s*==\s*ESP_ERR_NOT_SUPPORTED/);
+    assert.match(staticAdapter, /Native module host API unsupported: vb_native_module_init/);
+    assert.match(staticAdapter, /result->error\[0\]\s*=\s*'\\0'/);
+    assert.match(staticAdapter, /result->status\s*=\s*ESP_OK/);
     assert.match(staticAdapter, /native executor pending/);
     assert.match(luaModule, /package/);
     assert.match(luaModule, /searchers/);

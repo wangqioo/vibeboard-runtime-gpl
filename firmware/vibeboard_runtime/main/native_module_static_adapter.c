@@ -7,11 +7,16 @@
 
 typedef esp_err_t (*vb_native_module_init_fn)(void *host_api, void **module);
 
+static int s_nes_native_module_placeholder;
+
 static esp_err_t nes_native_module_init(void *host_api, void **module)
 {
-    (void)host_api;
-    (void)module;
-    return ESP_ERR_NOT_SUPPORTED;
+    if (host_api == NULL || module == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    *module = &s_nes_native_module_placeholder;
+    return ESP_OK;
 }
 
 esp_err_t vb_native_module_static_adapter_load(const char *module_name,
@@ -38,7 +43,20 @@ esp_err_t vb_native_module_static_adapter_load(const char *module_name,
         return result->status;
     }
 
-    snprintf(result->error, sizeof(result->error), "Native module load failed: native executor pending");
-    result->status = ESP_ERR_NOT_FOUND;
+    void *module = NULL;
+    esp_err_t init_err = vb_native_module_init(&host_api, &module);
+    if (init_err == ESP_ERR_NOT_SUPPORTED) {
+        snprintf(result->error, sizeof(result->error), "Native module host API unsupported: vb_native_module_init");
+        result->status = init_err;
+        return result->status;
+    }
+    if (init_err != ESP_OK || module == NULL) {
+        snprintf(result->error, sizeof(result->error), "Native module load failed: native executor pending");
+        result->status = init_err == ESP_OK ? ESP_ERR_NOT_FOUND : init_err;
+        return result->status;
+    }
+
+    result->error[0] = '\0';
+    result->status = ESP_OK;
     return result->status;
 }
