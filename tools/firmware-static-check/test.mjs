@@ -1038,7 +1038,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(canvas, /"lv_canvas_blur_ver"/);
 
     assert.match(voiceAi, /lv_gif_set_src/);
-    assert.doesNotMatch(widgetSource, /"lv_gif_set_src"/);
+    assert.match(readRequired(sdkconfigDefaultsPath), /CONFIG_LV_USE_GIF=y/);
+    assert.match(widgetSource, /lv_gif_create/);
+    assert.match(widgetSource, /"lv_gif_create"/);
+    assert.match(widgetSource, /lv_gif_set_src/);
+    assert.match(widgetSource, /"lv_gif_set_src"/);
 
     assert.match(voiceAi, /key\.SHORT/);
     assert.match(voiceAi, /key\.EXIT/);

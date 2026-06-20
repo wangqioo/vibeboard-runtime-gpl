@@ -5,6 +5,7 @@
 #include "esp_lvgl_port.h"
 #include "lauxlib.h"
 #include "lvgl.h"
+#include "extra/libs/gif/lv_gif.h"
 
 #define VB_LVGL_ANIM_X 1
 #define VB_LVGL_ANIM_Y 2
@@ -81,6 +82,15 @@ static int l_lv_img_create(lua_State *L)
     return create_object(L, lv_img_create);
 }
 
+static int l_lv_gif_create(lua_State *L)
+{
+#if LV_USE_GIF
+    return create_object(L, lv_gif_create);
+#else
+    return luaL_error(L, "LVGL GIF support is disabled");
+#endif
+}
+
 static int l_lv_btn_create(lua_State *L)
 {
     return create_object(L, lv_btn_create);
@@ -106,6 +116,38 @@ static int l_lv_img_set_src(lua_State *L)
     lvgl_port_unlock();
     lua_pushstring(L, resolved);
     return 1;
+}
+
+static int l_lv_gif_set_src(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+
+#if LV_USE_GIF
+    lvgl_port_lock(0);
+    lv_obj_t *gif = vb_lua_lvgl_resolve_object(id);
+    if (lua_isnil(L, 2)) {
+        lv_gif_set_src(gif, NULL);
+        lvgl_port_unlock();
+        return 0;
+    }
+    lvgl_port_unlock();
+
+    const char *src = luaL_checkstring(L, 2);
+    char resolved[VB_LVGL_PATH_MAX];
+    if (!vb_lua_lvgl_resolve_asset_path(src, resolved, sizeof(resolved))) {
+        return luaL_error(L, "invalid gif source path");
+    }
+
+    lvgl_port_lock(0);
+    gif = vb_lua_lvgl_resolve_object(id);
+    lv_gif_set_src(gif, resolved);
+    lvgl_port_unlock();
+    lua_pushstring(L, resolved);
+    return 1;
+#else
+    (void)id;
+    return luaL_error(L, "LVGL GIF support is disabled");
+#endif
 }
 
 static int l_lv_img_set_antialias(lua_State *L)
@@ -769,7 +811,9 @@ void vb_lua_lvgl_widgets_register(lua_State *L)
         { "lv_obj_create", l_lv_obj_create },
         { "lv_label_create", l_lv_label_create },
         { "lv_img_create", l_lv_img_create },
+        { "lv_gif_create", l_lv_gif_create },
         { "lv_img_set_src", l_lv_img_set_src },
+        { "lv_gif_set_src", l_lv_gif_set_src },
         { "lv_img_set_antialias", l_lv_img_set_antialias },
         { "lv_img_set_angle", l_lv_img_set_angle },
         { "lv_img_set_pivot", l_lv_img_set_pivot },
