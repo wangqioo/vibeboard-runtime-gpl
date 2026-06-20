@@ -6,6 +6,7 @@ end
 
 NES_GAME_APP = {}
 local APP = NES_GAME_APP
+local nes = require("nes")
 
 -- 这个入口文件固定服务 Xbox BLE 手柄，不再保留网页手柄/双模式切换分支。
 APP.VERSION = "2026-04-25-nes-gamepad-minimal-selector-v3"

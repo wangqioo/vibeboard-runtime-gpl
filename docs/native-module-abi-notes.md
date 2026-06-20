@@ -4,7 +4,7 @@ Date: 2026-06-20
 
 ## Scope
 
-This note documents what the imported NES path needs before VibeBoard Runtime implements native module loading. It is intentionally a design checkpoint, not an implementation patch.
+This note documents what the imported NES path needs before VibeBoard Runtime implements full native module loading. The first loader slice is now implemented, but it is intentionally only a contract and failure-boundary checkpoint, not a playable NES patch.
 
 Relevant source:
 
@@ -157,14 +157,14 @@ The local app also uses the board `key` module for selector navigation and app e
 
 Firmware work should be split into separate vertical slices:
 
-1. Add `module` capability and reject apps requiring module when loader is absent.
-2. Add static ABI headers under firmware source, derived from `upstream/holocubic-nes-esp32/include/module_abi.h`.
-3. Add an ESP-ELFLoader-backed loader that can open `/sd/modules/nes.so` and resolve the four required symbols.
-4. Add manifest checks:
+1. Add `module` and `native` capabilities and route `nesgame` through `local nes = require("nes")`. **Done as the first Runtime slice.**
+2. Add static ABI headers under firmware source and expose `native_abi_version = vibeboard-native-module-abi@1` through `/status`. **Done as the first Runtime slice.**
+3. Add a native module searcher and loader failure surface that reports precise errors before the NES core is ported. **Done as the first Runtime slice.**
+4. Add an ESP-ELFLoader-backed loader that can open `/sd/modules/nes.so` and resolve the four required symbols.
+5. Add manifest checks:
    - magic equals `MODULE_MANIFEST_MAGIC`;
    - `abi_version == MODULE_ABI_VERSION`;
    - `min_host_version` is supported.
-5. Add a Lua `require("/sd/modules/nes.so")` or equivalent module registry path.
 6. Add host API stubs group-by-group, starting with serial/time/heap/file, then display/task/Lua table.
 7. Only after the loader works, build/import `nes.so`.
 
@@ -176,6 +176,19 @@ Native module symbol missing: module_create_v1
 Native module ABI mismatch
 Native module host API unsupported: display.push_image_dma
 ```
+
+Current first-slice implementation:
+
+```text
+module_abi.h
+native_module_loader.c/.h
+lua_native_module.c/.h
+app_runner installs vb_lua_native_module_register(L, app) before loading main.lua
+install_service /status reports native_abi_version = vibeboard-native-module-abi@1
+apps/nesgame declares capabilities = lvgl,file,timer,input,module,native
+```
+
+The current loader intentionally returns `Native module symbol missing: vb_native_module_init` once an app-local `native/nes.vbn` placeholder exists. Without the native payload it returns `Native module load failed: <path> errno=<n>`. This keeps failure behavior explicit while the real NES loader and host API are still pending.
 
 ## First Board Milestone
 

@@ -267,22 +267,23 @@ Suggested commit split from the parallel worktree audit:
 
 ### 6. NES native module checkpoint
 
-`docs/native-module-abi-notes.md` now captures the required NES native-module shape before implementation:
+`docs/native-module-abi-notes.md` now captures the required NES native-module shape and the first Runtime loader slice:
 
 - `nes.so` must stay native; Lua-only is not viable for emulator timing, mapper logic, and RGB565 frame throughput;
 - first loader target is `module_host_api_v1` with manifest/symbol checks;
 - required host groups are serial, SD/file, display, time, heap, task, and Lua transfer table;
 - first display path is exclusive native ownership plus RGB565 DMA chunks centered in the 320x240 display;
 - gamepad can remain Lua-side for the first milestone by mapping controller state to `nes.input.set_mask`;
-- no firmware loader code has been implemented yet.
+- first loader slice is implemented: `module_abi.h`, `native_module_loader.*`, `lua_native_module.*`, `/status.native_abi_version = vibeboard-native-module-abi@1`, and `apps/nesgame` now uses `local nes = require("nes")`;
+- current loader intentionally returns precise missing payload/symbol/ABI/host API errors and does not include the NES emulator core.
 
-The next NES implementation slice should be the loader failure surface, not full emulation:
+The next NES implementation slice should be ELF/native payload loading and the first host API group, not full emulation:
 
-- add a RED static test for `module_abi.h`, `native_module_loader.*`, and `lua_native_module.*`;
-- expose `module` capability handling;
-- register a Lua native require hook;
-- return precise errors such as `Native module load failed`, `Native module symbol missing`, `Native module ABI mismatch`, and `Native module host API unsupported`;
-- do not import NES core, display DMA, audio, or gamepad host API in the first slice.
+- add RED static tests for app-local native payload discovery and manifest/symbol checks;
+- decide whether the first payload path is `native/nes.vbn` under the app package or `/sd/modules/nes.so`;
+- implement ELFLoader/import resolution or a static linked module adapter;
+- add serial/time/heap/file host API first;
+- leave display DMA, audio, and native gamepad host API for later slices.
 
 ## Parallelization Guidance
 

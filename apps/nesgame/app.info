@@ -1,4 +1,4 @@
 name = nesgame
 entry = main.lua
 description = nesgame v1.0 use XBOX pad
-capabilities = lvgl,file,timer,input
+capabilities = lvgl,file,timer,input,module,native

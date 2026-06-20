@@ -33,6 +33,11 @@ const luaTmrSourcePath = join(firmwareRoot, "main/lua_tmr.c");
 const luaTmrHeaderPath = join(firmwareRoot, "main/lua_tmr.h");
 const luaKeySourcePath = join(firmwareRoot, "main/lua_key.c");
 const luaKeyHeaderPath = join(firmwareRoot, "main/lua_key.h");
+const luaNativeModuleSourcePath = join(firmwareRoot, "main/lua_native_module.c");
+const luaNativeModuleHeaderPath = join(firmwareRoot, "main/lua_native_module.h");
+const nativeModuleLoaderSourcePath = join(firmwareRoot, "main/native_module_loader.c");
+const nativeModuleLoaderHeaderPath = join(firmwareRoot, "main/native_module_loader.h");
+const moduleAbiHeaderPath = join(firmwareRoot, "main/module_abi.h");
 const luaTimeSourcePath = join(firmwareRoot, "main/lua_time.c");
 const luaTimeHeaderPath = join(firmwareRoot, "main/lua_time.h");
 const luaWifiSourcePath = join(firmwareRoot, "main/lua_wifi.c");
@@ -283,6 +288,58 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(main, /static\s+vb_app_registry_result_t\s+\*s_apps/);
     assert.match(main, /static\s+vb_install_service_context_t\s+s_install_context/);
     assert.match(main, /vb_install_service_start\(&s_install_context\)/);
+  });
+
+  it("exposes a versioned native module ABI through runtime status", () => {
+    const abi = readRequired(moduleAbiHeaderPath);
+    const service = readRequired(installServiceSourcePath);
+
+    assert.match(abi, /VB_NATIVE_MODULE_ABI_VERSION\s+"vibeboard-native-module-abi@1"/);
+    assert.match(service, /module_abi\.h/);
+    assert.match(service, /VB_RUNTIME_NATIVE_ABI_VERSION\s+VB_NATIVE_MODULE_ABI_VERSION/);
+    assert.match(service, /\\"native_abi_version\\":%s/);
+    assert.doesNotMatch(service, /VB_RUNTIME_NATIVE_ABI_VERSION\s+NULL/);
+  });
+
+  it("registers a Lua native module searcher before app scripts run", () => {
+    const runner = readRequired(runnerSourcePath);
+    const cmake = readRequired(cmakePath);
+
+    assert.match(cmake, /native_module_loader\.c/);
+    assert.match(cmake, /lua_native_module\.c/);
+    assert.match(runner, /lua_native_module\.h/);
+    assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)/);
+    assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)[\s\S]*load_lua_file\(L,\s*app->first_app_path\)/);
+  });
+
+  it("keeps native module loader failures precise before NES core is ported", () => {
+    const loaderHeader = readRequired(nativeModuleLoaderHeaderPath);
+    const loader = readRequired(nativeModuleLoaderSourcePath);
+    const luaModule = readRequired(luaNativeModuleSourcePath);
+
+    assert.match(loaderHeader, /vb_native_module_load/);
+    assert.match(loaderHeader, /vb_native_module_result_t/);
+    assert.match(loaderHeader, /VB_NATIVE_MODULE_ERROR_MAX/);
+    assert.match(loader, /Native module load failed/);
+    assert.match(loader, /Native module symbol missing/);
+    assert.match(loader, /Native module ABI mismatch/);
+    assert.match(loader, /Native module host API unsupported/);
+    assert.match(luaModule, /package/);
+    assert.match(luaModule, /searchers/);
+    assert.match(luaModule, /vb_native_module_load/);
+    assert.match(luaModule, /return\s+luaL_error\(L,\s*"%s",\s*result\.error\)/);
+  });
+
+  it("routes the migrated NES app through require('nes') instead of assuming a global module", () => {
+    const app = readRequired(nesgameSourcePath);
+    const info = readRequired(nesgameInfoPath);
+    const requireIndex = app.indexOf('local nes = require("nes")');
+    const playerIndex = app.indexOf("APP.PLAYER = nes.PLAYER_1");
+
+    assert.match(app, /local\s+nes\s*=\s*require\(["']nes["']\)/);
+    assert.ok(requireIndex >= 0, "nesgame should require the NES module explicitly");
+    assert.ok(playerIndex > requireIndex, "nesgame should not use nes before require('nes')");
+    assert.match(info, /capabilities\s*=\s*lvgl,file,timer,input,module,native/);
   });
 
   it("supports staged app install commit, abort, and delete operations", () => {
@@ -1162,7 +1219,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(voiceAiInfo, /capabilities = lvgl,network,audio,file,timer,input/);
     assert.match(voiceAi, /key\.off/);
 
-    assert.match(nesgameInfo, /capabilities = lvgl,file,timer,input/);
+    assert.match(nesgameInfo, /capabilities = lvgl,file,timer,input,module,native/);
     assert.match(nesgame, /key\.on/);
     assert.match(nesgame, /key\.off/);
   });

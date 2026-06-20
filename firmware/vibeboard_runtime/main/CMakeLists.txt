@@ -13,11 +13,13 @@ idf_component_register(
         "lua_lvgl_canvas.c"
         "lua_lvgl_fs.c"
         "lua_lvgl_widgets.c"
+        "lua_native_module.c"
         "lua_sjson.c"
         "lua_time.c"
         "lua_tmr.c"
         "lua_wifi.c"
         "main.c"
+        "native_module_loader.c"
     INCLUDE_DIRS "."
     REQUIRES
         esp_driver_i2c

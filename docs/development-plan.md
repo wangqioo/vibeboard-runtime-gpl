@@ -1080,12 +1080,26 @@ dist/apps/<app-id>/
 
 目标：验证 `.so` 动态模块作为高性能能力扩展。
 
-需要新增或修改：
+已完成第一阶段：
+
+```text
+firmware/vibeboard_runtime/main/module_abi.h
+firmware/vibeboard_runtime/main/native_module_loader.c
+firmware/vibeboard_runtime/main/native_module_loader.h
+firmware/vibeboard_runtime/main/lua_native_module.c
+firmware/vibeboard_runtime/main/lua_native_module.h
+apps/nesgame/
+docs/native-module-abi-notes.md
+```
+
+第一阶段只建立 ABI、`require("nes")` 搜索器和精确失败边界；没有导入 NES 模拟器核心、显示 DMA、音频或 gamepad native host API。
+
+后续需要新增或修改：
 
 ```text
 modules/nes/
-firmware/vibeboard_runtime/main/lua_module.c
-firmware/vibeboard_runtime/main/native_module_abi.c
+firmware/vibeboard_runtime/main/native_module_loader.c
+firmware/vibeboard_runtime/main/native_host_api_*.c
 apps/nesgame/
 docs/native-module-abi.md
 ```
@@ -1093,8 +1107,8 @@ docs/native-module-abi.md
 任务：
 
 1. 确定 ESP-IDF、ESP-ELFLoader、工具链版本。
-2. 定义 VibeBoard Native Module ABI。
-3. 编译 `nes.so`。
+2. 定义 VibeBoard Native Module ABI。**第一阶段已完成：`vibeboard-native-module-abi@1`。**
+3. 编译或导入 `nes.so` / app-local native payload。
 4. 部署：
 
 ```text
@@ -1105,10 +1119,10 @@ docs/native-module-abi.md
 5. Lua 支持：
 
 ```lua
-require("/sd/modules/nes.so")
+local nes = require("nes")
 ```
 
-6. 实现 ABI 版本检查。
+6. 实现 payload manifest、symbol 和 ABI 版本检查。
 7. 实现错误提示：
 
 ```text

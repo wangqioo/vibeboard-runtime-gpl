@@ -17,7 +17,7 @@ const MIGRATED_APP_EXPECTED_CAPABILITIES = new Map([
   ["apps/2048", ["lvgl", "file", "timer", "input"]],
   ["apps/weather", ["lvgl", "network", "timer", "input"]],
   ["apps/voice_ai", ["lvgl", "network", "audio", "file", "timer", "input"]],
-  ["apps/nesgame", ["lvgl", "file", "timer", "input"]]
+  ["apps/nesgame", ["lvgl", "file", "timer", "input", "module", "native"]]
 ]);
 
 describe("parseAppInfo", () => {

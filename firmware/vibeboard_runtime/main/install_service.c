@@ -18,6 +18,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "launcher_ui.h"
+#include "module_abi.h"
 
 static const char *TAG = "install_service";
 #define VB_INSTALL_HTTPD_STACK_SIZE 8192
@@ -26,7 +27,7 @@ static const char *TAG = "install_service";
 #define VB_RUNTIME_LUA_API_VERSION "0.1.0"
 #define VB_RUNTIME_LVGL_API_VERSION "0.1.0"
 #define VB_RUNTIME_PACKAGE_SCHEMA "vibeboard-runtime-app-package@2"
-#define VB_RUNTIME_NATIVE_ABI_VERSION NULL
+#define VB_RUNTIME_NATIVE_ABI_VERSION VB_NATIVE_MODULE_ABI_VERSION
 #define VB_RUNTIME_CUBICSERVER_CONFIG_PATH "/sdcard/runtime/cubicserver.json"
 #define VB_RUNTIME_CONFIG_MAX_BYTES 512
 

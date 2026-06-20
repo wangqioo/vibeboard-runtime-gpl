@@ -19,7 +19,7 @@ Required fields:
 
 Optional fields:
 
-- `capabilities`: comma-separated runtime capabilities such as `lvgl`, `timer`, `network`, `audio`, `file`, `module`, or `service`.
+- `capabilities`: comma-separated runtime capabilities such as `lvgl`, `timer`, `network`, `audio`, `file`, `module`, `native`, or `service`.
 - `kind`: app kind. `service` is reserved for background service-style apps.
 
 Apps must declare special capabilities before using restricted runtime APIs in their entry Lua file:
@@ -29,6 +29,7 @@ Apps must declare special capabilities before using restricted runtime APIs in t
 - `audio`: required for `i2s.` usage.
 - `file`: required for `file.` usage.
 - `module`: required for `require(` usage.
+- `native`: required for apps that expect Runtime native ABI support such as `require("nes")`.
 
 Package validation rejects missing metadata, missing entry files, entry paths outside the app directory, and restricted API usage without the matching capability declaration.
 
