@@ -56,12 +56,35 @@ typedef struct {
 } vb_module_host_task_api_t;
 
 typedef struct {
+    const char *owner;
+    uint16_t width;
+    uint16_t height;
+    bool writing;
+} vb_module_host_display_surface_t;
+
+typedef struct {
+    uint16_t (*width)(void);
+    uint16_t (*height)(void);
+    int (*acquire)(const char *owner, vb_module_host_display_surface_t *surface);
+    int (*start_write)(vb_module_host_display_surface_t *surface);
+    int (*push_image_dma)(vb_module_host_display_surface_t *surface,
+                          uint16_t x,
+                          uint16_t y,
+                          uint16_t width,
+                          uint16_t height,
+                          const void *rgb565);
+    int (*end_write)(vb_module_host_display_surface_t *surface);
+    void (*release)(vb_module_host_display_surface_t *surface);
+} vb_module_host_display_api_t;
+
+typedef struct {
     uint32_t version;
     vb_module_host_serial_api_t serial;
     vb_module_host_time_api_t time;
     vb_module_host_heap_api_t heap;
     vb_module_host_file_api_t file;
     vb_module_host_task_api_t task;
+    vb_module_host_display_api_t display;
 } vb_module_host_api_t;
 
 void vb_module_host_api_init(vb_module_host_api_t *api);

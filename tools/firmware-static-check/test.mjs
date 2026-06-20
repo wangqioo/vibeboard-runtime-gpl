@@ -355,6 +355,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(hostApiHeader, /vb_module_host_heap_api_t/);
     assert.match(hostApiHeader, /vb_module_host_file_api_t/);
     assert.match(hostApiHeader, /vb_module_host_task_api_t/);
+    assert.match(hostApiHeader, /vb_module_host_display_api_t/);
+    assert.match(hostApiHeader, /vb_module_host_display_surface_t/);
     assert.match(hostApiHeader, /vb_module_host_api_init/);
     assert.match(hostApi, /vb_host_serial_write/);
     assert.match(hostApi, /vb_host_serial_println/);
@@ -370,6 +372,16 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(hostApi, /vb_host_task_remove/);
     assert.match(hostApi, /vb_host_task_yield/);
     assert.match(hostApi, /vb_host_task_delay_ms/);
+    assert.match(hostApi, /vb_host_display_width/);
+    assert.match(hostApi, /vb_host_display_height/);
+    assert.match(hostApi, /vb_host_display_acquire/);
+    assert.match(hostApi, /vb_host_display_start_write/);
+    assert.match(hostApi, /vb_host_display_push_image_dma/);
+    assert.match(hostApi, /vb_host_display_end_write/);
+    assert.match(hostApi, /vb_host_display_release/);
+    assert.match(hostApi, /VB_MODULE_HOST_DISPLAY_WIDTH\s+320/);
+    assert.match(hostApi, /VB_MODULE_HOST_DISPLAY_HEIGHT\s+240/);
+    assert.match(hostApi, /s_display_owner/);
     assert.match(hostApi, /esp_timer_get_time/);
     assert.match(hostApi, /heap_caps_malloc/);
     assert.match(hostApi, /MALLOC_CAP_8BIT/);

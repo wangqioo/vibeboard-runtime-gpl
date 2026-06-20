@@ -9,6 +9,10 @@
 
 #define VB_MODULE_HOST_API_VERSION 1
 #define VB_MODULE_HOST_SD_ROOT "/sdcard"
+#define VB_MODULE_HOST_DISPLAY_WIDTH 320
+#define VB_MODULE_HOST_DISPLAY_HEIGHT 240
+
+static const char *s_display_owner = NULL;
 
 static int vb_host_serial_write(const void *data, size_t size)
 {
@@ -184,6 +188,76 @@ static void vb_host_task_delay_ms(uint32_t ms)
     vTaskDelay(pdMS_TO_TICKS(ms));
 }
 
+static uint16_t vb_host_display_width(void)
+{
+    return VB_MODULE_HOST_DISPLAY_WIDTH;
+}
+
+static uint16_t vb_host_display_height(void)
+{
+    return VB_MODULE_HOST_DISPLAY_HEIGHT;
+}
+
+static int vb_host_display_acquire(const char *owner, vb_module_host_display_surface_t *surface)
+{
+    if (owner == NULL || owner[0] == '\0' || surface == NULL) {
+        return -1;
+    }
+    if (s_display_owner != NULL) {
+        return -1;
+    }
+
+    s_display_owner = owner;
+    memset(surface, 0, sizeof(*surface));
+    surface->owner = owner;
+    surface->width = VB_MODULE_HOST_DISPLAY_WIDTH;
+    surface->height = VB_MODULE_HOST_DISPLAY_HEIGHT;
+    return 0;
+}
+
+static int vb_host_display_start_write(vb_module_host_display_surface_t *surface)
+{
+    if (surface == NULL || surface->owner == NULL || surface->owner != s_display_owner || surface->writing) {
+        return -1;
+    }
+    surface->writing = true;
+    return 0;
+}
+
+static int vb_host_display_push_image_dma(vb_module_host_display_surface_t *surface,
+                                          uint16_t x,
+                                          uint16_t y,
+                                          uint16_t width,
+                                          uint16_t height,
+                                          const void *rgb565)
+{
+    if (surface == NULL || rgb565 == NULL || !surface->writing || surface->owner != s_display_owner) {
+        return -1;
+    }
+    if (width == 0 || height == 0 || x + width > surface->width || y + height > surface->height) {
+        return -1;
+    }
+    return -1;
+}
+
+static int vb_host_display_end_write(vb_module_host_display_surface_t *surface)
+{
+    if (surface == NULL || surface->owner != s_display_owner || !surface->writing) {
+        return -1;
+    }
+    surface->writing = false;
+    return 0;
+}
+
+static void vb_host_display_release(vb_module_host_display_surface_t *surface)
+{
+    if (surface == NULL || surface->owner != s_display_owner) {
+        return;
+    }
+    s_display_owner = NULL;
+    memset(surface, 0, sizeof(*surface));
+}
+
 void vb_module_host_api_init(vb_module_host_api_t *api)
 {
     if (api == NULL) {
@@ -216,4 +290,11 @@ void vb_module_host_api_init(vb_module_host_api_t *api)
     api->task.remove = vb_host_task_remove;
     api->task.yield = vb_host_task_yield;
     api->task.delay_ms = vb_host_task_delay_ms;
+    api->display.width = vb_host_display_width;
+    api->display.height = vb_host_display_height;
+    api->display.acquire = vb_host_display_acquire;
+    api->display.start_write = vb_host_display_start_write;
+    api->display.push_image_dma = vb_host_display_push_image_dma;
+    api->display.end_write = vb_host_display_end_write;
+    api->display.release = vb_host_display_release;
 }
