@@ -357,6 +357,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(hostApiHeader, /vb_module_host_task_api_t/);
     assert.match(hostApiHeader, /vb_module_host_display_api_t/);
     assert.match(hostApiHeader, /vb_module_host_display_surface_t/);
+    assert.match(hostApiHeader, /vb_module_host_lua_api_t/);
     assert.match(hostApiHeader, /vb_module_host_api_init/);
     assert.match(hostApi, /vb_host_serial_write/);
     assert.match(hostApi, /vb_host_serial_println/);
@@ -382,6 +383,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(hostApi, /VB_MODULE_HOST_DISPLAY_WIDTH\s+320/);
     assert.match(hostApi, /VB_MODULE_HOST_DISPLAY_HEIGHT\s+240/);
     assert.match(hostApi, /s_display_owner/);
+    assert.match(hostApi, /vb_host_lua_gettop/);
+    assert.match(hostApi, /vb_host_lua_settop/);
+    assert.match(hostApi, /vb_host_lua_pushboolean/);
+    assert.match(hostApi, /vb_host_lua_pushinteger/);
+    assert.match(hostApi, /vb_host_lua_pushstring/);
+    assert.match(hostApi, /vb_host_lua_setfield/);
+    assert.match(hostApi, /vb_host_lua_checkinteger/);
+    assert.match(hostApi, /vb_host_lua_checkstring/);
+    assert.match(hostApi, /vb_host_lua_error/);
     assert.match(hostApi, /esp_timer_get_time/);
     assert.match(hostApi, /heap_caps_malloc/);
     assert.match(hostApi, /MALLOC_CAP_8BIT/);

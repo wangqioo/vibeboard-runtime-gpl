@@ -6,6 +6,8 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lauxlib.h"
+#include "lua.h"
 
 #define VB_MODULE_HOST_API_VERSION 1
 #define VB_MODULE_HOST_SD_ROOT "/sdcard"
@@ -258,6 +260,51 @@ static void vb_host_display_release(vb_module_host_display_surface_t *surface)
     memset(surface, 0, sizeof(*surface));
 }
 
+static int vb_host_lua_gettop(lua_State *L)
+{
+    return lua_gettop(L);
+}
+
+static void vb_host_lua_settop(lua_State *L, int index)
+{
+    lua_settop(L, index);
+}
+
+static void vb_host_lua_pushboolean(lua_State *L, int value)
+{
+    lua_pushboolean(L, value);
+}
+
+static void vb_host_lua_pushinteger(lua_State *L, lua_Integer value)
+{
+    lua_pushinteger(L, value);
+}
+
+static void vb_host_lua_pushstring(lua_State *L, const char *value)
+{
+    lua_pushstring(L, value);
+}
+
+static void vb_host_lua_setfield(lua_State *L, int index, const char *key)
+{
+    lua_setfield(L, index, key);
+}
+
+static lua_Integer vb_host_lua_checkinteger(lua_State *L, int arg)
+{
+    return luaL_checkinteger(L, arg);
+}
+
+static const char *vb_host_lua_checkstring(lua_State *L, int arg)
+{
+    return luaL_checkstring(L, arg);
+}
+
+static int vb_host_lua_error(lua_State *L, const char *message)
+{
+    return luaL_error(L, "%s", message ? message : "native module error");
+}
+
 void vb_module_host_api_init(vb_module_host_api_t *api)
 {
     if (api == NULL) {
@@ -297,4 +344,13 @@ void vb_module_host_api_init(vb_module_host_api_t *api)
     api->display.push_image_dma = vb_host_display_push_image_dma;
     api->display.end_write = vb_host_display_end_write;
     api->display.release = vb_host_display_release;
+    api->lua.gettop = vb_host_lua_gettop;
+    api->lua.settop = vb_host_lua_settop;
+    api->lua.pushboolean = vb_host_lua_pushboolean;
+    api->lua.pushinteger = vb_host_lua_pushinteger;
+    api->lua.pushstring = vb_host_lua_pushstring;
+    api->lua.setfield = vb_host_lua_setfield;
+    api->lua.checkinteger = vb_host_lua_checkinteger;
+    api->lua.checkstring = vb_host_lua_checkstring;
+    api->lua.error = vb_host_lua_error;
 }

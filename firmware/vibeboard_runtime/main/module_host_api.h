@@ -6,6 +6,8 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lua.h"
+#include "lauxlib.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,6 +80,18 @@ typedef struct {
 } vb_module_host_display_api_t;
 
 typedef struct {
+    int (*gettop)(lua_State *L);
+    void (*settop)(lua_State *L, int index);
+    void (*pushboolean)(lua_State *L, int value);
+    void (*pushinteger)(lua_State *L, lua_Integer value);
+    void (*pushstring)(lua_State *L, const char *value);
+    void (*setfield)(lua_State *L, int index, const char *key);
+    lua_Integer (*checkinteger)(lua_State *L, int arg);
+    const char *(*checkstring)(lua_State *L, int arg);
+    int (*error)(lua_State *L, const char *message);
+} vb_module_host_lua_api_t;
+
+typedef struct {
     uint32_t version;
     vb_module_host_serial_api_t serial;
     vb_module_host_time_api_t time;
@@ -85,6 +99,7 @@ typedef struct {
     vb_module_host_file_api_t file;
     vb_module_host_task_api_t task;
     vb_module_host_display_api_t display;
+    vb_module_host_lua_api_t lua;
 } vb_module_host_api_t;
 
 void vb_module_host_api_init(vb_module_host_api_t *api);
