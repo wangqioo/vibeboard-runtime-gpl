@@ -1,5 +1,7 @@
 #include "nes_native_adapter.h"
 
+#include <string.h>
+
 #include "runtime/nes_core_bridge.h"
 
 typedef struct {
@@ -29,6 +31,36 @@ typedef struct {
 } vb_nes_native_module_t;
 
 static vb_nes_native_module_t s_nes_module;
+
+static uint32_t runtime_mask_to_nes_mask(uint8_t mask)
+{
+    uint32_t nes_mask = 0;
+    if ((mask & (1 << 0)) != 0) {
+        nes_mask |= (1 << 4);
+    }
+    if ((mask & (1 << 1)) != 0) {
+        nes_mask |= (1 << 5);
+    }
+    if ((mask & (1 << 2)) != 0) {
+        nes_mask |= (1 << 6);
+    }
+    if ((mask & (1 << 3)) != 0) {
+        nes_mask |= (1 << 7);
+    }
+    if ((mask & (1 << 4)) != 0) {
+        nes_mask |= (1 << 0);
+    }
+    if ((mask & (1 << 5)) != 0) {
+        nes_mask |= (1 << 1);
+    }
+    if ((mask & (1 << 6)) != 0) {
+        nes_mask |= (1 << 2);
+    }
+    if ((mask & (1 << 7)) != 0) {
+        nes_mask |= (1 << 3);
+    }
+    return nes_mask;
+}
 
 static void set_last_error(vb_nes_native_module_t *nes, const char *message)
 {
@@ -138,6 +170,8 @@ int vb_nes_native_module_state(lua_State *L, void *module)
 int vb_nes_native_module_start(lua_State *L, void *module)
 {
     vb_nes_native_module_t *nes = (vb_nes_native_module_t *)module;
+    nes_core_options_t options;
+    char err[96];
     if (nes == NULL) {
         return luaL_error(L, "native executor missing");
     }
@@ -155,17 +189,44 @@ int vb_nes_native_module_start(lua_State *L, void *module)
     }
 
     nes->mapper = (header.mapper2 & 0xF0) | (header.mapper1 >> 4);
-    nes->running = false;
-    set_last_error(nes, "native executor pending");
-    lua_pushboolean(L, false);
-    lua_pushstring(L, nes->last_error);
-    return 2;
+    memset(&options, 0, sizeof(options));
+    options.x = 32;
+    options.y = 0;
+    options.width = 256;
+    options.height = 240;
+    options.transfer_rows = 8;
+    options.target_fps = 60;
+    options.task_stack_bytes = 16 * 1024;
+    options.task_priority = 3;
+    options.task_core = -1;
+    options.autorun = 1;
+    options.audio_enabled = 0;
+    err[0] = '\0';
+
+    nes_core_set_input_mask(nes->core_runtime, runtime_mask_to_nes_mask(nes->player_1_mask));
+    if (!nes_core_start(nes->core_runtime, rom_path, &options, err, sizeof(err))) {
+        set_last_error(nes, err[0] ? err : "start nes core failed");
+        lua_pushboolean(L, false);
+        lua_pushstring(L, nes->last_error);
+        return 2;
+    }
+
+    nes->running = true;
+    set_last_error(nes, "");
+    lua_pushboolean(L, true);
+    return 1;
 }
 
 int vb_nes_native_module_stop(lua_State *L, void *module)
 {
     vb_nes_native_module_t *nes = (vb_nes_native_module_t *)module;
+    char err[96];
     if (nes != NULL) {
+        err[0] = '\0';
+        if (nes->core_runtime != NULL &&
+            !nes_core_stop(nes->core_runtime, 3000, 1, err, sizeof(err))) {
+            set_last_error(nes, err[0] ? err : "nes stop failed");
+        }
         nes->running = false;
     }
     return 0;
@@ -182,6 +243,9 @@ int vb_nes_native_module_input_set_mask(lua_State *L, void *module)
     lua_Integer mask = luaL_checkinteger(L, 2);
     if (player == 1) {
         nes->player_1_mask = (uint8_t)mask;
+        if (nes->core_runtime != NULL) {
+            nes_core_set_input_mask(nes->core_runtime, runtime_mask_to_nes_mask(nes->player_1_mask));
+        }
     }
     lua_pushboolean(L, true);
     return 1;
@@ -197,6 +261,9 @@ int vb_nes_native_module_input_clear(lua_State *L, void *module)
     lua_Integer player = luaL_checkinteger(L, 1);
     if (player == 1) {
         nes->player_1_mask = 0;
+        if (nes->core_runtime != NULL) {
+            nes_core_set_input_mask(nes->core_runtime, runtime_mask_to_nes_mask(nes->player_1_mask));
+        }
     }
     lua_pushboolean(L, true);
     return 1;

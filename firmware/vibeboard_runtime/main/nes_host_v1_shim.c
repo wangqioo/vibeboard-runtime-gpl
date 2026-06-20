@@ -333,6 +333,37 @@ static int32_t shim_audio_end(void *stream)
     return MODULE_ERR_UNSUPPORTED;
 }
 
+static int32_t shim_task_create(const char *name,
+                                void (*entry)(void *),
+                                void *arg,
+                                uint32_t stack_bytes,
+                                uint32_t priority,
+                                int32_t core,
+                                void **out_task)
+{
+    (void)core;
+    if (name == NULL || entry == NULL || stack_bytes == 0 || out_task == NULL || s_source.task.create == NULL) {
+        return MODULE_ERR_INVALID_ARG;
+    }
+
+    TaskHandle_t handle = NULL;
+    BaseType_t ok = s_source.task.create(entry, name, stack_bytes / sizeof(StackType_t), arg, priority, &handle);
+    if (ok != pdPASS || handle == NULL) {
+        *out_task = NULL;
+        return MODULE_ERR_NO_MEMORY;
+    }
+
+    *out_task = handle;
+    return MODULE_OK;
+}
+
+static void shim_task_remove(void *task)
+{
+    if (s_source.task.remove != NULL) {
+        s_source.task.remove((TaskHandle_t)task);
+    }
+}
+
 void vb_nes_host_v1_shim_init(module_host_api_v1 *host, const vb_module_host_api_t *source)
 {
     if (host == NULL || source == NULL) {
@@ -406,6 +437,8 @@ void vb_nes_host_v1_shim_init(module_host_api_v1 *host, const vb_module_host_api
     host->heap.largest_free_block = shim_heap_largest_free_block;
 
     host->task.size = sizeof(host->task);
+    host->task.create = shim_task_create;
+    host->task.remove = shim_task_remove;
     host->task.yield = source->task.yield;
     host->task.delay = source->task.delay_ms;
 }

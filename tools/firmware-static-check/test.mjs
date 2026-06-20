@@ -448,8 +448,13 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesNativeAdapter, /void\s+\*core_runtime/);
     assert.match(nesNativeAdapter, /vb_nes_host_v1_shim_init\(&s_nes_module\.host_v1,\s*&s_nes_module\.host_api\)/);
     assert.match(nesNativeAdapter, /nes_core_create\(&s_nes_module\.host_v1\)/);
+    assert.match(nesNativeAdapter, /nes_core_start\(nes->core_runtime,\s*rom_path,\s*&options,\s*err,\s*sizeof\(err\)\)/);
+    assert.match(nesNativeAdapter, /nes_core_stop\(nes->core_runtime,\s*3000,\s*1,\s*err,\s*sizeof\(err\)\)/);
+    assert.match(nesNativeAdapter, /nes_core_set_input_mask\(nes->core_runtime,\s*runtime_mask_to_nes_mask\(nes->player_1_mask\)\)/);
     assert.match(nesNativeAdapter, /nes_core_status\(nes->core_runtime,\s*&nes->core_status\)/);
     assert.match(nesNativeAdapter, /nes_core_destroy\(s_nes_module\.core_runtime\)/);
+    assert.match(nesNativeAdapter, /static\s+uint32_t\s+runtime_mask_to_nes_mask\(uint8_t\s+mask\)/);
+    assert.match(nesNativeAdapter, /nes_core_options_t\s+options/);
     assert.match(nesNativeAdapter, /host_api->version/);
     assert.match(nesNativeAdapter, /host_api->display\.width/);
     assert.match(nesNativeAdapter, /host_api->heap\.malloc/);
@@ -470,6 +475,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesHostShim, /host->sd\.open/);
     assert.match(nesHostShim, /host->file\.read/);
     assert.match(nesHostShim, /host->display\.pushImageDMA/);
+    assert.match(nesHostShim, /shim_task_create/);
+    assert.match(nesHostShim, /shim_task_remove/);
+    assert.match(nesHostShim, /host->task\.create\s*=\s*shim_task_create/);
+    assert.match(nesHostShim, /host->task\.remove\s*=\s*shim_task_remove/);
     assert.match(nesHostShim, /MODULE_ERR_UNSUPPORTED/);
     assert.match(upstreamNesCoreBridgeHeader, /\.\.\/include\/module_abi\.h/);
     assert.match(upstreamNesPortHeader, /\.\.\/include\/module_abi\.h/);

@@ -281,17 +281,17 @@ Suggested commit split from the parallel worktree audit:
 - `module_host_api.*` now defines and initializes native host API groups for serial output, time/yield/delay, heap allocation, SD-rooted file open/read/seek/position/size/available/close, task create/remove/yield/delay, display width/height/acquire/start_write/push_image_dma/end_write/release shape, and a minimal Lua transfer table for stack, push, setfield, check, and error functions; display ownership is exclusive, while `push_image_dma` still returns a placeholder failure until board-level LCD/LVGL handoff is implemented;
 - `nes_host_v1_shim.*` now builds a `module_host_api_v1` table over the current Runtime `vb_module_host_api_t` so the linked upstream NES core can be created without replacing the existing firmware host ABI; the shim maps serial, SD/file reads, display acquire/pushImageDMA shape, time, heap, and task yield/delay, and leaves unsupported streaming display, file writes, audio, and advanced task operations explicit as `MODULE_ERR_UNSUPPORTED`;
 - the upstream NES C++ core sources are now linked into the Runtime firmware, their headers use explicit relative ABI includes so they do not collide with the Runtime's local `module_abi.h`, and `nes_native_adapter.*` creates a `nes_core_bridge` runtime at native-module init time and refreshes `nes_core_status_t` in `nes.state()`;
+- the v1 host shim now maps task create/remove, and `nes_native_adapter.*` calls `nes_core_start(...)`, `nes_core_stop(...)`, and `nes_core_set_input_mask(...)` with conservative default options, precise core errors, and a Runtime-mask-to-NES-pad-mask conversion;
 - `nes_native_adapter.*` copies the host API table into the module instance instead of keeping a pointer to the static adapter stack frame, so future native callbacks can safely use the host API after init returns;
-- the Lua `nes` module now binds `state/start/stop/input` functions as closures over the native module handle and calls `nes_native_adapter.*` callbacks, while those callbacks still return the explicit `native executor pending` state until the emulator core is wired in;
-- `nes_native_adapter.*` now opens ROM paths through the host file API, reads the 16-byte iNES header, rejects missing/short/invalid/NES 2.0 ROMs with precise messages, records mapper id in native state, and only then returns the explicit `native executor pending` result;
-- current loader intentionally returns precise missing payload/symbol/ABI/host API errors and, after a valid descriptor, exposes a minimal NES Lua stub table whose `start(...)` returns `false, "native executor pending"`; it does not include the NES emulator core.
+- the Lua `nes` module now binds `state/start/stop/input` functions as closures over the native module handle and calls `nes_native_adapter.*` callbacks;
+- `nes_native_adapter.*` now opens ROM paths through the host file API, reads the 16-byte iNES header, rejects missing/short/invalid/NES 2.0 ROMs with precise messages, records mapper id in native state, and then starts the linked core bridge;
+- current loader intentionally returns precise missing payload/symbol/ABI/host API errors and, after a valid descriptor, exposes a minimal NES Lua table backed by the linked core bridge.
 
-The next NES implementation slice should start and drive the linked `nes_core_bridge` runtime, not full emulation polish:
+The next NES implementation slice should make NES execution visible and board-smokeable:
 
-- map `vb_module_host_task_api_t.create/remove` into the v1 host shim so `nes_core_start(...)` can create the emulator task;
-- replace the placeholder `nes.start(...)` result with `nes_core_start(...)` using conservative default `nes_core_options_t` values and precise errors;
-- map Lua input bit masks to the NES core mask layout before calling `nes_core_set_input_mask(...)` because Runtime key masks and upstream NES button bits are not the same order;
 - replace display `push_image_dma` placeholder with a board-level LCD/LVGL handoff and RGB565 write path;
+- surface `nes_core_status_t` fields in `nes.state()` beyond the current minimal fields so smoke apps can observe core state, frames, and last core error;
+- package or document a tiny legal/public-domain iNES test ROM path for board smoke, then verify start/stop/status on the board after reflashing Runtime;
 - extend the Lua transfer table only as real NES adapter calls require more Lua C API entries;
 - leave audio and native gamepad host API for later slices.
 
