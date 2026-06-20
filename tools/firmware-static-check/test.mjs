@@ -85,6 +85,8 @@ const smokeTimerInfoPath = join(repoRoot, "apps/smoke_timer/app.info");
 const smokeTimerSourcePath = join(repoRoot, "apps/smoke_timer/main.lua");
 const smokeKeyInfoPath = join(repoRoot, "apps/smoke_key/app.info");
 const smokeKeySourcePath = join(repoRoot, "apps/smoke_key/main.lua");
+const smokeTouchInfoPath = join(repoRoot, "apps/smoke_touch/app.info");
+const smokeTouchSourcePath = join(repoRoot, "apps/smoke_touch/main.lua");
 const smokeGamepadInfoPath = join(repoRoot, "apps/smoke_gamepad/app.info");
 const smokeGamepadSourcePath = join(repoRoot, "apps/smoke_gamepad/main.lua");
 const smokeI2sInfoPath = join(repoRoot, "apps/smoke_i2s/app.info");
@@ -948,16 +950,49 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(runner, /vb_lua_key_init\(&runtime\.key\)/);
     assert.match(runner, /vb_lua_key_register\(L,\s*&runtime\.key\)/);
-    assert.match(runner, /vb_board_input_start\(runner_input_cb,\s*&runtime\.key\)/);
-    assert.match(runner, /vb_lua_key_poll/);
-    assert.match(runner, /"vb_runner_key_state"/);
-    assert.match(runner, /vb_lua_key_process_pending\(L,\s*key\)/);
+    assert.match(runner, /vb_board_input_start\(runner_input_cb,\s*&runtime\)/);
+    assert.match(runner, /vb_lua_input_poll/);
+    assert.match(runner, /"vb_runner_runtime"/);
+    assert.match(runner, /vb_lua_key_process_pending\(L,\s*&runtime->key\)/);
     assert.match(runner, /vb_board_input_stop\(\)/);
     assert.match(runner, /cleanup_lua_runtime/);
     assert.match(runner, /vb_lua_key_cleanup\(L,\s*&runtime->key\)/);
 
     assert.doesNotMatch(boardSource, /lua_pcall/);
     assert.doesNotMatch(boardSource, /lua_State/);
+  });
+
+  it("bridges board touch coordinates into a Lua touch module through the runner loop", () => {
+    const boardHeader = readRequired(boardHeaderPath);
+    const boardSource = readRequired(boardSourcePath);
+    const runner = readRequired(runnerSourcePath);
+    const touchHeader = readRequired(join(firmwareRoot, "main/lua_touch.h"));
+    const touchSource = readRequired(join(firmwareRoot, "main/lua_touch.c"));
+    const cmake = readRequired(cmakePath);
+
+    assert.match(boardHeader, /\(\*vb_board_input_callback_t\)\(int code,\s*int event,\s*int timestamp_ms,\s*uint16_t x,\s*uint16_t y,\s*void \*user_data\)/);
+    assert.match(boardSource, /VB_BOARD_TOUCH_EVENT_DOWN/);
+    assert.match(boardSource, /VB_BOARD_TOUCH_EVENT_MOVE/);
+    assert.match(boardSource, /VB_BOARD_TOUCH_EVENT_UP/);
+    assert.match(boardSource, /VB_LUA_KEY_LEFT/);
+    assert.match(boardSource, /callback\(code,\s*VB_LUA_KEY_START/);
+    assert.match(boardSource, /callback\(0,\s*VB_BOARD_TOUCH_EVENT_DOWN/);
+    assert.match(touchHeader, /vb_lua_touch_state_t/);
+    assert.match(touchHeader, /vb_lua_touch_enqueue/);
+    assert.match(touchHeader, /vb_lua_touch_process_pending/);
+    assert.match(touchSource, /touch_on/);
+    assert.match(touchSource, /touch_off/);
+    assert.match(touchSource, /touch_push/);
+    assert.match(touchSource, /VB_LUA_TOUCH_DOWN/);
+    assert.match(touchSource, /VB_LUA_TOUCH_MOVE/);
+    assert.match(touchSource, /VB_LUA_TOUCH_UP/);
+    assert.match(runner, /#include "lua_touch\.h"/);
+    assert.match(runner, /vb_lua_touch_init\(&runtime\.touch\)/);
+    assert.match(runner, /vb_lua_touch_register\(L,\s*&runtime\.touch\)/);
+    assert.match(runner, /vb_lua_touch_process_pending\(L,\s*&runtime->touch\)/);
+    assert.match(runner, /vb_lua_touch_enqueue\(&runtime->touch/);
+    assert.match(runner, /vb_lua_touch_cleanup\(L,\s*&runtime->touch\)/);
+    assert.match(cmake, /lua_touch\.c/);
   });
 
   it("registers a sandboxed Lua file module", () => {
@@ -1375,6 +1410,20 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(source, /\[key\.START\]\s*=\s*"START"/);
     assert.match(source, /lv_label_set_text\(event_label/);
     assert.match(source, /smoke key event/);
+  });
+
+  it("ships a touch coordinate smoke app", () => {
+    const info = readRequired(smokeTouchInfoPath);
+    const source = readRequired(smokeTouchSourcePath);
+
+    assert.match(info, /name\s*=\s*smoke_touch/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,input/);
+    assert.match(source, /touch\.on\(function\(evt,\s*x,\s*y,\s*ts_ms\)/);
+    assert.match(source, /touch\.push\(touch\.DOWN/);
+    assert.match(source, /touch\.push\(touch\.MOVE/);
+    assert.match(source, /touch\.push\(touch\.UP/);
+    assert.match(source, /lv_label_set_text\(coord_label/);
+    assert.match(source, /smoke touch event/);
   });
 
   it("ships a gamepad compatibility smoke app", () => {

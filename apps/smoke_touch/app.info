@@ -1,0 +1,4 @@
+name = smoke_touch
+entry = main.lua
+description = Touch coordinate smoke test
+capabilities = lvgl,timer,input

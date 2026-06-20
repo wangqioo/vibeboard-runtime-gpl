@@ -20,6 +20,7 @@ idf_component_register(
         "lua_sjson.c"
         "lua_time.c"
         "lua_tmr.c"
+        "lua_touch.c"
         "lua_wifi.c"
         "main.c"
         "module_host_api.c"

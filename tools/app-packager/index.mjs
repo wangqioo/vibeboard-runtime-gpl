@@ -36,6 +36,7 @@ export const DEMO_APP_DIRS = [
   "apps/smoke_i2s",
   "apps/smoke_key",
   "apps/smoke_nes",
+  "apps/smoke_touch",
   "apps/2048"
 ];
 export const PACKAGE_SCHEMA = "vibeboard-runtime-app-package@2";

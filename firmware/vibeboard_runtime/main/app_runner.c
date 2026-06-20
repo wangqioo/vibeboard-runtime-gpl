@@ -22,6 +22,7 @@
 #include "lua_sjson.h"
 #include "lua_time.h"
 #include "lua_tmr.h"
+#include "lua_touch.h"
 #include "lua_wifi.h"
 #include "lua.h"
 #include "lauxlib.h"
@@ -47,6 +48,7 @@ static portMUX_TYPE s_runner_state_mux = portMUX_INITIALIZER_UNLOCKED;
 typedef struct {
     vb_lua_app_state_t app;
     vb_lua_key_state_t key;
+    vb_lua_touch_state_t touch;
     vb_lua_tmr_state_t tmr;
 } vb_lua_runtime_t;
 
@@ -168,15 +170,22 @@ static int vb_lua_print(lua_State *L)
     return 0;
 }
 
-static int vb_lua_key_poll(lua_State *L)
+static int vb_lua_input_poll(lua_State *L)
 {
-    lua_getfield(L, LUA_REGISTRYINDEX, "vb_runner_key_state");
-    vb_lua_key_state_t *key = (vb_lua_key_state_t *)lua_touserdata(L, -1);
+    lua_getfield(L, LUA_REGISTRYINDEX, "vb_runner_runtime");
+    vb_lua_runtime_t *runtime = (vb_lua_runtime_t *)lua_touserdata(L, -1);
     lua_pop(L, 1);
-    return vb_lua_key_process_pending(L, key);
+    if (runtime == NULL) {
+        return 0;
+    }
+    int key_result = vb_lua_key_process_pending(L, &runtime->key);
+    if (key_result != 0) {
+        return key_result;
+    }
+    return vb_lua_touch_process_pending(L, &runtime->touch);
 }
 
-static esp_err_t install_key_poll_timer(lua_State *L)
+static esp_err_t install_input_poll_timer(lua_State *L)
 {
     lua_getglobal(L, "tmr");
     lua_getfield(L, -1, "create");
@@ -192,7 +201,7 @@ static esp_err_t install_key_poll_timer(lua_State *L)
     lua_getglobal(L, "tmr");
     lua_getfield(L, -1, "ALARM_AUTO");
     lua_remove(L, -2); /* tmr */
-    lua_pushcfunction(L, vb_lua_key_poll);
+    lua_pushcfunction(L, vb_lua_input_poll);
     if (lua_pcall(L, 4, 1, 0) != LUA_OK) {
         lua_remove(L, -2); /* timer */
         return ESP_FAIL;
@@ -202,9 +211,18 @@ static esp_err_t install_key_poll_timer(lua_State *L)
     return ESP_OK;
 }
 
-static void runner_input_cb(int code, int event, int timestamp_ms, void *user_data)
+static void runner_input_cb(int code, int event, int timestamp_ms, uint16_t x, uint16_t y, void *user_data)
 {
-    (void)vb_lua_key_enqueue((vb_lua_key_state_t *)user_data, code, event, timestamp_ms);
+    vb_lua_runtime_t *runtime = (vb_lua_runtime_t *)user_data;
+    if (runtime == NULL) {
+        return;
+    }
+    if (code != 0) {
+        (void)vb_lua_key_enqueue(&runtime->key, code, event, timestamp_ms);
+        return;
+    }
+    int touch_event = event - 100;
+    (void)vb_lua_touch_enqueue(&runtime->touch, touch_event, x, y, timestamp_ms);
 }
 
 static void cleanup_lua_runtime(lua_State *L, vb_lua_runtime_t *runtime)
@@ -213,6 +231,7 @@ static void cleanup_lua_runtime(lua_State *L, vb_lua_runtime_t *runtime)
     vb_board_input_stop();
     vb_lua_app_cleanup(L, &runtime->app);
     vb_lua_key_cleanup(L, &runtime->key);
+    vb_lua_touch_cleanup(L, &runtime->touch);
     vb_lua_tmr_cleanup(L, &runtime->tmr);
 }
 
@@ -318,6 +337,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_runtime_t runtime = {0};
     vb_lua_app_init(&runtime.app);
     vb_lua_key_init(&runtime.key);
+    vb_lua_touch_init(&runtime.touch);
     vb_lua_tmr_init(&runtime.tmr);
     vb_lua_app_set_stop_flag(&runtime.app, &s_runner_state.stop_requested);
     vb_lua_tmr_set_stop_flag(&runtime.tmr, &s_runner_state.stop_requested);
@@ -327,17 +347,18 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_app_register(L, &runtime.app);
     vb_lua_tmr_register(L, &runtime.tmr);
     vb_lua_key_register(L, &runtime.key);
+    vb_lua_touch_register(L, &runtime.touch);
     vb_lua_gamepad_register(L);
-    lua_pushlightuserdata(L, &runtime.key);
-    lua_setfield(L, LUA_REGISTRYINDEX, "vb_runner_key_state");
-    if (install_key_poll_timer(L) != ESP_OK) {
+    lua_pushlightuserdata(L, &runtime);
+    lua_setfield(L, LUA_REGISTRYINDEX, "vb_runner_runtime");
+    if (install_input_poll_timer(L) != ESP_OK) {
         const char *err = lua_tostring(L, -1);
-        set_result(result, true, ESP_FAIL, err ? err : "key timer failed");
+        set_result(result, true, ESP_FAIL, err ? err : "input timer failed");
         cleanup_lua_runtime(L, &runtime);
         lua_close(L);
         return ESP_FAIL;
     }
-    esp_err_t input_err = vb_board_input_start(runner_input_cb, &runtime.key);
+    esp_err_t input_err = vb_board_input_start(runner_input_cb, &runtime);
     if (input_err != ESP_OK) {
         ESP_LOGW(TAG, "board input unavailable: %s", esp_err_to_name(input_err));
     }

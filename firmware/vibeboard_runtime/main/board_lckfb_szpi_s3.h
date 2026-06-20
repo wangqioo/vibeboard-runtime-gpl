@@ -42,7 +42,7 @@ typedef struct {
     esp_err_t sd_error;
 } vb_board_status_t;
 
-typedef void (*vb_board_input_callback_t)(int code, int event, int timestamp_ms, void *user_data);
+typedef void (*vb_board_input_callback_t)(int code, int event, int timestamp_ms, uint16_t x, uint16_t y, void *user_data);
 
 esp_err_t vb_board_start(vb_board_status_t *status);
 esp_err_t vb_board_mount_sd(vb_board_status_t *status);

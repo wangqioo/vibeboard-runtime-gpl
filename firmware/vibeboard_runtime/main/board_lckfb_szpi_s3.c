@@ -34,6 +34,9 @@ static void *input_user_data;
 
 #define VB_BOARD_INPUT_POLL_MS 20
 #define VB_BOARD_TOUCH_SWIPE_MIN_PX 28
+#define VB_BOARD_TOUCH_EVENT_DOWN 101
+#define VB_BOARD_TOUCH_EVENT_MOVE 102
+#define VB_BOARD_TOUCH_EVENT_UP 103
 
 static esp_err_t i2c_init(void)
 {
@@ -307,7 +310,7 @@ static void emit_swipe(uint16_t start_x, uint16_t start_y, uint16_t end_x, uint1
         code = dy < 0 ? VB_LUA_KEY_UP : VB_LUA_KEY_DOWN;
     }
 
-    callback(code, VB_LUA_KEY_START, board_now_ms(), input_user_data);
+    callback(code, VB_LUA_KEY_START, board_now_ms(), end_x, end_y, input_user_data);
 }
 
 static void board_input_task(void *arg)
@@ -327,14 +330,27 @@ static void board_input_task(void *arg)
             esp_lcd_touch_read_data(touch);
             bool pressed = esp_lcd_touch_get_coordinates(touch, x, y, NULL, &count, 1);
             if (pressed && count > 0) {
+                vb_board_input_callback_t callback = input_callback;
+                int timestamp = board_now_ms();
                 if (!tracking) {
                     start_x = x[0];
                     start_y = y[0];
                     tracking = true;
+                    if (callback != NULL) {
+                        callback(0, VB_BOARD_TOUCH_EVENT_DOWN, timestamp, x[0], y[0], input_user_data);
+                    }
+                } else if (x[0] != last_x || y[0] != last_y) {
+                    if (callback != NULL) {
+                        callback(0, VB_BOARD_TOUCH_EVENT_MOVE, timestamp, x[0], y[0], input_user_data);
+                    }
                 }
                 last_x = x[0];
                 last_y = y[0];
             } else if (tracking) {
+                vb_board_input_callback_t callback = input_callback;
+                if (callback != NULL) {
+                    callback(0, VB_BOARD_TOUCH_EVENT_UP, board_now_ms(), last_x, last_y, input_user_data);
+                }
                 emit_swipe(start_x, start_y, last_x, last_y);
                 tracking = false;
             }

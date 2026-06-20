@@ -159,7 +159,7 @@ AI 生成一个受限 Lua/LVGL App
 - Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()` / `app.launch(id)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App。该能力已 build-verified，真实 app-to-app 上板切换仍待 smoke；
 - 还不能直接运行完整上游 HoloCubic 全量 App，只能按 App 驱动逐个补兼容层；
 - LVGL 绑定覆盖还不够广，尤其 list/arc/switch/dropdown/textarea/roller/slider、flex/grid、字体和 canvas 高级效果；
-- 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；还没有 BOOT/长按/repeat 的完整 Lua 输入语义，`smoke_key` 还需要补物理触摸手势的独立上板记录；
+- 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；Lua `touch.on/off/push` 坐标事件模块和 `apps/smoke_touch` 已进入 build-verified。还没有 BOOT/长按/repeat 的完整 Lua 输入语义，`smoke_touch` 真实坐标显示还需要上板记录；
 - Native NES 已经 build-verified 到核心启动路径，但还缺合法 ROM 上板、真实显示所有权压力测试、音频输出和 native gamepad；
 - Voice AI 只有本地 bridge skeleton 和 I2S/GIF build verification，真实麦克风、真实 STT/LLM、凭证策略和端到端上板还没完成；
 - Runtime/API/App schema 版本兼容已经有基础元数据；工具侧现在会拒绝 entry Lua 里直接调用当前 Runtime 未暴露的 LVGL API，并返回 `Runtime update required: unsupported LVGL API <name>`；也会拒绝 `requires.runtime`、`requires.luaApi`、`requires.lvglApi` 或 `requires.nativeAbi` 高于当前 Runtime 的 App。后续还需要把同类严格拒绝扩展到更多 Lua 模块和生成器白名单。
@@ -184,11 +184,11 @@ AI 生成一个受限 Lua/LVGL App
 
 第三优先级：输入事件。
 
-- 暴露 FT6336 touch 给 Lua；
+- 暴露 FT6336 touch 给 Lua；**第一版坐标事件 `touch.on/off/push` 已 build-verified，真实坐标显示待上板。**
 - 已有 `key.on(...)` / `key.off(...)` / `key.push(...)` 兼容层，可支持上游 key-driven App 的软件触发和 API 形状；
-- 触摸滑动到 `key` 队列桥接已通过 `2048` 真机验证；下一步用 `smoke_key` 做独立输入 smoke，上板后继续补物理按键、长按、repeat 或新增 `touch.on(...)`；
+- 触摸滑动到 `key` 队列桥接已通过 `2048` 真机验证；下一步用 `smoke_touch` 做独立触摸坐标 smoke，上板后继续补物理按键、长按、repeat；
 - 给按钮、列表、Launcher 选择提供真实交互；
-- 已新增 `apps/smoke_key` 显示最近 key 事件；后续再做 `apps/smoke_touch` 显示触摸坐标和点击状态；
+- 已新增 `apps/smoke_key` 显示最近 key 事件，`apps/smoke_touch` 显示触摸坐标和点击状态；
 - 验证快速点击不会导致 Lua/LVGL 崩溃。
 
 第四优先级：扩展 LVGL/API 覆盖。
@@ -234,7 +234,7 @@ AI 生成一个受限 Lua/LVGL App
 
    - `apps/2048` 能通过触摸滑动触发上下左右；**已由用户真机确认。**
    - `apps/smoke_key` 能显示 `key.push(...)` 注入的 LEFT/RIGHT 事件；
-   - `apps/smoke_key` 能显示真实触摸滑动转换后的 key 事件；
+   - `apps/smoke_touch` 能显示真实触摸坐标事件；
    - 事件 handler 在 App 停止/切换时清理；
    - 快速输入不会导致 Lua/LVGL 崩溃。
 
