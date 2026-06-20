@@ -52,9 +52,25 @@ local function run_check()
       append(running_lines, "running", running_state and running_state.running)
       append(running_lines, "frames", running_state and (running_state.core_frames or running_state.frames))
       append(running_lines, "display", running_state and running_state.display_stream_supported)
+      append(running_lines, "audio", running_state and running_state.audio_active)
+      append(running_lines, "audio_backend", running_state and running_state.audio_backend)
+      local pcm = nil
+      local audio_ok, audio_result = pcall(function()
+        return nes.read_audio(1024)
+      end)
+      if audio_ok then
+        pcm = audio_result
+      end
+      append(running_lines, "audio_bytes", pcm and #pcm or 0)
       append(running_lines, "error", running_state and (running_state.core_last_error or running_state.last_error))
       lv_label_set_text(status_label, "OK\n" .. table.concat(running_lines, "\n"))
-      print("[smoke_nes] running", running_state and running_state.status, running_state and running_state.core_frames)
+      print(
+        "[smoke_nes] running",
+        running_state and running_state.status,
+        running_state and running_state.core_frames,
+        "audio_bytes",
+        pcm and #pcm or 0
+      )
     end)
     return
   end

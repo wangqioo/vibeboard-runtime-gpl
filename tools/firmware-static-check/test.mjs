@@ -1660,9 +1660,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /local\s+nes\s*=\s*require\(["']nes["']\)/);
     assert.match(source, /nes\.state\(\)/);
     assert.match(source, /nes\.start\(/);
+    assert.match(source, /nes\.read_audio/);
     assert.match(source, /nes\.input\.set_mask/);
     assert.match(source, /\/sdcard\/nes\/smoke\.nes/);
     assert.match(source, /core_frames/);
+    assert.match(source, /audio_bytes/);
     assert.match(source, /core_last_error/);
     assert.match(source, /open rom failed/);
     assert.match(nativeManifest, /magic\s*=\s*VBNM/);
