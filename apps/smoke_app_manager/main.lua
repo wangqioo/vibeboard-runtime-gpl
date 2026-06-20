@@ -18,15 +18,20 @@ lv_obj_align(status, LV_ALIGN_CENTER, 0, 0)
 local function render()
   local lines = {}
   local apps, err = app.list()
+  local rescanned, rescan_err = app.rescan()
   local current = app.current()
   local exiting = app.exiting()
 
   lines[#lines + 1] = "count: " .. tostring(type(apps) == "table" and #apps or 0)
+  lines[#lines + 1] = "rescan: " .. tostring(type(rescanned) == "table" and #rescanned or 0)
   lines[#lines + 1] = "state: " .. tostring(current and current.state)
   lines[#lines + 1] = "id: " .. tostring(current and current.id)
   lines[#lines + 1] = "exiting: " .. tostring(exiting)
   if err then
     lines[#lines + 1] = "err: " .. tostring(err)
+  end
+  if rescan_err then
+    lines[#lines + 1] = "rescan err: " .. tostring(rescan_err)
   end
 
   lv_label_set_text(status, table.concat(lines, "\n"))

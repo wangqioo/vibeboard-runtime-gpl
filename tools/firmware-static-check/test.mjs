@@ -650,6 +650,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /vb_lua_app_set_stop_flag/);
     assert.match(source, /luaL_Reg\s+functions/);
     assert.match(source, /"list"/);
+    assert.match(source, /"rescan",\s*lua_app_rescan/);
     assert.match(source, /"current"/);
     assert.match(source, /"exiting"/);
     assert.match(source, /"on"/);
@@ -1480,6 +1481,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(info, /entry\s*=\s*main\.lua/);
     assert.match(info, /capabilities\s*=\s*lvgl,timer/);
     assert.match(source, /app\.list\(\)/);
+    assert.match(source, /app\.rescan\(\)/);
     assert.match(source, /app\.current\(\)/);
     assert.match(source, /app\.exiting\(\)/);
     assert.match(source, /app\.on\(["']exit["']/);

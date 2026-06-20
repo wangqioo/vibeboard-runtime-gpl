@@ -43,7 +43,7 @@ static void push_app_entry(lua_State *L, const vb_app_registry_entry_t *entry)
     lua_setfield(L, -2, "compatible");
 }
 
-static int lua_app_list(lua_State *L)
+static int push_scanned_apps(lua_State *L)
 {
     vb_app_registry_result_t result;
     esp_err_t err = vb_app_registry_scan(&result);
@@ -59,6 +59,16 @@ static int lua_app_list(lua_State *L)
         lua_rawseti(L, -2, i + 1);
     }
     return 1;
+}
+
+static int lua_app_list(lua_State *L)
+{
+    return push_scanned_apps(L);
+}
+
+static int lua_app_rescan(lua_State *L)
+{
+    return push_scanned_apps(L);
 }
 
 static int lua_app_current(lua_State *L)
@@ -131,6 +141,7 @@ void vb_lua_app_register(lua_State *L, vb_lua_app_state_t *state)
 {
     static const luaL_Reg functions[] = {
         {"list", lua_app_list},
+        {"rescan", lua_app_rescan},
         {"current", lua_app_current},
         {"exiting", lua_app_exiting},
         {"on", lua_app_on},
