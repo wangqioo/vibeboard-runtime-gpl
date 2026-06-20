@@ -242,10 +242,10 @@ async function readResponseText(response) {
   return typeof response.text === "function" ? await response.text() : response.text || "";
 }
 
-async function requestJson({ url, method, fetchImpl, requestImpl, retryAttempts, retryDelayMs, label }) {
+async function requestJson({ url, body = Buffer.alloc(0), method, fetchImpl, requestImpl, retryAttempts, retryDelayMs, label }) {
   const response = await sendBoardRequest({
     url,
-    body: Buffer.alloc(0),
+    body,
     method,
     fetchImpl,
     requestImpl,
@@ -445,6 +445,35 @@ export async function stopApp({
     retryAttempts,
     retryDelayMs,
     label: "Stop app",
+  });
+}
+
+export async function setRuntimeConfig({
+  boardUrl,
+  name,
+  body,
+  fetchImpl,
+  requestImpl = sendRequest,
+  retryAttempts = 3,
+  retryDelayMs = 250,
+}) {
+  if (!boardUrl) {
+    throw new Error("boardUrl is required");
+  }
+  if (!["cubicserver", "wifi"].includes(name)) {
+    throw new Error(`Unsupported runtime config: ${name}`);
+  }
+
+  const base = boardUrl.replace(/\/+$/, "");
+  return requestJson({
+    url: `${base}/runtime/config?name=${encodeURIComponent(name)}`,
+    method: "POST",
+    fetchImpl,
+    requestImpl,
+    retryAttempts,
+    retryDelayMs,
+    label: `Set runtime config ${name}`,
+    body: Buffer.from(body || "", "utf8"),
   });
 }
 

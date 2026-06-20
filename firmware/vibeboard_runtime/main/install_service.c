@@ -30,6 +30,7 @@ static const char *TAG = "install_service";
 #define VB_RUNTIME_PACKAGE_SCHEMA "vibeboard-runtime-app-package@2"
 #define VB_RUNTIME_NATIVE_ABI_VERSION VB_NATIVE_MODULE_ABI_VERSION
 #define VB_RUNTIME_CUBICSERVER_CONFIG_PATH "/sdcard/runtime/cubicserver.json"
+#define VB_RUNTIME_WIFI_CONFIG_PATH "/sdcard/runtime/wifi.json"
 #define VB_RUNTIME_CONFIG_MAX_BYTES 512
 #define VB_MANIFEST_MAX_BYTES 16384
 #define VB_SHA256_BYTES 32
@@ -561,25 +562,20 @@ static esp_err_t install_abort_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-static esp_err_t runtime_config_handler(httpd_req_t *req)
+static esp_err_t write_runtime_config_body(httpd_req_t *req, const char *path)
 {
-    char name[32] = {0};
-    if (get_query_value(req, "name", name, sizeof(name)) != ESP_OK || strcmp(name, "cubicserver") != 0) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsupported config");
-        return ESP_FAIL;
-    }
     if (req->content_len <= 0 || req->content_len > VB_RUNTIME_CONFIG_MAX_BYTES) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "config too large");
         return ESP_FAIL;
     }
-    if (ensure_parent_dirs(VB_RUNTIME_CUBICSERVER_CONFIG_PATH) != ESP_OK) {
+    if (ensure_parent_dirs(path) != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "mkdir failed");
         return ESP_FAIL;
     }
 
-    FILE *file = fopen(VB_RUNTIME_CUBICSERVER_CONFIG_PATH, "wb");
+    FILE *file = fopen(path, "wb");
     if (file == NULL) {
-        ESP_LOGE(TAG, "open failed %s errno=%d", VB_RUNTIME_CUBICSERVER_CONFIG_PATH, errno);
+        ESP_LOGE(TAG, "open failed %s errno=%d", path, errno);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "open failed");
         return ESP_FAIL;
     }
@@ -602,8 +598,35 @@ static esp_err_t runtime_config_handler(httpd_req_t *req)
     }
 
     fclose(file);
+    return ESP_OK;
+}
+
+static esp_err_t runtime_config_handler(httpd_req_t *req)
+{
+    char name[32] = {0};
+    if (get_query_value(req, "name", name, sizeof(name)) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsupported config");
+        return ESP_FAIL;
+    }
+
+    const char *path = NULL;
+    if (strcmp(name, "cubicserver") == 0) {
+        path = VB_RUNTIME_CUBICSERVER_CONFIG_PATH;
+    } else if (strcmp(name, "wifi") == 0) {
+        path = VB_RUNTIME_WIFI_CONFIG_PATH;
+    } else {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsupported config");
+        return ESP_FAIL;
+    }
+
+    if (write_runtime_config_body(req, path) != ESP_OK) {
+        return ESP_FAIL;
+    }
+
     ESP_LOGI(TAG, "runtime config %s bytes=%d", name, req->content_len);
-    send_json(req, "{\"ok\":true,\"config\":\"cubicserver\"}\n");
+    char body[64];
+    snprintf(body, sizeof(body), "{\"ok\":true,\"config\":\"%s\"}\n", name);
+    send_json(req, body);
     return ESP_OK;
 }
 

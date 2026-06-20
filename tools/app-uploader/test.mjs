@@ -11,8 +11,18 @@ import {
   runInterruptedUploadSmoke,
 } from "./interrupted-smoke.mjs";
 import { parseLaunchCliArgs } from "./launch.mjs";
+import { parseRuntimeConfigCliArgs } from "./runtime-config.mjs";
 import { parseUploadCliArgs } from "./cli.mjs";
-import { createNcRequest, deleteApp, launchApp, listUploadFiles, sendRequest, stopApp, uploadApp } from "./index.mjs";
+import {
+  createNcRequest,
+  deleteApp,
+  launchApp,
+  listUploadFiles,
+  sendRequest,
+  setRuntimeConfig,
+  stopApp,
+  uploadApp,
+} from "./index.mjs";
 
 function makePackage() {
   const root = mkdtempSync(join(tmpdir(), "vibeboard-uploader-"));
@@ -424,6 +434,32 @@ describe("parseLaunchCliArgs", () => {
   });
 });
 
+describe("parseRuntimeConfigCliArgs", () => {
+  it("parses runtime config updates with native transport by default", () => {
+    assert.deepEqual(
+      parseRuntimeConfigCliArgs(["http://192.168.1.32:8080", "wifi", "runtime/wifi.local.json"]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        name: "wifi",
+        source: "runtime/wifi.local.json",
+        transport: "native",
+      },
+    );
+  });
+
+  it("keeps nc as an explicit runtime config fallback transport", () => {
+    assert.deepEqual(
+      parseRuntimeConfigCliArgs(["--transport=nc", "http://192.168.1.32:8080", "cubicserver", "-"]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        name: "cubicserver",
+        source: "-",
+        transport: "nc",
+      },
+    );
+  });
+});
+
 describe("createNcRequest", () => {
   it("sends raw HTTP through an nc-compatible runner", async () => {
     const commands = [];
@@ -509,6 +545,40 @@ describe("stopApp", () => {
     assert.equal(calls[0].url, "http://192.168.1.32:8080/stop");
     assert.equal(calls[0].method, "POST");
     assert.equal(calls[0].body.length, 0);
+  });
+});
+
+describe("setRuntimeConfig", () => {
+  it("posts runtime WiFi config to the board-owned config path", async () => {
+    const calls = [];
+    const result = await setRuntimeConfig({
+      boardUrl: "http://192.168.1.32:8080/",
+      name: "wifi",
+      body: JSON.stringify({ ssid: "test-ssid", password: "test-pass" }),
+      requestImpl: async (url, body, options = {}) => {
+        calls.push({ url, method: options.method, body: body.toString("utf8") });
+        return { ok: true, status: 200, text: '{"ok":true,"config":"wifi"}' };
+      },
+    });
+
+    assert.deepEqual(result, { ok: true, config: "wifi" });
+    assert.equal(calls[0].url, "http://192.168.1.32:8080/runtime/config?name=wifi");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(calls[0].body, '{"ssid":"test-ssid","password":"test-pass"}');
+  });
+
+  it("rejects unknown runtime config names before sending", async () => {
+    await assert.rejects(
+      setRuntimeConfig({
+        boardUrl: "http://192.168.1.32:8080",
+        name: "other",
+        body: "{}",
+        requestImpl: async () => {
+          throw new Error("should not send");
+        },
+      }),
+      /Unsupported runtime config: other/,
+    );
   });
 });
 

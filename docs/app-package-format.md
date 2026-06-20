@@ -201,6 +201,15 @@ Example:
 
 The runtime treats this file as optional. If it is absent or malformed, boot continues to the native launcher and the install service still starts. The current firmware also reads the existing local `/sdcard/apps/smoke_network/wifi.json` as a compatibility fallback for board bring-up; new setups should prefer `/sdcard/runtime/wifi.json`.
 
+The config can be updated over the install service without manually editing the SD card:
+
+```text
+POST /runtime/config?name=wifi
+npm run runtime:config -- http://192.168.1.32:8080 wifi runtime/wifi.local.json
+```
+
+The command also accepts `-` for stdin or an inline JSON object. The write path is build-verified; after writing real credentials, reboot the board and confirm serial logs show `runtime WiFi autoconnect using /sdcard/runtime/wifi.json`.
+
 ## Runtime Cubic Server Config
 
 Migrated apps that call `http.cubicserver.get(path, headers, callback)` use a runtime-owned Cubic server base URL for relative paths.
@@ -215,6 +224,7 @@ The config can be updated over the install service without manually editing the 
 
 ```text
 POST /runtime/config?name=cubicserver
+npm run runtime:config -- http://192.168.1.32:8080 cubicserver runtime/cubicserver.local.json
 ```
 
 Body:

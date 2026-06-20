@@ -306,8 +306,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /apps_handler/);
     assert.match(source, /runtime_config_handler/);
     assert.match(source, /VB_RUNTIME_CUBICSERVER_CONFIG_PATH\s+"\/sdcard\/runtime\/cubicserver\.json"/);
+    assert.match(source, /VB_RUNTIME_WIFI_CONFIG_PATH\s+"\/sdcard\/runtime\/wifi\.json"/);
     assert.match(source, /VB_RUNTIME_CONFIG_MAX_BYTES\s+512/);
     assert.match(source, /strcmp\(name,\s*"cubicserver"\)/);
+    assert.match(source, /strcmp\(name,\s*"wifi"\)/);
+    assert.match(source, /write_runtime_config_body/);
     assert.match(source, /rescan_handler/);
     assert.match(source, /launch_handler/);
     assert.match(source, /stop_handler/);

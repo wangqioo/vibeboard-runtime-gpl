@@ -23,6 +23,7 @@
     "upload:app": "node tools/app-uploader/cli.mjs",
     "launch:app": "node tools/app-uploader/launch.mjs",
     "delete:app": "node tools/app-uploader/delete.mjs",
+    "runtime:config": "node tools/app-uploader/runtime-config.mjs",
     "upload:interrupted-smoke": "node tools/app-uploader/interrupted-smoke.mjs",
     "device:check": "node tools/device-check/index.mjs",
     "device:web": "node tools/device-web-ui/server.mjs",
