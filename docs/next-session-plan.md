@@ -281,11 +281,12 @@ Suggested commit split from the parallel worktree audit:
 - `module_host_api.*` now defines and initializes native host API groups for serial output, time/yield/delay, heap allocation, SD-rooted file open/read/seek/position/size/available/close, task create/remove/yield/delay, display width/height/acquire/start_write/push_image_dma/end_write/release shape, and a minimal Lua transfer table for stack, push, setfield, check, and error functions; display ownership is exclusive, while `push_image_dma` still returns a placeholder failure until board-level LCD/LVGL handoff is implemented;
 - `nes_native_adapter.*` copies the host API table into the module instance instead of keeping a pointer to the static adapter stack frame, so future native callbacks can safely use the host API after init returns;
 - the Lua `nes` module now binds `state/start/stop/input` functions as closures over the native module handle and calls `nes_native_adapter.*` callbacks, while those callbacks still return the explicit `native executor pending` state until the emulator core is wired in;
+- `nes_native_adapter.*` now opens ROM paths through the host file API, reads the 16-byte iNES header, rejects missing/short/invalid/NES 2.0 ROMs with precise messages, records mapper id in native state, and only then returns the explicit `native executor pending` result;
 - current loader intentionally returns precise missing payload/symbol/ABI/host API errors and, after a valid descriptor, exposes a minimal NES Lua stub table whose `start(...)` returns `false, "native executor pending"`; it does not include the NES emulator core.
 
 The next NES implementation slice should be ELF/static native payload execution and the first host API group, not full emulation:
 
-- replace the linked NES adapter placeholder state with real `state/start/stop/input` native callbacks behind the same `vb_native_module_init` contract, or add ELFLoader/import resolution behind that contract;
+- add a `vb_module_host_api_t -> module_host_api_v1` shim and use it to create the `modules/nes/runtime/nes_core_bridge.*` runtime from the linked adapter;
 - replace display `push_image_dma` placeholder with a board-level LCD/LVGL handoff and RGB565 write path;
 - extend the Lua transfer table only as real NES adapter calls require more Lua C API entries;
 - leave audio and native gamepad host API for later slices.

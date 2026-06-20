@@ -428,6 +428,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesNativeAdapter, /vb_module_host_api_t\s+host_api/);
     assert.match(nesNativeAdapter, /s_nes_module\.host_api\s*=\s*\*host_api/);
     assert.match(nesNativeAdapter, /\*module\s*=/);
+    assert.match(nesNativeAdapter, /host_api\.file\.open/);
+    assert.match(nesNativeAdapter, /host_api\.file\.read/);
+    assert.match(nesNativeAdapter, /host_api\.file\.close/);
+    assert.match(nesNativeAdapter, /read_ines_header/);
+    assert.match(nesNativeAdapter, /invalid iNES header/);
+    assert.match(nesNativeAdapter, /NES 2\.0 rom is not supported yet/);
     assert.match(luaModule, /package/);
     assert.match(luaModule, /searchers/);
     assert.match(luaModule, /vb_native_module_load/);
