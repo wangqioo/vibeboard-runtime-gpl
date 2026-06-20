@@ -70,6 +70,26 @@ static void set_last_error(vb_nes_native_module_t *nes, const char *message)
     snprintf(nes->last_error, sizeof(nes->last_error), "%s", message ? message : "");
 }
 
+static const char *core_state_name(int32_t state)
+{
+    switch (state) {
+    case 0:
+        return "empty";
+    case 1:
+        return "loaded";
+    case 2:
+        return "running";
+    case 3:
+        return "paused";
+    case 4:
+        return "stopping";
+    case 5:
+        return "error";
+    default:
+        return "unknown";
+    }
+}
+
 static bool read_ines_header(vb_nes_native_module_t *nes, const char *rom_path, vb_nes_ines_header_t *header)
 {
     if (nes == NULL || rom_path == NULL || rom_path[0] == '\0' || header == NULL) {
@@ -144,14 +164,20 @@ int vb_nes_native_module_state(lua_State *L, void *module)
         return luaL_error(L, "native executor missing");
     }
 
+    if (nes->core_runtime != NULL) {
+        nes_core_status(nes->core_runtime, &nes->core_status);
+        nes->running = nes->core_status.running != 0;
+        nes->frames = nes->core_status.frames;
+        if (nes->core_status.mapper != 0) {
+            nes->mapper = nes->core_status.mapper;
+        }
+    }
+
     lua_newtable(L);
     lua_pushboolean(L, nes->running);
     lua_setfield(L, -2, "running");
     lua_pushinteger(L, nes->frames);
     lua_setfield(L, -2, "frames");
-    if (nes->core_runtime != NULL) {
-        nes_core_status(nes->core_runtime, &nes->core_status);
-    }
     lua_pushinteger(L, nes->display_width);
     lua_setfield(L, -2, "display_width");
     lua_pushinteger(L, nes->display_height);
@@ -162,7 +188,63 @@ int vb_nes_native_module_state(lua_State *L, void *module)
     lua_setfield(L, -2, "mapper");
     lua_pushstring(L, nes->last_error);
     lua_setfield(L, -2, "last_error");
-    lua_pushstring(L, "native executor pending");
+    lua_pushinteger(L, nes->core_status.state);
+    lua_setfield(L, -2, "core_state");
+    lua_pushboolean(L, nes->core_status.running != 0);
+    lua_setfield(L, -2, "core_running");
+    lua_pushboolean(L, nes->core_status.paused != 0);
+    lua_setfield(L, -2, "core_paused");
+    lua_pushboolean(L, nes->core_status.loaded != 0);
+    lua_setfield(L, -2, "core_loaded");
+    lua_pushinteger(L, nes->core_status.frames);
+    lua_setfield(L, -2, "core_frames");
+    lua_pushinteger(L, nes->core_status.started_ms);
+    lua_setfield(L, -2, "started_ms");
+    lua_pushinteger(L, nes->core_status.stopped_ms);
+    lua_setfield(L, -2, "stopped_ms");
+    lua_pushinteger(L, nes->core_status.last_gamepad_mask);
+    lua_setfield(L, -2, "last_gamepad_mask");
+    lua_pushinteger(L, nes->core_status.last_nes_mask);
+    lua_setfield(L, -2, "last_nes_mask");
+    lua_pushinteger(L, nes->core_status.step_pending);
+    lua_setfield(L, -2, "step_pending");
+    lua_pushinteger(L, nes->core_status.stage);
+    lua_setfield(L, -2, "stage");
+    lua_pushinteger(L, nes->core_status.transfer_rows);
+    lua_setfield(L, -2, "transfer_rows");
+    lua_pushboolean(L, nes->core_status.display_stream_supported != 0);
+    lua_setfield(L, -2, "display_stream_supported");
+    lua_pushboolean(L, nes->core_status.display_stream_active != 0);
+    lua_setfield(L, -2, "display_stream_active");
+    lua_pushinteger(L, nes->core_status.display_stream_slots);
+    lua_setfield(L, -2, "display_stream_slots");
+    lua_pushinteger(L, nes->core_status.display_stream_queued);
+    lua_setfield(L, -2, "display_stream_queued");
+    lua_pushboolean(L, nes->core_status.display_async_supported != 0);
+    lua_setfield(L, -2, "display_async_supported");
+    lua_pushboolean(L, nes->core_status.display_async_active != 0);
+    lua_setfield(L, -2, "display_async_active");
+    lua_pushinteger(L, nes->core_status.display_async_slots);
+    lua_setfield(L, -2, "display_async_slots");
+    lua_pushboolean(L, nes->core_status.task_stack_psram != 0);
+    lua_setfield(L, -2, "task_stack_psram");
+    lua_pushboolean(L, nes->core_status.autorun != 0);
+    lua_setfield(L, -2, "autorun");
+    lua_pushboolean(L, nes->core_status.audio_requested != 0);
+    lua_setfield(L, -2, "audio_requested");
+    lua_pushboolean(L, nes->core_status.audio_active != 0);
+    lua_setfield(L, -2, "audio_active");
+    lua_pushinteger(L, nes->core_status.audio_queued_bytes);
+    lua_setfield(L, -2, "audio_queued_bytes");
+    lua_pushinteger(L, nes->core_status.audio_dropped_bytes);
+    lua_setfield(L, -2, "audio_dropped_bytes");
+    lua_pushstring(L, nes->core_status.audio_backend);
+    lua_setfield(L, -2, "audio_backend");
+    lua_pushstring(L, nes->core_status.audio_error);
+    lua_setfield(L, -2, "audio_error");
+    lua_pushstring(L, nes->core_status.last_error);
+    lua_setfield(L, -2, "core_last_error");
+    lua_pushstring(L, core_state_name(nes->core_status.state));
     lua_setfield(L, -2, "status");
     return 1;
 }

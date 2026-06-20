@@ -437,7 +437,6 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(staticAdapter, /result->error\[0\]\s*=\s*'\\0'/);
     assert.match(staticAdapter, /result->module\s*=\s*module/);
     assert.match(staticAdapter, /result->status\s*=\s*ESP_OK/);
-    assert.match(staticAdapter, /native executor pending/);
     assert.match(nesNativeAdapterHeader, /vb_nes_native_module_init/);
     assert.match(nesNativeAdapterHeader, /module_host_api\.h/);
     assert.match(nesNativeAdapterHeader, /nes_host_v1_shim\.h/);
@@ -455,6 +454,16 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesNativeAdapter, /nes_core_destroy\(s_nes_module\.core_runtime\)/);
     assert.match(nesNativeAdapter, /static\s+uint32_t\s+runtime_mask_to_nes_mask\(uint8_t\s+mask\)/);
     assert.match(nesNativeAdapter, /nes_core_options_t\s+options/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_state"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_running"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_loaded"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_frames"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"last_nes_mask"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"display_stream_supported"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"display_stream_active"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"audio_active"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"audio_backend"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_last_error"\)/);
     assert.match(nesNativeAdapter, /host_api->version/);
     assert.match(nesNativeAdapter, /host_api->display\.width/);
     assert.match(nesNativeAdapter, /host_api->heap\.malloc/);
@@ -496,7 +505,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(luaModule, /return\s+luaL_error\(L,\s*"%s",\s*result\.error\)/);
   });
 
-  it("returns a minimal NES Lua module after native manifest validation", () => {
+  it("returns a core-backed NES Lua module after native manifest validation", () => {
     const luaModule = readRequired(luaNativeModuleSourcePath);
     const nesNativeAdapter = readRequired(nesNativeAdapterSourcePath);
 
@@ -516,7 +525,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(luaModule, /"input"/);
     assert.match(luaModule, /"set_mask"/);
     assert.match(luaModule, /"clear"/);
-    assert.match(nesNativeAdapter, /"native executor pending"/);
+    assert.match(nesNativeAdapter, /core_state_name/);
+    assert.match(nesNativeAdapter, /"core_state"/);
+    assert.match(nesNativeAdapter, /"core_running"/);
   });
 
   it("routes the migrated NES app through require('nes') instead of assuming a global module", () => {
