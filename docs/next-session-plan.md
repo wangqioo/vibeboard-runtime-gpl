@@ -75,7 +75,7 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - static tests keep the alias visible for migrated `weather` and `voice_ai` compatibility;
   - ESP-IDF build passes with `vibeboard_runtime.bin` size `0x177a70`, still 63% free in the app partition.
 - Voice AI and runtime lifecycle slices are build-verified:
-  - Runtime exposes Lua `app.list`, `app.rescan`, `app.current`, `app.exiting`, `app.exit`, and `app.on("exit", cb)`;
+  - Runtime exposes Lua `app.list`, `app.rescan`, `app.current`, `app.exiting`, `app.exit`, `app.launch`, `app.set_home_exit`, and `app.on("exit", cb)`;
   - `apps/smoke_app_manager` exercises those APIs and is included in demo packaging;
   - LVGL GIF support is enabled with `CONFIG_LV_USE_GIF=y`, `lv_gif_create`, and `lv_gif_set_src`;
   - `desktop-bridge/server.mjs` provides a provider-neutral local bridge for `POST /api/chat`, async pending jobs, `GET /api/result`, and `GET /health`;
@@ -318,6 +318,6 @@ Safe parallel tracks now:
 
 ## Deferred
 
-- Do not implement mutating Lua `app.launch(...)` until there is a concrete non-reentrant handoff design from an active Lua runner back to the launcher/app runner.
+- Do not claim Lua `app.launch(...)` board completion until `apps/smoke_app_manager` has been uploaded and a real app-to-app handoff has been observed on the ESP32-S3 board.
 - Do not wire real Voice AI providers until the target STT/LLM service, credential storage, and privacy boundary are decided.
 - Do not claim NES board completion until a legal iNES ROM has been copied to SD and the display path is physically observed on the ESP32-S3 screen.

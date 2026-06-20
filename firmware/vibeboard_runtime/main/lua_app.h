@@ -11,6 +11,7 @@ extern "C" {
 
 typedef struct {
     volatile bool *stop_requested;
+    bool home_exit_enabled;
     int exit_callback_ref;
     bool has_pending_launch;
     vb_app_registry_entry_t pending_launch;
@@ -22,6 +23,7 @@ void vb_lua_app_cleanup(lua_State *L, vb_lua_app_state_t *state);
 void vb_lua_app_register(lua_State *L, vb_lua_app_state_t *state);
 void vb_lua_app_dispatch_exit(lua_State *L, vb_lua_app_state_t *state);
 bool vb_lua_app_take_pending_launch(vb_lua_app_state_t *state, vb_app_registry_entry_t *entry);
+bool vb_lua_app_should_handle_home_exit(const vb_lua_app_state_t *state);
 
 #ifdef __cplusplus
 }

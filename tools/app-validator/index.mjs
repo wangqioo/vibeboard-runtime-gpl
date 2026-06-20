@@ -48,6 +48,7 @@ const SUPPORTED_LUA_API_SYMBOLS = new Set([
   "app.list",
   "app.on",
   "app.rescan",
+  "app.set_home_exit",
   "file.exists",
   "file.getcontents",
   "file.listdir",

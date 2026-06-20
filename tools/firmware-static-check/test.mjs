@@ -701,6 +701,21 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cmake, /"lua_app\.c"/);
   });
 
+  it("lets Lua apps opt out of default HOME or EXIT stop handling", () => {
+    const source = readRequired(luaAppSourcePath);
+    const header = readRequired(luaAppHeaderPath);
+    const runner = readRequired(runnerSourcePath);
+
+    assert.match(header, /home_exit_enabled/);
+    assert.match(source, /lua_app_set_home_exit/);
+    assert.match(source, /"set_home_exit",\s*lua_app_set_home_exit/);
+    assert.match(source, /state->home_exit_enabled\s*=\s*lua_toboolean\(L,\s*1\)/);
+    assert.match(runner, /vb_lua_app_should_handle_home_exit\(&runtime->app\)/);
+    assert.match(runner, /code\s*==\s*VB_LUA_KEY_HOME\s*\|\|\s*code\s*==\s*VB_LUA_KEY_EXIT/);
+    assert.match(runner, /event\s*==\s*VB_LUA_KEY_SHORT\s*\|\|\s*event\s*==\s*VB_LUA_KEY_LONG_START/);
+    assert.match(runner, /s_runner_state\.stop_requested\s*=\s*true/);
+  });
+
   it("queues Lua app manager launch handoff without re-entering the active runner", () => {
     const source = readRequired(luaAppSourcePath);
     const header = readRequired(luaAppHeaderPath);

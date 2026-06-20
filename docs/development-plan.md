@@ -156,7 +156,7 @@ AI 生成一个受限 Lua/LVGL App
 但当前还不是面向普通用户的完整产品：
 
 - 已经有可用的 Launcher、生命周期、浏览器管理 UI 和 staged install/delete，但还需要长期稳定性回归和更完整的错误恢复体验；
-- Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()` / `app.launch(id)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App。该能力已 build-verified，真实 app-to-app 上板切换仍待 smoke；
+- Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()` / `app.launch(id)` / `app.set_home_exit(enabled)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App；`app.set_home_exit(false)` 允许 `voice_ai`、`nesgame` 这类 App 接管 HOME/EXIT 输入而不触发 runner 默认退出。该能力已 build-verified，真实 app-to-app 上板切换仍待 smoke；
 - 还不能直接运行完整上游 HoloCubic 全量 App，只能按 App 驱动逐个补兼容层；
 - LVGL 绑定覆盖还不够广，尤其 list/arc/switch/dropdown/textarea/roller/slider、flex/grid、字体和 canvas 高级效果；
 - 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；Lua `touch.on/off/push` 坐标事件模块和 `apps/smoke_touch` 已进入 build-verified。还没有 BOOT/长按/repeat 的完整 Lua 输入语义，`smoke_touch` 真实坐标显示还需要上板记录；
@@ -201,7 +201,7 @@ AI 生成一个受限 Lua/LVGL App
 
 第五优先级：设备端 App 管理。
 
-- Lua 侧 `app.list()`、`app.current()`、`app.rescan()`、`app.exiting()`、`app.exit()`、`app.launch(id)` 已 build-verified；
+- Lua 侧 `app.list()`、`app.current()`、`app.rescan()`、`app.exiting()`、`app.exit()`、`app.launch(id)`、`app.set_home_exit(enabled)` 已 build-verified；
 - HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime/API/App schema 版本查询、不兼容 App 拒绝启动、工具侧 App 包 hash preflight、工具侧版本/ABI 要求拒绝、以及板端 staged manifest 文件 hash 校验已完成第一版；
 - 后续补真实 `app.launch(id)` 上板 handoff smoke、staged manifest hash 失败场景真机 smoke、以及更完整的升级提示 UI。
 

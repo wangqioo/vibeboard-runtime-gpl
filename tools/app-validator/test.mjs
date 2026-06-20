@@ -185,6 +185,7 @@ describe("validateAppDirectory", () => {
       writeFileSync(join(appDir, "main.lua"), [
         "gamepad.connect('AA:BB:CC:DD:EE:FF')",
         "app.set_home_exit(false)",
+        "app.set_status_text('ready')",
         "i2s.write(0, 'pcm')",
         "tmr.delay(100)",
         ""
@@ -194,7 +195,7 @@ describe("validateAppDirectory", () => {
 
       assert.equal(result.ok, false);
       assert.deepEqual(result.errors, [
-        "Runtime update required: unsupported Lua API app.set_home_exit",
+        "Runtime update required: unsupported Lua API app.set_status_text",
         "Runtime update required: unsupported Lua API gamepad.connect",
         "Runtime update required: unsupported Lua API i2s.write",
         "Runtime update required: unsupported Lua API tmr.delay"

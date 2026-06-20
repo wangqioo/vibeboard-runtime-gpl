@@ -51,6 +51,7 @@ for (const requiredBoundary of [
   /Runtime update required/,
   /Allowed Runtime Lua APIs/i,
   /app\.launch\(id\)/,
+  /app\.set_home_exit\(enabled\)/,
   /touch\.on\(callback\)/,
   /gamepad\.push_state\(state\)/,
   /i2s\.write/i

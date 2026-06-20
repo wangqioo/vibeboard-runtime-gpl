@@ -105,6 +105,14 @@ static int lua_app_exit(lua_State *L)
     return 1;
 }
 
+static int lua_app_set_home_exit(lua_State *L)
+{
+    vb_lua_app_state_t *state = check_app_state(L);
+    state->home_exit_enabled = lua_toboolean(L, 1);
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 static int lua_app_launch(lua_State *L)
 {
     vb_lua_app_state_t *state = check_app_state(L);
@@ -178,6 +186,7 @@ void vb_lua_app_init(vb_lua_app_state_t *state)
         return;
     }
     state->stop_requested = NULL;
+    state->home_exit_enabled = true;
     state->exit_callback_ref = LUA_NOREF;
     state->has_pending_launch = false;
     memset(&state->pending_launch, 0, sizeof(state->pending_launch));
@@ -209,6 +218,7 @@ void vb_lua_app_register(lua_State *L, vb_lua_app_state_t *state)
         {"current", lua_app_current},
         {"exiting", lua_app_exiting},
         {"exit", lua_app_exit},
+        {"set_home_exit", lua_app_set_home_exit},
         {"launch", lua_app_launch},
         {"on", lua_app_on},
         {NULL, NULL},
@@ -218,6 +228,11 @@ void vb_lua_app_register(lua_State *L, vb_lua_app_state_t *state)
     lua_setfield(L, LUA_REGISTRYINDEX, "vb_lua_app_state");
     luaL_newlib(L, functions);
     lua_setglobal(L, "app");
+}
+
+bool vb_lua_app_should_handle_home_exit(const vb_lua_app_state_t *state)
+{
+    return state == NULL || state->home_exit_enabled;
 }
 
 bool vb_lua_app_take_pending_launch(vb_lua_app_state_t *state, vb_app_registry_entry_t *entry)

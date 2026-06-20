@@ -218,6 +218,11 @@ static void runner_input_cb(int code, int event, int timestamp_ms, uint16_t x, u
         return;
     }
     if (code != 0) {
+        if ((code == VB_LUA_KEY_HOME || code == VB_LUA_KEY_EXIT) &&
+            (event == VB_LUA_KEY_SHORT || event == VB_LUA_KEY_LONG_START) &&
+            vb_lua_app_should_handle_home_exit(&runtime->app)) {
+            s_runner_state.stop_requested = true;
+        }
         (void)vb_lua_key_enqueue(&runtime->key, code, event, timestamp_ms);
         return;
     }

@@ -77,7 +77,7 @@ Generated apps must stay inside the Runtime Lua API surface below. If a request 
 
 Allowed module calls:
 
-- `app.list()`, `app.rescan()`, `app.current()`, `app.exiting()`, `app.exit()`, `app.launch(id)`, `app.on("exit", callback)`
+- `app.list()`, `app.rescan()`, `app.current()`, `app.exiting()`, `app.exit()`, `app.launch(id)`, `app.set_home_exit(enabled)`, `app.on("exit", callback)`
 - `file.exists(path)`, `file.open(path, mode)`, `file.read(path)`, `file.getcontents(path)`, `file.write(path, text)`, `file.list(path)`, `file.listdir(path)`
 - `gamepad.state()`, `gamepad.start(opts)`, `gamepad.stop()`, `gamepad.on(event, callback)`, `gamepad.off([event])`, `gamepad.rescan()`, `gamepad.push_state(state)`
 - `http.get(url[, opts], callback)`, `http.post(url[, opts], body, callback)`, `http.cubicserver.get(path, headers, callback)`
@@ -89,7 +89,7 @@ Allowed module calls:
 - `touch.on(callback)`, `touch.off()`, `touch.push(event, x, y[, ts_ms])`
 - `wifi.mode(mode)`, `wifi.start()`, `wifi.sta.config(opts)`, `wifi.sta.connect()`, `wifi.sta.getip()`
 
-Examples that must return `Runtime update required`: `app.set_home_exit(...)`, `gamepad.connect(...)`, `i2s.write(...)`, `tmr.delay(...)`, unsupported `lv_*` bindings, native ABI changes, or hardware driver work.
+Examples that must return `Runtime update required`: `app.set_status_text(...)`, `gamepad.connect(...)`, `i2s.write(...)`, `tmr.delay(...)`, unsupported `lv_*` bindings, native ABI changes, or hardware driver work.
 
 Return or report `Runtime update required` when the request needs:
 
