@@ -75,6 +75,8 @@ Prefer Lua/LVGL app generation when the request is for:
 
 Generated apps must stay inside the Runtime Lua API surface below. If a request needs any other runtime module call, return `Runtime update required` instead of inventing a function.
 
+This list is checked against `tools/app-validator/index.mjs` by `npm run test:ai-contract` so the generator contract and package validator do not drift apart.
+
 Allowed module calls:
 
 - `app.list()`, `app.rescan()`, `app.current()`, `app.exiting()`, `app.exit()`, `app.launch(id)`, `app.set_home_exit(enabled)`, `app.on("exit", callback)`
