@@ -13,6 +13,7 @@
 #include "board_lckfb_szpi_s3.h"
 #include "lua_app.h"
 #include "lua_file.h"
+#include "lua_gamepad.h"
 #include "lua_http.h"
 #include "lua_key.h"
 #include "lua_lvgl.h"
@@ -323,6 +324,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app, vb_app_runner
     vb_lua_app_register(L, &runtime.app);
     vb_lua_tmr_register(L, &runtime.tmr);
     vb_lua_key_register(L, &runtime.key);
+    vb_lua_gamepad_register(L);
     lua_pushlightuserdata(L, &runtime.key);
     lua_setfield(L, LUA_REGISTRYINDEX, "vb_runner_key_state");
     if (install_key_poll_timer(L) != ESP_OK) {

@@ -1,0 +1,4 @@
+name = smoke_gamepad
+entry = main.lua
+description = Lua gamepad compatibility smoke test
+capabilities = lvgl,timer,input

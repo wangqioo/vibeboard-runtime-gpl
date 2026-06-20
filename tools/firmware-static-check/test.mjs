@@ -33,6 +33,8 @@ const luaTmrSourcePath = join(firmwareRoot, "main/lua_tmr.c");
 const luaTmrHeaderPath = join(firmwareRoot, "main/lua_tmr.h");
 const luaKeySourcePath = join(firmwareRoot, "main/lua_key.c");
 const luaKeyHeaderPath = join(firmwareRoot, "main/lua_key.h");
+const luaGamepadSourcePath = join(firmwareRoot, "main/lua_gamepad.c");
+const luaGamepadHeaderPath = join(firmwareRoot, "main/lua_gamepad.h");
 const luaNativeModuleSourcePath = join(firmwareRoot, "main/lua_native_module.c");
 const luaNativeModuleHeaderPath = join(firmwareRoot, "main/lua_native_module.h");
 const luaAppSourcePath = join(firmwareRoot, "main/lua_app.c");
@@ -81,6 +83,8 @@ const smokeTimerInfoPath = join(repoRoot, "apps/smoke_timer/app.info");
 const smokeTimerSourcePath = join(repoRoot, "apps/smoke_timer/main.lua");
 const smokeKeyInfoPath = join(repoRoot, "apps/smoke_key/app.info");
 const smokeKeySourcePath = join(repoRoot, "apps/smoke_key/main.lua");
+const smokeGamepadInfoPath = join(repoRoot, "apps/smoke_gamepad/app.info");
+const smokeGamepadSourcePath = join(repoRoot, "apps/smoke_gamepad/main.lua");
 const smokeNesInfoPath = join(repoRoot, "apps/smoke_nes/app.info");
 const smokeNesSourcePath = join(repoRoot, "apps/smoke_nes/main.lua");
 const smokeNesNativeManifestPath = join(repoRoot, "apps/smoke_nes/native/nes.vbn");
@@ -1037,8 +1041,30 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(nesgame, /gamepad\.state/);
     assert.match(nesgame, /nes\./);
-    assert.doesNotMatch(readRequired(cmakePath), /lua_gamepad\.c/);
+    assert.match(readRequired(cmakePath), /lua_gamepad\.c/);
     assert.doesNotMatch(readRequired(cmakePath), /lua_nes\.c/);
+  });
+
+  it("registers a Lua gamepad compatibility module", () => {
+    const header = readRequired(luaGamepadHeaderPath);
+    const source = readRequired(luaGamepadSourcePath);
+    const cmake = readRequired(cmakePath);
+    const runner = readRequired(runnerSourcePath);
+
+    assert.match(cmake, /lua_gamepad\.c/);
+    assert.match(header, /vb_lua_gamepad_register/);
+    assert.match(source, /gamepad_state/);
+    assert.match(source, /gamepad_start/);
+    assert.match(source, /gamepad_stop/);
+    assert.match(source, /gamepad_on/);
+    assert.match(source, /gamepad_off/);
+    assert.match(source, /gamepad_rescan/);
+    assert.match(source, /gamepad_push_state/);
+    assert.match(source, /EVT_CONNECTED/);
+    assert.match(source, /EVT_UPDATE/);
+    assert.match(source, /BTN_XBOX/);
+    assert.match(runner, /#include\s+"lua_gamepad\.h"/);
+    assert.match(runner, /vb_lua_gamepad_register\(L\)/);
   });
 
   it("starts optional runtime Wi-Fi from SD before serving installs", () => {
@@ -1271,6 +1297,19 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(source, /\[key\.START\]\s*=\s*"START"/);
     assert.match(source, /lv_label_set_text\(event_label/);
     assert.match(source, /smoke key event/);
+  });
+
+  it("ships a gamepad compatibility smoke app", () => {
+    const info = readRequired(smokeGamepadInfoPath);
+    const source = readRequired(smokeGamepadSourcePath);
+
+    assert.match(info, /name\s*=\s*smoke_gamepad/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,input/);
+    assert.match(source, /gamepad\.start/);
+    assert.match(source, /gamepad\.on\(gamepad\.EVT_UPDATE/);
+    assert.match(source, /gamepad\.push_state/);
+    assert.match(source, /gamepad\.state/);
+    assert.match(source, /gamepad\.BTN_XBOX/);
   });
 
   it("ships a file smoke app", () => {
