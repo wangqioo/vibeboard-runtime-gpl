@@ -234,6 +234,7 @@ Expected result:
 - still confirm on the physical screen that the event label updates for the injected LEFT/RIGHT events;
 - still swipe left, right, up, and down on the device screen and record whether those physical gestures update the same `smoke_key` label;
 - upload/launch `smoke_touch` and record physical down/move/up coordinate labels on the board;
+- upload/launch `smoke_gamepad` and record the software-injected `connecting`, `connected`, `update`, and `disconnected` labels before wiring a real BLE/Xbox backend;
 - keep `2048` as a regression check for directional gameplay and double-exit behavior;
 - `key.push(...)` remains available for software-triggered tests;
 - event cleanup is tied to Lua VM/app shutdown.

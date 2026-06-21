@@ -145,9 +145,11 @@ static int gamepad_state(lua_State *L)
 
 static int gamepad_start(lua_State *L)
 {
-    (void)L;
     s_gamepad.started = true;
     s_gamepad.connecting = !s_gamepad.connected;
+    if (s_gamepad.connecting) {
+        dispatch_event(L, VB_GAMEPAD_EVT_CONNECTING);
+    }
     lua_pushboolean(L, 1);
     return 1;
 }
@@ -200,6 +202,9 @@ static int gamepad_rescan(lua_State *L)
 {
     s_gamepad.started = true;
     s_gamepad.connecting = !s_gamepad.connected;
+    if (s_gamepad.connecting) {
+        dispatch_event(L, VB_GAMEPAD_EVT_CONNECTING);
+    }
     lua_pushboolean(L, 1);
     return 1;
 }
@@ -242,6 +247,7 @@ static int gamepad_push_state(lua_State *L)
 {
     luaL_checktype(L, 1, LUA_TTABLE);
     bool was_connected = s_gamepad.connected;
+    bool was_connecting = s_gamepad.connecting;
 
     s_gamepad.started = table_bool(L, "started", true);
     s_gamepad.connected = table_bool(L, "connected", s_gamepad.connected);
@@ -262,6 +268,8 @@ static int gamepad_push_state(lua_State *L)
 
     if (!was_connected && s_gamepad.connected) {
         dispatch_event(L, VB_GAMEPAD_EVT_CONNECTED);
+    } else if (was_connecting && !s_gamepad.connected && !s_gamepad.connecting) {
+        dispatch_event(L, VB_GAMEPAD_EVT_CONNECT_FAILED);
     } else if (was_connected && !s_gamepad.connected) {
         dispatch_event(L, VB_GAMEPAD_EVT_DISCONNECTED);
     }

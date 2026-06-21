@@ -1166,7 +1166,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /gamepad_off/);
     assert.match(source, /gamepad_rescan/);
     assert.match(source, /gamepad_push_state/);
+    assert.match(source, /gamepad_start[\s\S]*dispatch_event\(L,\s*VB_GAMEPAD_EVT_CONNECTING\)/);
+    assert.match(source, /gamepad_rescan[\s\S]*dispatch_event\(L,\s*VB_GAMEPAD_EVT_CONNECTING\)/);
+    assert.match(source, /was_connecting[\s\S]*VB_GAMEPAD_EVT_CONNECT_FAILED/);
     assert.match(source, /EVT_CONNECTED/);
+    assert.match(source, /EVT_DISCONNECTED/);
     assert.match(source, /EVT_UPDATE/);
     assert.match(source, /BTN_XBOX/);
     assert.match(runner, /#include\s+"lua_gamepad\.h"/);
@@ -1453,6 +1457,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(info, /name\s*=\s*smoke_gamepad/);
     assert.match(info, /capabilities\s*=\s*lvgl,timer,input/);
     assert.match(source, /gamepad\.start/);
+    assert.match(source, /gamepad\.on\(gamepad\.EVT_CONNECTING/);
+    assert.match(source, /gamepad\.on\(gamepad\.EVT_CONNECTED/);
+    assert.match(source, /gamepad\.on\(gamepad\.EVT_DISCONNECTED/);
     assert.match(source, /gamepad\.on\(gamepad\.EVT_UPDATE/);
     assert.match(source, /gamepad\.push_state/);
     assert.match(source, /gamepad\.state/);
