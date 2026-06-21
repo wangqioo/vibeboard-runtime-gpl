@@ -64,6 +64,7 @@ const luaWifiHeaderPath = join(firmwareRoot, "main/lua_wifi.h");
 const runtimeWifiSourcePath = join(firmwareRoot, "main/runtime_wifi.c");
 const runtimeWifiHeaderPath = join(firmwareRoot, "main/runtime_wifi.h");
 const cmakePath = join(firmwareRoot, "main/CMakeLists.txt");
+const linkerFragmentPath = join(firmwareRoot, "main/linker.lf");
 const partitionsPath = join(firmwareRoot, "partitions.csv");
 const sdkconfigDefaultsPath = join(firmwareRoot, "sdkconfig.defaults");
 const smokeUiSourcePath = join(repoRoot, "apps/smoke_ui/main.lua");
@@ -370,6 +371,21 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /lua_native_module\.h/);
     assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)/);
     assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)[\s\S]*load_lua_file\(L,\s*app->first_app_path\)/);
+  });
+
+  it("maps NES module IRAM sections explicitly so they are not linker orphans", () => {
+    const cmake = readRequired(cmakePath);
+    const linker = readRequired(linkerFragmentPath);
+
+    assert.match(cmake, /LDFRAGMENTS\s+"linker\.lf"/);
+    assert.match(linker, /\[sections:nes_mod_iram_text\]/);
+    assert.match(linker, /\.mod_iram\+/);
+    assert.match(linker, /\.mod_iram\.literal\+/);
+    assert.match(linker, /\[scheme:nes_mod_iram_default\]/);
+    assert.match(linker, /nes_mod_iram_text\s*->\s*flash_text/);
+    assert.match(linker, /\[mapping:vibeboard_runtime_nes_mod_iram\]/);
+    assert.match(linker, /archive:\s+libmain\.a/);
+    assert.match(linker, /\*\s+\(nes_mod_iram_default\)/);
   });
 
   it("keeps native module loader failures precise before NES core is ported", () => {

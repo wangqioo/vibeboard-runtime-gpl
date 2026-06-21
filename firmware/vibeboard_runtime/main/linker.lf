@@ -1,0 +1,13 @@
+[sections:nes_mod_iram_text]
+entries:
+    .mod_iram+
+    .mod_iram.literal+
+
+[scheme:nes_mod_iram_default]
+entries:
+    nes_mod_iram_text -> flash_text
+
+[mapping:vibeboard_runtime_nes_mod_iram]
+archive: libmain.a
+entries:
+    * (nes_mod_iram_default)

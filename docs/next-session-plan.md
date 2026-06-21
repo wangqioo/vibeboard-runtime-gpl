@@ -175,7 +175,7 @@ git diff --check
 idf.py build
 ```
 
-The latest full verification for migration work passed through package/static/test/build layers. On 2026-06-21, `npm test`, `npm run validate:apps`, `git diff --check`, and `idf.py build` passed. The latest ESP-IDF build generated `vibeboard_runtime.bin` size `0x18fd90`, with 61% free in the 4 MB app partition. Build warnings: existing NES `.mod_iram` orphan section linker warnings. The board input poller has been moved from deprecated `esp_lcd_touch_get_coordinates` to `esp_lcd_touch_get_data`.
+The latest full verification for migration work passed through package/static/test/build layers. On 2026-06-21, `npm test`, `npm run validate:apps`, `git diff --check`, and `idf.py build` passed. The latest ESP-IDF build generated `vibeboard_runtime.bin` size `0x18fd10`, with 61% free in the 4 MB app partition. The board input poller has been moved from deprecated `esp_lcd_touch_get_coordinates` to `esp_lcd_touch_get_data`, and the NES `.mod_iram` sections are now mapped through `main/linker.lf` instead of relying on linker orphan placement.
 
 On 2026-06-18, `/dev/cu.usbmodem11301` identified as:
 
@@ -330,6 +330,7 @@ Suggested commit split from the parallel worktree audit:
 - `nes_native_adapter.*` copies the host API table into the module instance instead of keeping a pointer to the static adapter stack frame, so future native callbacks can safely use the host API after init returns;
 - the Lua `nes` module now binds `state/start/stop/input` functions as closures over the native module handle and calls `nes_native_adapter.*` callbacks;
 - `nes_native_adapter.*` now opens ROM paths through the host file API, reads the 16-byte iNES header, rejects missing/short/invalid/NES 2.0 ROMs with precise messages, records mapper id in native state, and then starts the linked core bridge;
+- `main/linker.lf` explicitly maps upstream NES `.mod_iram` and `.mod_iram.literal` sections through the Runtime component linker fragment, removing the previous orphan-section linker warnings without disabling orphan checks;
 - current loader intentionally returns precise missing payload/symbol/ABI/host API errors and, after a valid descriptor, exposes a minimal NES Lua table backed by the linked core bridge.
 
 The next NES implementation slice is hardware-bound and should make NES execution board-smokeable and stable under real display ownership:

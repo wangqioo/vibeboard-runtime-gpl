@@ -71,4 +71,5 @@ idf_component_register(
         nvs_flash
         sdmmc
         vfs
+    LDFRAGMENTS "linker.lf"
 )
