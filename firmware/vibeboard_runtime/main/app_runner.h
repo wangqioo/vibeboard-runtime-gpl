@@ -40,6 +40,7 @@ esp_err_t vb_app_runner_launch_async_with_options(const vb_app_registry_entry_t 
                                                   const vb_app_runner_launch_options_t *options);
 esp_err_t vb_app_runner_stop(void);
 esp_err_t vb_app_runner_wait_stopped(uint32_t timeout_ms);
+esp_err_t vb_app_runner_enqueue_key(int code, int event);
 bool vb_app_runner_is_running(void);
 const char *vb_app_runner_current_id(void);
 vb_app_runner_lifecycle_state_t vb_app_runner_current_state(void);

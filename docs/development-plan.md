@@ -157,10 +157,10 @@ AI 生成一个受限 Lua/LVGL App
 
 - 已经有可用的 Launcher、生命周期、浏览器管理 UI 和 staged install/delete，但还需要长期稳定性回归和更完整的错误恢复体验；
 - Runtime-owned WiFi/Cubicserver/I2S 配置已经可以通过 `POST /runtime/config?name=wifi|cubicserver|i2s` 和 `npm run runtime:config` 写入 SD；WiFi 配置写入后的重启联网、I2S 真实麦克风引脚写入后的非零 PCM 录音仍需上板 smoke；
-- Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()` / `app.launch(id)` / `app.set_home_exit(enabled)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App；`app.set_home_exit(false)` 允许 `voice_ai`、`nesgame` 这类 App 接管 HOME/EXIT 输入而不触发 runner 默认退出；`apps/smoke_app_manager` 已能通过一次软件 HOME 短按自动触发 `app.launch("smoke_key")`，方便后续上板 smoke。该能力已 build-verified，真实 app-to-app 上板切换仍待 smoke；
+- Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()` / `app.launch(id)` / `app.set_home_exit(enabled)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App；`app.set_home_exit(false)` 允许 `voice_ai`、`nesgame` 这类 App 接管 HOME/EXIT 输入而不触发 runner 默认退出；Launcher inactive 时的物理 BOOT 短按/长按已 build-verified 为 Lua `key.HOME` short/long-start 转发，默认 HOME/EXIT 退出语义仍保留；`apps/smoke_app_manager` 已能通过一次软件 HOME 短按自动触发 `app.launch("smoke_key")`，方便后续上板 smoke。该能力已 build-verified，真实物理 BOOT-to-Lua HOME 和 app-to-app 上板切换仍待 smoke；
 - 还不能直接运行完整上游 HoloCubic 全量 App，只能按 App 驱动逐个补兼容层；
 - LVGL 绑定覆盖还不够广，尤其 list/arc/switch/dropdown/textarea/roller/slider、flex/grid、字体和 canvas 高级效果；
-- 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；Lua `touch.on/off/push` 坐标事件模块和 `apps/smoke_touch` 已进入 build-verified；Lua `gamepad` 兼容层已能用 `push_state` 软件注入连接/断开/更新生命周期事件，`apps/smoke_gamepad` 可显示这些事件用于后续上板 smoke。还没有真实 BLE/Xbox、BOOT 转发、长按/repeat 的完整 Lua 输入语义，`smoke_touch` 和 `smoke_gamepad` 的真实输入显示还需要上板记录；
+- 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；Lua `touch.on/off/push` 坐标事件模块和 `apps/smoke_touch` 已进入 build-verified；Lua `gamepad` 兼容层已能用 `push_state` 软件注入连接/断开/更新生命周期事件，`apps/smoke_gamepad` 可显示这些事件用于后续上板 smoke；物理 BOOT 到 active Lua app 的 `key.HOME` short/long-start 转发已 build-verified。还没有真实 BLE/Xbox、BOOT 转发上板记录、长按/repeat 的完整 Lua 输入语义，`smoke_touch` 和 `smoke_gamepad` 的真实输入显示还需要上板记录；
 - Native NES 已经 build-verified 到核心启动路径，但还缺合法 ROM 上板、真实显示所有权压力测试、音频输出和 native gamepad；
 - Voice AI 已有本地 bridge skeleton、command provider 边界、一次性 PCM 文件调试入口和 I2S/GIF build verification；真实麦克风、生产 STT/LLM wrapper、凭证策略和端到端上板还没完成；
 - Runtime/API/App schema 版本兼容已经有基础元数据；工具侧现在会拒绝包内普通 Lua 文件里直接调用当前 Runtime 未暴露的 LVGL API，并返回 `Runtime update required: unsupported LVGL API <name>`；也会拒绝 `requires.runtime`、`requires.luaApi`、`requires.lvglApi` 或 `requires.nativeAbi` 高于当前 Runtime 的 App；第一版 Lua 模块 API 白名单也已覆盖 `app`、`file`、`gamepad`、`http`、`i2s`、`json`、`key`、`sjson`、`time`、`tmr`、`touch`、`wifi` 的直接调用，能在打包前拒绝 `Runtime update required: unsupported Lua API <module.fn>`；capability guardrail 现在会把 `key.*`、`touch.*` 和 `gamepad.*` 都归入 `capabilities = input`，并覆盖包内 helper Lua 文件。后续还需要把同类严格拒绝扩展到生成器白名单和更深层 Lua 解析。
@@ -187,7 +187,7 @@ AI 生成一个受限 Lua/LVGL App
 
 - 暴露 FT6336 touch 给 Lua；**第一版坐标事件 `touch.on/off/push` 已 build-verified，真实坐标显示待上板。**
 - 已有 `key.on(...)` / `key.off(...)` / `key.push(...)` 兼容层，可支持上游 key-driven App 的软件触发和 API 形状；
-- 触摸滑动到 `key` 队列桥接已通过 `2048` 真机验证；`gamepad` 软件生命周期事件已 build-verified；下一步用 `smoke_touch` 做独立触摸坐标 smoke、用 `smoke_gamepad` 做连接/断开/更新事件 smoke，上板后继续补真实 BLE/Xbox、物理按键、长按、repeat；
+- 触摸滑动到 `key` 队列桥接已通过 `2048` 真机验证；`gamepad` 软件生命周期事件和 BOOT-to-Lua HOME 转发已 build-verified；下一步用 `smoke_touch` 做独立触摸坐标 smoke、用 `smoke_gamepad` 做连接/断开/更新事件 smoke、用 `app.set_home_exit(false)` App 做物理 BOOT 短按/长按转发 smoke，上板后继续补真实 BLE/Xbox、长按 repeat；
 - 给按钮、列表、Launcher 选择提供真实交互；
 - 已新增 `apps/smoke_key` 显示最近 key 事件，`apps/smoke_touch` 显示触摸坐标和点击状态；
 - 验证快速点击不会导致 Lua/LVGL 崩溃。
@@ -855,7 +855,7 @@ stopped
 
 目标：把硬件输入暴露给 Lua，让 App 可以交互。
 
-当前状态：`key.on/off/push` 已通过 `2048` 真机触摸滑动验证；`touch.on/off/push` 坐标事件模块、`gamepad.state/start/stop/on/off/rescan/push_state` 兼容模块、`apps/smoke_touch` 和 `apps/smoke_gamepad` 已 build-verified。真实触摸坐标显示、BOOT 转发、长按/repeat 和真实 BLE/Xbox gamepad 仍待上板。
+当前状态：`key.on/off/push` 已通过 `2048` 真机触摸滑动验证；`touch.on/off/push` 坐标事件模块、`gamepad.state/start/stop/on/off/rescan/push_state` 兼容模块、`apps/smoke_touch` 和 `apps/smoke_gamepad` 已 build-verified；Launcher inactive 时的物理 BOOT 短按/长按到 active Lua app `key.HOME` short/long-start 转发也已 build-verified。真实触摸坐标显示、BOOT 转发屏幕/串口证据、长按 repeat 和真实 BLE/Xbox gamepad 仍待上板。
 
 需要新增或修改：
 

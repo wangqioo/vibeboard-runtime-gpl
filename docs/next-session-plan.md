@@ -5,10 +5,10 @@ Date: 2026-06-21
 ## Current Baseline
 
 ```text
-local main with Weather/Web UI/deployment productization, Lua app manager lifecycle APIs, GIF support, Voice AI desktop bridge skeleton, and the first executable NES core path build-verified; board-only visual/audio/ROM checks remain
+local main with Weather/Web UI/deployment productization, Lua app manager lifecycle APIs, BOOT-to-Lua HOME forwarding, GIF support, Voice AI desktop bridge skeleton, and the first executable NES core path build-verified; board-only visual/audio/ROM/input checks remain
 ```
 
-The local work after the previous baseline migrates the upstream `2048` and `weather` apps, adds the minimum runtime API surface they need, and productizes the local upload/control workflow. It also includes hardware-driven fixes from the 2026-06-19 temporary Runtime flash, a non-destructive `device:check` preflight, the first board-verified touch-swipe-to-`key.on` bridge, an app-local double-confirm guard for `2048` exit events, staged upload/delete smoke, a local device web UI, Lua app-manager lifecycle reads, GIF widget support for `voice_ai`, a provider-neutral Voice AI desktop bridge, and a build-verified NES native path that links the upstream core. `2048` and `weather` have board HTTP lifecycle evidence; `2048` has user-confirmed physical swipe plus double-exit behavior. The shared ESP32-S3 board may be reflashed for other projects between sessions, so every hardware pass must start with `npm run device:check` and reflash VibeBoard Runtime only when needed.
+The local work after the previous baseline migrates the upstream `2048` and `weather` apps, adds the minimum runtime API surface they need, and productizes the local upload/control workflow. It also includes hardware-driven fixes from the 2026-06-19 temporary Runtime flash, a non-destructive `device:check` preflight, the first board-verified touch-swipe-to-`key.on` bridge, an app-local double-confirm guard for `2048` exit events, staged upload/delete smoke, a local device web UI, Lua app-manager lifecycle reads, BOOT-to-Lua HOME forwarding for apps that disable default HOME exit, GIF widget support for `voice_ai`, a provider-neutral Voice AI desktop bridge, and a build-verified NES native path that links the upstream core. `2048` and `weather` have board HTTP lifecycle evidence; `2048` has user-confirmed physical swipe plus double-exit behavior. The shared ESP32-S3 board may be reflashed for other projects between sessions, so every hardware pass must start with `npm run device:check` and reflash VibeBoard Runtime only when needed.
 
 ## What Is Done
 
@@ -127,6 +127,11 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - exit events handled inside `apps/2048` now require the same `HOME`/`EXIT` event twice within 1.2 seconds before stopping the app;
   - normal directional movement remains immediate;
   - physical swipe gameplay and double-exit behavior were confirmed by the user on the device.
+- BOOT-to-Lua HOME forwarding is build-verified:
+  - when the Launcher is inactive, physical BOOT short press now forwards `key.HOME` + `key.SHORT` to the active Lua app;
+  - physical BOOT long press now forwards `key.HOME` + `key.LONG_START` before falling back to old stop behavior if there is no active Lua runtime;
+  - default HOME/EXIT stop semantics still request app stop, while apps using `app.set_home_exit(false)` can handle the HOME event themselves;
+  - board verification of physical BOOT forwarding remains pending.
 - 2026-06-19 temporary board verification:
   - `/dev/cu.usbmodem112301` identified as Espressif ESP32-S3, MAC `10:51:db:80:e2:e8`;
   - VibeBoard Runtime booted after erase+flash and served `/status` at `192.168.1.32:8080`;
@@ -235,6 +240,8 @@ Expected result:
 - still swipe left, right, up, and down on the device screen and record whether those physical gestures update the same `smoke_key` label;
 - upload/launch `smoke_touch` and record physical down/move/up coordinate labels on the board;
 - upload/launch `smoke_gamepad` and record the software-injected `connecting`, `connected`, `update`, and `disconnected` labels before wiring a real BLE/Xbox backend;
+- upload/launch an `app.set_home_exit(false)` app, press physical BOOT short and long while it is running, and record that Lua receives `key.HOME` short/long-start instead of the native Launcher immediately stopping the app;
+- also launch a default-home-exit app and confirm physical BOOT HOME still requests a clean stop/return path;
 - keep `2048` as a regression check for directional gameplay and double-exit behavior;
 - `key.push(...)` remains available for software-triggered tests;
 - event cleanup is tied to Lua VM/app shutdown.

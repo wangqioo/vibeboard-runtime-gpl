@@ -42,15 +42,16 @@ typedef struct {
     char last_message[128];
 } vb_app_runner_state_t;
 
-static vb_app_runner_state_t s_runner_state;
-static portMUX_TYPE s_runner_state_mux = portMUX_INITIALIZER_UNLOCKED;
-
 typedef struct {
     vb_lua_app_state_t app;
     vb_lua_key_state_t key;
     vb_lua_touch_state_t touch;
     vb_lua_tmr_state_t tmr;
 } vb_lua_runtime_t;
+
+static vb_app_runner_state_t s_runner_state;
+static portMUX_TYPE s_runner_state_mux = portMUX_INITIALIZER_UNLOCKED;
+static vb_lua_runtime_t *s_active_runtime;
 
 typedef struct {
     FILE *file;
@@ -122,6 +123,20 @@ static bool finish_runner_from_task(esp_err_t status, const char *message)
     s_runner_state.current_name[0] = '\0';
     taskEXIT_CRITICAL(&s_runner_state_mux);
     return was_stop_requested;
+}
+
+esp_err_t vb_app_runner_enqueue_key(int code, int event)
+{
+    vb_lua_runtime_t *runtime = s_active_runtime;
+    if (runtime == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if ((code == VB_LUA_KEY_HOME || code == VB_LUA_KEY_EXIT) &&
+        (event == VB_LUA_KEY_SHORT || event == VB_LUA_KEY_LONG_START) &&
+        vb_lua_app_should_handle_home_exit(&runtime->app)) {
+        s_runner_state.stop_requested = true;
+    }
+    return vb_lua_key_enqueue(&runtime->key, code, event, 0);
 }
 
 const char *vb_app_runner_state_name(vb_app_runner_lifecycle_state_t state)
@@ -234,6 +249,9 @@ static void cleanup_lua_runtime(lua_State *L, vb_lua_runtime_t *runtime)
 {
     vb_lua_app_dispatch_exit(L, &runtime->app);
     vb_board_input_stop();
+    if (s_active_runtime == runtime) {
+        s_active_runtime = NULL;
+    }
     vb_lua_app_cleanup(L, &runtime->app);
     vb_lua_key_cleanup(L, &runtime->key);
     vb_lua_touch_cleanup(L, &runtime->touch);
@@ -356,6 +374,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_gamepad_register(L);
     lua_pushlightuserdata(L, &runtime);
     lua_setfield(L, LUA_REGISTRYINDEX, "vb_runner_runtime");
+    s_active_runtime = &runtime;
     if (install_input_poll_timer(L) != ESP_OK) {
         const char *err = lua_tostring(L, -1);
         set_result(result, true, ESP_FAIL, err ? err : "input timer failed");

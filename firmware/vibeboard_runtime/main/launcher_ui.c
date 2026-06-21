@@ -13,6 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
 #include "freertos/task.h"
+#include "lua_key.h"
 #include "lvgl.h"
 
 static const char *TAG = "launcher_ui";
@@ -281,7 +282,11 @@ static void select_next_from_task(void)
     bool launcher_active = is_launcher_active();
     if (!launcher_active) {
         lvgl_port_unlock();
-        ESP_LOGI(TAG, "launcher inactive; BOOT short press ignored");
+        ESP_LOGI(TAG, "launcher inactive; BOOT short press: forward HOME");
+        esp_err_t err = vb_app_runner_enqueue_key(VB_LUA_KEY_HOME, VB_LUA_KEY_SHORT);
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "failed to forward BOOT short press: %s", esp_err_to_name(err));
+        }
         return;
     }
     if (s_rendered_app_count <= 0) {
@@ -300,6 +305,14 @@ static void launch_selected_from_task(void)
     bool launcher_active = is_launcher_active();
     if (!launcher_active) {
         lvgl_port_unlock();
+        esp_err_t key_err = vb_app_runner_enqueue_key(VB_LUA_KEY_HOME, VB_LUA_KEY_LONG_START);
+        if (key_err == ESP_OK) {
+            ESP_LOGI(TAG, "launcher inactive; BOOT long press: forward HOME");
+            return;
+        }
+        if (key_err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "failed to forward BOOT long press: %s", esp_err_to_name(key_err));
+        }
         if (vb_app_runner_is_running()) {
             ESP_LOGI(TAG, "launcher inactive; BOOT long press: stop app");
             esp_err_t err = vb_app_runner_stop();

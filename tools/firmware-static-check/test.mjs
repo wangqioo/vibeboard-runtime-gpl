@@ -710,6 +710,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const source = readRequired(luaAppSourcePath);
     const header = readRequired(luaAppHeaderPath);
     const runner = readRequired(runnerSourcePath);
+    const runnerHeader = readRequired(runnerHeaderPath);
+    const launcher = readRequired(launcherSourcePath);
 
     assert.match(header, /home_exit_enabled/);
     assert.match(source, /lua_app_set_home_exit/);
@@ -719,6 +721,13 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /code\s*==\s*VB_LUA_KEY_HOME\s*\|\|\s*code\s*==\s*VB_LUA_KEY_EXIT/);
     assert.match(runner, /event\s*==\s*VB_LUA_KEY_SHORT\s*\|\|\s*event\s*==\s*VB_LUA_KEY_LONG_START/);
     assert.match(runner, /s_runner_state\.stop_requested\s*=\s*true/);
+    assert.match(runnerHeader, /vb_app_runner_enqueue_key/);
+    assert.match(runner, /vb_app_runner_enqueue_key\(int code,\s*int event\)/);
+    assert.match(runner, /vb_lua_key_enqueue\(&runtime->key,\s*code,\s*event/);
+    assert.match(runner, /vb_lua_app_should_handle_home_exit\(&runtime->app\)/);
+    assert.match(launcher, /vb_app_runner_enqueue_key\(VB_LUA_KEY_HOME,\s*VB_LUA_KEY_SHORT\)/);
+    assert.match(launcher, /vb_app_runner_enqueue_key\(VB_LUA_KEY_HOME,\s*VB_LUA_KEY_LONG_START\)/);
+    assert.doesNotMatch(launcher, /launcher inactive; BOOT short press ignored/);
   });
 
   it("queues Lua app manager launch handoff without re-entering the active runner", () => {
