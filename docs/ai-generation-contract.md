@@ -91,6 +91,42 @@ Allowed module calls:
 - `touch.on(callback)`, `touch.off()`, `touch.push(event, x, y[, ts_ms])`
 - `wifi.mode(mode)`, `wifi.start()`, `wifi.sta.config(opts)`, `wifi.sta.connect()`, `wifi.sta.getip()`
 
+## Allowed LVGL UI Symbols
+
+Generated UI code may use only the LVGL symbols below. If the app needs another `lv_*`, `LV_*`, or `ANIM_*` symbol, return `Runtime update required`.
+
+- `ANIM_H`, `ANIM_OPA`, `ANIM_PATH_EASE_OUT`, `ANIM_W`, `ANIM_X`, `ANIM_Y`
+- `LV_ALIGN_BOTTOM_LEFT`, `LV_ALIGN_CENTER`, `LV_ALIGN_TOP_LEFT`, `LV_ALIGN_TOP_MID`
+- `LV_ANIM_OFF`, `LV_ANIM_ON`
+- `LV_GRAD_DIR_VER`, `LV_IMG_CF_TRUE_COLOR`
+- `LV_LABEL_LONG_CLIP`, `LV_LABEL_LONG_SCROLL_CIRCULAR`, `LV_LABEL_LONG_WRAP`
+- `LV_OBJ_FLAG_HIDDEN`, `LV_OBJ_FLAG_SCROLLABLE`
+- `LV_OPA_COVER`, `LV_OPA_TRANSP`, `LV_PART_MAIN`, `LV_ROLLER_MODE_NORMAL`, `LV_STATE_DEFAULT`, `LV_TEXT_ALIGN_CENTER`
+- `lv_anim_del`, `lv_anim_delete`, `lv_anim_start`
+- `lv_arc_create`, `lv_arc_get_value`, `lv_arc_set_range`, `lv_arc_set_value`
+- `lv_asset_exists`, `lv_resolve_asset_path`
+- `lv_bar_create`, `lv_bar_set_range`, `lv_bar_set_value`
+- `lv_btn_create`
+- `lv_canvas_begin`, `lv_canvas_create`, `lv_canvas_draw_rect`, `lv_canvas_draw_text`, `lv_canvas_end`, `lv_canvas_fill_bg`, `lv_canvas_frame_begin`, `lv_canvas_frame_end`
+- `lv_dropdown_create`, `lv_dropdown_get_selected`, `lv_dropdown_set_options`, `lv_dropdown_set_selected`
+- `lv_font_free`, `lv_font_load`
+- `lv_gif_create`, `lv_gif_set_src`
+- `lv_img_create`, `lv_img_set_angle`, `lv_img_set_antialias`, `lv_img_set_pivot`, `lv_img_set_src`, `lv_img_set_zoom`
+- `lv_label_create`, `lv_label_set_long_mode`, `lv_label_set_text`
+- `lv_list_add_btn`, `lv_list_add_text`, `lv_list_create`
+- `lv_obj_add_flag`, `lv_obj_align`, `lv_obj_clean`, `lv_obj_clear_flag`, `lv_obj_create`, `lv_obj_del`, `lv_obj_invalidate`, `lv_obj_move_foreground`, `lv_obj_remove_style_all`
+- `lv_obj_set_height`, `lv_obj_set_pos`, `lv_obj_set_size`, `lv_obj_set_width`, `lv_obj_set_x`, `lv_obj_set_y`
+- `lv_obj_set_style_bg_color`, `lv_obj_set_style_bg_grad_color`, `lv_obj_set_style_bg_grad_dir`, `lv_obj_set_style_bg_grad_stop`, `lv_obj_set_style_bg_main_stop`, `lv_obj_set_style_bg_opa`
+- `lv_obj_set_style_border_color`, `lv_obj_set_style_border_opa`, `lv_obj_set_style_border_width`, `lv_obj_set_style_clip_corner`
+- `lv_obj_set_style_opa`, `lv_obj_set_style_pad_all`, `lv_obj_set_style_radius`
+- `lv_obj_set_style_shadow_color`, `lv_obj_set_style_shadow_ofs_x`, `lv_obj_set_style_shadow_ofs_y`, `lv_obj_set_style_shadow_opa`, `lv_obj_set_style_shadow_spread`, `lv_obj_set_style_shadow_width`
+- `lv_obj_set_style_text_align`, `lv_obj_set_style_text_color`, `lv_obj_set_style_text_font`, `lv_obj_set_style_text_letter_space`, `lv_obj_set_style_text_opa`
+- `lv_roller_create`, `lv_roller_get_selected`, `lv_roller_set_options`, `lv_roller_set_selected`
+- `lv_scr_act`
+- `lv_slider_create`, `lv_slider_get_value`, `lv_slider_set_range`, `lv_slider_set_value`
+- `lv_switch_create`
+- `lv_textarea_add_text`, `lv_textarea_create`, `lv_textarea_get_text`, `lv_textarea_set_text`
+
 Examples that must return `Runtime update required`: `app.set_status_text(...)`, `gamepad.connect(...)`, `i2s.write(...)`, `tmr.delay(...)`, unsupported `lv_*` bindings, native ABI changes, or hardware driver work.
 
 Return or report `Runtime update required` when the request needs:

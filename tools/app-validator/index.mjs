@@ -39,7 +39,7 @@ function readSupportedLvglSymbols() {
   return supported;
 }
 
-const SUPPORTED_LVGL_SYMBOLS = readSupportedLvglSymbols();
+export const SUPPORTED_LVGL_SYMBOLS = readSupportedLvglSymbols();
 export const SUPPORTED_LUA_API_SYMBOLS = new Set([
   "app.current",
   "app.exiting",

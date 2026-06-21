@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SUPPORTED_LUA_API_SYMBOLS } from "../tools/app-validator/index.mjs";
+import { SUPPORTED_LUA_API_SYMBOLS, SUPPORTED_LVGL_SYMBOLS } from "../tools/app-validator/index.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const doc = readFileSync(join(root, "docs/ai-generation-contract.md"), "utf8");
@@ -64,6 +64,14 @@ for (const symbol of SUPPORTED_LUA_API_SYMBOLS) {
   assert.match(
     doc,
     new RegExp(`${symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\(`),
+    `expected AI contract to document ${symbol}`
+  );
+}
+
+for (const symbol of SUPPORTED_LVGL_SYMBOLS) {
+  assert.match(
+    doc,
+    new RegExp(`\\b${symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`),
     `expected AI contract to document ${symbol}`
   );
 }
