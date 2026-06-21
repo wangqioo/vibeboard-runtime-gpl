@@ -85,7 +85,7 @@ Allowed module calls:
 - `http.get(url[, opts], callback)`, `http.post(url[, opts], body, callback)`, `http.cubicserver.get(path, headers, callback)`
 - `i2s.start(id, opts)`, `i2s.read(id, max_bytes[, timeout_ms])`, `i2s.stop(id)`, `i2s.status(id)`
 - `json.decode(text)`, `json.encode(value)`, `sjson.decode(text)`, `sjson.encode(value)`
-- `key.on(callback)`, `key.off()`, `key.push(code, event)`
+- `key.on(callback)`, `key.off()`, `key.push(code, event)`, `key.repeat_start(code[, delay_ms, interval_ms])`, `key.repeat_stop(code)`
 - `time.get()`, `time.getlocal()`, `time.settimezone(tz)`, `time.initntp(host)`
 - `tmr.create()`, `tmr.now()`, `tmr.time()`, plus timer object `alarm/start/stop/unregister/state/interval`
 - `touch.on(callback)`, `touch.off()`, `touch.push(event, x, y[, ts_ms])`

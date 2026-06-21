@@ -103,6 +103,7 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - common text style helpers and LVGL constants.
   - `millis()` global compatibility.
   - Lua `key` module with `key.on`, `key.off`, `key.push`, direction constants, and `SHORT`/`EXIT` compatibility aliases.
+  - Lua `key.repeat_start(code[, delay_ms, interval_ms])` and `key.repeat_stop(code)` now generate queued LONG_START/LONG_REPEAT/LONG_END events through runtime timers for App-side repeat semantics.
   - board-verified touch-swipe input bridge: hardware task enqueues key events, Lua runner drains them on the Lua/timer loop, and app stop cleans up the queue/callbacks.
   - LVGL object delete/foreground, opacity, gradients, shadows, and property animation helpers needed by `2048`.
   - `apps/smoke_key` input smoke app: shows the latest key event on screen and injects alternating LEFT/RIGHT events through `key.push()` for software-triggered input verification.
@@ -132,6 +133,10 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - physical BOOT long press now forwards `key.HOME` + `key.LONG_START` before falling back to old stop behavior if there is no active Lua runtime;
   - default HOME/EXIT stop semantics still request app stop, while apps using `app.set_home_exit(false)` can handle the HOME event themselves;
   - board verification of physical BOOT forwarding remains pending.
+- Lua key repeat helper is build-verified:
+  - `key.repeat_start(...)` dispatches LONG_START immediately, then LONG_REPEAT through the same queued Lua runner path after the configured delay/interval;
+  - `key.repeat_stop(...)` dispatches LONG_END and frees the timer slot;
+  - `apps/smoke_key` now self-triggers an `UP` repeat sequence so board smoke can observe repeat events without needing hardware long-press support first.
 - 2026-06-19 temporary board verification:
   - `/dev/cu.usbmodem112301` identified as Espressif ESP32-S3, MAC `10:51:db:80:e2:e8`;
   - VibeBoard Runtime booted after erase+flash and served `/status` at `192.168.1.32:8080`;
@@ -237,6 +242,7 @@ Expected result:
 
 - `smoke_key` upload/launch is done and serial logs verify injected LEFT/RIGHT events through `key.push()` and `key.on`;
 - still confirm on the physical screen that the event label updates for the injected LEFT/RIGHT events;
+- record the `smoke_key` self-triggered `UP` LONG_START/LONG_REPEAT/LONG_END sequence on screen and serial;
 - still swipe left, right, up, and down on the device screen and record whether those physical gestures update the same `smoke_key` label;
 - upload/launch `smoke_touch` and record physical down/move/up coordinate labels on the board;
 - upload/launch `smoke_gamepad` and record the software-injected `connecting`, `connected`, `update`, and `disconnected` labels before wiring a real BLE/Xbox backend;

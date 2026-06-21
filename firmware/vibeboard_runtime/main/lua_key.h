@@ -9,6 +9,7 @@ extern "C" {
 
 #define VB_LUA_KEY_QUEUE_DEPTH 12
 #define VB_LUA_KEY_CODE_MAX 32
+#define VB_LUA_KEY_MAX_REPEATERS 4
 
 #define VB_LUA_KEY_LEFT 1
 #define VB_LUA_KEY_RIGHT 2
@@ -33,6 +34,8 @@ typedef struct {
     int global_ref;
     int refs[VB_LUA_KEY_CODE_MAX + 1];
     void *queue;
+    void *repeat_timers[VB_LUA_KEY_MAX_REPEATERS];
+    int repeat_codes[VB_LUA_KEY_MAX_REPEATERS];
 } vb_lua_key_state_t;
 
 void vb_lua_key_init(vb_lua_key_state_t *state);

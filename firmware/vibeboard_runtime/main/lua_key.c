@@ -1,15 +1,26 @@
 #include "lua_key.h"
 
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 #include "lauxlib.h"
 
 #define VB_LUA_KEY_STATE_REGISTRY_KEY "vb_key_state"
+#define VB_LUA_KEY_REPEAT_DELAY_MS 450
+#define VB_LUA_KEY_REPEAT_INTERVAL_MS 120
+
+typedef struct {
+    vb_lua_key_state_t *state;
+    int code;
+    int interval_ms;
+} vb_lua_key_repeater_t;
+
 static vb_lua_key_state_t *get_state(lua_State *L)
 {
     lua_getfield(L, LUA_REGISTRYINDEX, VB_LUA_KEY_STATE_REGISTRY_KEY);
@@ -29,6 +40,20 @@ static void init_refs(vb_lua_key_state_t *state)
 static int now_ms(void)
 {
     return (int)(xTaskGetTickCount() * 1000 / configTICK_RATE_HZ);
+}
+
+static int repeat_slot_for(vb_lua_key_state_t *state, int code, bool allocate)
+{
+    int free_slot = -1;
+    for (int i = 0; i < VB_LUA_KEY_MAX_REPEATERS; i++) {
+        if (state->repeat_timers[i] != NULL && state->repeat_codes[i] == code) {
+            return i;
+        }
+        if (free_slot < 0 && state->repeat_timers[i] == NULL) {
+            free_slot = i;
+        }
+    }
+    return allocate ? free_slot : -1;
 }
 
 static void unref_handler(lua_State *L, int *ref)
@@ -145,6 +170,105 @@ static int key_push(lua_State *L)
     return dispatch_event(L, state, code, event, timestamp);
 }
 
+static void key_repeat_timer_cb(TimerHandle_t timer)
+{
+    vb_lua_key_repeater_t *repeater = (vb_lua_key_repeater_t *)pvTimerGetTimerID(timer);
+    if (repeater == NULL || repeater->state == NULL) {
+        return;
+    }
+    vb_lua_key_enqueue(repeater->state, repeater->code, VB_LUA_KEY_LONG_REPEAT, now_ms());
+    xTimerChangePeriod(timer, pdMS_TO_TICKS(repeater->interval_ms), 0);
+}
+
+static int key_repeat_start(lua_State *L)
+{
+    vb_lua_key_state_t *state = get_state(L);
+    if (state == NULL) {
+        return luaL_error(L, "key state unavailable");
+    }
+
+    int code = (int)luaL_checkinteger(L, 1);
+    int delay_ms = (int)luaL_optinteger(L, 2, VB_LUA_KEY_REPEAT_DELAY_MS);
+    int interval_ms = (int)luaL_optinteger(L, 3, VB_LUA_KEY_REPEAT_INTERVAL_MS);
+    if (code < 0 || code > VB_LUA_KEY_CODE_MAX) {
+        return luaL_error(L, "invalid key code");
+    }
+    if (delay_ms < 1 || interval_ms < 1) {
+        return luaL_error(L, "invalid repeat timing");
+    }
+
+    int slot = repeat_slot_for(state, code, true);
+    if (slot < 0) {
+        return luaL_error(L, "too many key repeaters");
+    }
+
+    TimerHandle_t timer = (TimerHandle_t)state->repeat_timers[slot];
+    vb_lua_key_repeater_t *repeater = NULL;
+    if (timer == NULL) {
+        repeater = calloc(1, sizeof(*repeater));
+        if (repeater == NULL) {
+            return luaL_error(L, "key repeater allocation failed");
+        }
+        repeater->state = state;
+        repeater->code = code;
+        repeater->interval_ms = interval_ms;
+        timer = xTimerCreate("vb_key_repeat",
+                             pdMS_TO_TICKS(delay_ms),
+                             pdTRUE,
+                             repeater,
+                             key_repeat_timer_cb);
+        if (timer == NULL) {
+            free(repeater);
+            return luaL_error(L, "key repeat timer allocation failed");
+        }
+        state->repeat_timers[slot] = timer;
+        state->repeat_codes[slot] = code;
+    } else {
+        repeater = (vb_lua_key_repeater_t *)pvTimerGetTimerID(timer);
+        if (repeater != NULL) {
+            repeater->state = state;
+            repeater->code = code;
+            repeater->interval_ms = interval_ms;
+        }
+        xTimerStop(timer, 0);
+        xTimerChangePeriod(timer, pdMS_TO_TICKS(delay_ms), 0);
+    }
+
+    vb_lua_key_enqueue(state, code, VB_LUA_KEY_LONG_START, now_ms());
+    if (xTimerStart(timer, 0) != pdPASS) {
+        return luaL_error(L, "key repeat timer start failed");
+    }
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int key_repeat_stop(lua_State *L)
+{
+    vb_lua_key_state_t *state = get_state(L);
+    if (state == NULL) {
+        return luaL_error(L, "key state unavailable");
+    }
+
+    int code = (int)luaL_checkinteger(L, 1);
+    if (code < 0 || code > VB_LUA_KEY_CODE_MAX) {
+        return luaL_error(L, "invalid key code");
+    }
+
+    int slot = repeat_slot_for(state, code, false);
+    if (slot >= 0 && state->repeat_timers[slot] != NULL) {
+        TimerHandle_t timer = (TimerHandle_t)state->repeat_timers[slot];
+        vb_lua_key_repeater_t *repeater = (vb_lua_key_repeater_t *)pvTimerGetTimerID(timer);
+        xTimerStop(timer, 0);
+        xTimerDelete(timer, 0);
+        free(repeater);
+        state->repeat_timers[slot] = NULL;
+        state->repeat_codes[slot] = -1;
+    }
+    vb_lua_key_enqueue(state, code, VB_LUA_KEY_LONG_END, now_ms());
+    lua_pushboolean(L, slot >= 0);
+    return 1;
+}
+
 void vb_lua_key_init(vb_lua_key_state_t *state)
 {
     if (state == NULL) {
@@ -153,6 +277,9 @@ void vb_lua_key_init(vb_lua_key_state_t *state)
 
     memset(state, 0, sizeof(*state));
     init_refs(state);
+    for (int i = 0; i < VB_LUA_KEY_MAX_REPEATERS; i++) {
+        state->repeat_codes[i] = -1;
+    }
     state->queue = xQueueCreate(VB_LUA_KEY_QUEUE_DEPTH, sizeof(vb_lua_key_event_t));
 }
 
@@ -203,6 +330,17 @@ void vb_lua_key_cleanup(lua_State *L, vb_lua_key_state_t *state)
     for (int i = 0; i <= VB_LUA_KEY_CODE_MAX; i++) {
         unref_handler(L, &state->refs[i]);
     }
+    for (int i = 0; i < VB_LUA_KEY_MAX_REPEATERS; i++) {
+        TimerHandle_t timer = (TimerHandle_t)state->repeat_timers[i];
+        if (timer != NULL) {
+            vb_lua_key_repeater_t *repeater = (vb_lua_key_repeater_t *)pvTimerGetTimerID(timer);
+            xTimerStop(timer, 0);
+            xTimerDelete(timer, 0);
+            free(repeater);
+            state->repeat_timers[i] = NULL;
+        }
+        state->repeat_codes[i] = -1;
+    }
     if (state->queue != NULL) {
         vQueueDelete((QueueHandle_t)state->queue);
         state->queue = NULL;
@@ -227,6 +365,8 @@ void vb_lua_key_register(lua_State *L, vb_lua_key_state_t *state)
         {"on", key_on},
         {"off", key_off},
         {"push", key_push},
+        {"repeat_start", key_repeat_start},
+        {"repeat_stop", key_repeat_stop},
         {NULL, NULL},
     };
     luaL_newlib(L, key_functions);

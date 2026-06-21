@@ -931,6 +931,18 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /key_on/);
     assert.match(source, /key_off/);
     assert.match(source, /key_push/);
+    assert.match(source, /key_repeat_start/);
+    assert.match(source, /key_repeat_stop/);
+    assert.match(source, /VB_LUA_KEY_REPEAT_DELAY_MS/);
+    assert.match(source, /VB_LUA_KEY_REPEAT_INTERVAL_MS/);
+    assert.match(source, /VB_LUA_KEY_MAX_REPEATERS/);
+    assert.match(source, /VB_LUA_KEY_LONG_REPEAT/);
+    assert.match(source, /VB_LUA_KEY_LONG_END/);
+    assert.match(source, /xTimerCreate/);
+    assert.match(source, /xTimerChangePeriod/);
+    assert.match(source, /xTimerStop/);
+    assert.match(source, /"repeat_start"/);
+    assert.match(source, /"repeat_stop"/);
     assert.match(source, /LEFT/);
     assert.match(source, /RIGHT/);
     assert.match(source, /UP/);

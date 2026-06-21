@@ -75,6 +75,8 @@ export const SUPPORTED_LUA_API_SYMBOLS = new Set([
   "key.off",
   "key.on",
   "key.push",
+  "key.repeat_start",
+  "key.repeat_stop",
   "sjson.decode",
   "sjson.encode",
   "time.get",
