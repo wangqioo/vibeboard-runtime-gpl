@@ -1697,6 +1697,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /app\.set_home_exit\(false\)/);
     assert.match(source, /app\.set_home_exit\(true\)/);
     assert.match(source, /app\.launch\(["']smoke_key["']\)/);
+    assert.match(source, /software_home_injected/);
+    assert.match(source, /key\.push\(key\.HOME,\s*key\.SHORT\)/);
     assert.match(source, /key\.on/);
     assert.match(source, /key\.HOME/);
     assert.match(source, /app\.on\(["']exit["']/);

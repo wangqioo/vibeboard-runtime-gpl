@@ -157,7 +157,7 @@ AI 生成一个受限 Lua/LVGL App
 
 - 已经有可用的 Launcher、生命周期、浏览器管理 UI 和 staged install/delete，但还需要长期稳定性回归和更完整的错误恢复体验；
 - Runtime-owned WiFi/Cubicserver/I2S 配置已经可以通过 `POST /runtime/config?name=wifi|cubicserver|i2s` 和 `npm run runtime:config` 写入 SD；WiFi 配置写入后的重启联网、I2S 真实麦克风引脚写入后的非零 PCM 录音仍需上板 smoke；
-- Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()` / `app.launch(id)` / `app.set_home_exit(enabled)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App；`app.set_home_exit(false)` 允许 `voice_ai`、`nesgame` 这类 App 接管 HOME/EXIT 输入而不触发 runner 默认退出。该能力已 build-verified，真实 app-to-app 上板切换仍待 smoke；
+- Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit()` / `app.launch(id)` / `app.set_home_exit(enabled)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App；`app.set_home_exit(false)` 允许 `voice_ai`、`nesgame` 这类 App 接管 HOME/EXIT 输入而不触发 runner 默认退出；`apps/smoke_app_manager` 已能通过一次软件 HOME 短按自动触发 `app.launch("smoke_key")`，方便后续上板 smoke。该能力已 build-verified，真实 app-to-app 上板切换仍待 smoke；
 - 还不能直接运行完整上游 HoloCubic 全量 App，只能按 App 驱动逐个补兼容层；
 - LVGL 绑定覆盖还不够广，尤其 list/arc/switch/dropdown/textarea/roller/slider、flex/grid、字体和 canvas 高级效果；
 - 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；Lua `touch.on/off/push` 坐标事件模块和 `apps/smoke_touch` 已进入 build-verified；Lua `gamepad` 兼容层已能用 `push_state` 软件注入连接/断开/更新生命周期事件，`apps/smoke_gamepad` 可显示这些事件用于后续上板 smoke。还没有真实 BLE/Xbox、BOOT 转发、长按/repeat 的完整 Lua 输入语义，`smoke_touch` 和 `smoke_gamepad` 的真实输入显示还需要上板记录；
@@ -204,7 +204,7 @@ AI 生成一个受限 Lua/LVGL App
 
 - Lua 侧 `app.list()`、`app.current()`、`app.rescan()`、`app.exiting()`、`app.exit()`、`app.launch(id)`、`app.set_home_exit(enabled)` 已 build-verified；
 - HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime-owned WiFi/Cubicserver config write、Runtime/API/App schema 版本查询、不兼容 App 拒绝启动、工具侧 App 包 hash preflight、工具侧版本/ABI 要求拒绝、以及板端 staged manifest 文件 hash 校验已完成第一版；
-- 后续补真实 `app.launch(id)` 上板 handoff smoke、`POST /runtime/config?name=wifi` 写入后重启联网 smoke、staged manifest hash 失败场景真机 smoke、以及更完整的升级提示 UI。
+- 后续补 `apps/smoke_app_manager` 上板 handoff smoke、`POST /runtime/config?name=wifi` 写入后重启联网 smoke、staged manifest hash 失败场景真机 smoke、以及更完整的升级提示 UI。
 
 第六优先级：上游兼容和高级能力。
 

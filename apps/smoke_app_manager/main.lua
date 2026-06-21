@@ -19,6 +19,7 @@ local home_exit_available = type(app.set_home_exit) == "function"
 local home_exit_disabled = false
 local launch_target = "smoke_key"
 local launch_requested = false
+local software_home_injected = false
 
 if home_exit_available then
   local ok, err = pcall(function()
@@ -47,6 +48,7 @@ local function render()
   lines[#lines + 1] = "launch fn: " .. tostring(launch_available)
   lines[#lines + 1] = "home exit fn: " .. tostring(set_home_exit_available)
   lines[#lines + 1] = "home exit off: " .. tostring(home_exit_disabled)
+  lines[#lines + 1] = "soft HOME: " .. tostring(software_home_injected)
   lines[#lines + 1] = "HOME -> launch " .. launch_target .. ": " .. tostring(launch_requested)
   if err then
     lines[#lines + 1] = "err: " .. tostring(err)
@@ -84,3 +86,14 @@ end
 
 render()
 tmr.create():alarm(1000, tmr.ALARM_AUTO, render)
+
+tmr.create():alarm(1500, tmr.ALARM_SINGLE, function()
+  if software_home_injected or launch_requested then
+    return
+  end
+  if key and key.push and type(app.launch) == "function" then
+    software_home_injected = true
+    print("[smoke_app_manager] software HOME SHORT")
+    key.push(key.HOME, key.SHORT)
+  end
+end)
