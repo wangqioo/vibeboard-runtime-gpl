@@ -163,7 +163,7 @@ AI 生成一个受限 Lua/LVGL App
 - 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；Lua `touch.on/off/push` 坐标事件模块和 `apps/smoke_touch` 已进入 build-verified；Lua `gamepad` 兼容层已能用 `push_state` 软件注入连接/断开/更新生命周期事件，`apps/smoke_gamepad` 可显示这些事件用于后续上板 smoke；物理 BOOT 到 active Lua app 的 `key.HOME` short/long-start 转发已 build-verified；`key.repeat_start/stop()` 已能通过 runtime timer 生成 LONG_START/LONG_REPEAT/LONG_END。还没有真实 BLE/Xbox、BOOT 转发上板记录、硬件来源长按 repeat、`smoke_touch` 和 `smoke_gamepad` 的真实输入显示还需要上板记录；
 - Native NES 已经 build-verified 到核心启动路径，但还缺合法 ROM 上板、真实显示所有权压力测试、音频输出和 native gamepad；
 - Voice AI 已有本地 bridge skeleton、command provider 边界、一次性 PCM 文件调试入口和 I2S/GIF build verification；真实麦克风、生产 STT/LLM wrapper、凭证策略和端到端上板还没完成；
-- Runtime/API/App schema 版本兼容已经有基础元数据；工具侧现在会拒绝包内普通 Lua 文件里直接调用当前 Runtime 未暴露的 LVGL API，并返回 `Runtime update required: unsupported LVGL API <name>`；也会拒绝 `requires.runtime`、`requires.luaApi`、`requires.lvglApi` 或 `requires.nativeAbi` 高于当前 Runtime 的 App；第一版 Lua 模块 API 白名单也已覆盖 `app`、`file`、`gamepad`、`http`、`i2s`、`json`、`key`、`sjson`、`time`、`tmr`、`touch`、`wifi` 的直接调用，能在打包前拒绝 `Runtime update required: unsupported Lua API <module.fn>`；capability guardrail 现在会把 `key.*`、`touch.*` 和 `gamepad.*` 都归入 `capabilities = input`，并覆盖包内 helper Lua 文件；`docs/ai-generation-contract.md` 也已经列出从 validator/C 绑定同步检查的第一版 LVGL UI 白名单。后续还需要把 Lua 解析从正则扫描升级为更稳的语法级解析。
+- Runtime/API/App schema 版本兼容已经有基础元数据；工具侧现在会拒绝包内普通 Lua 文件里直接调用当前 Runtime 未暴露的 LVGL API，并返回 `Runtime update required: unsupported LVGL API <name>`；也会拒绝 `requires.runtime`、`requires.luaApi`、`requires.lvglApi` 或 `requires.nativeAbi` 高于当前 Runtime 的 App；第一版 Lua 模块 API 白名单也已覆盖 `app`、`file`、`gamepad`、`http`、`i2s`、`json`、`key`、`sjson`、`time`、`tmr`、`touch`、`wifi` 的直接调用，能在打包前拒绝 `Runtime update required: unsupported Lua API <module.fn>`；capability guardrail 现在会把 `key.*`、`touch.*` 和 `gamepad.*` 都归入 `capabilities = input`，并覆盖包内 helper Lua 文件；`docs/ai-generation-contract.md` 也已经列出从 validator/C 绑定同步检查的第一版 LVGL UI 白名单；validator 的 API 扫描已升级为会跳过 Lua 注释、单双引号字符串和长字符串的词法扫描第一版，避免把示例文字误判为真实调用。后续如果引入依赖，再考虑完整 Lua AST 解析。
 
 ### 下一阶段必须补的核心能力
 
@@ -198,7 +198,7 @@ AI 生成一个受限 Lua/LVGL App
 - 补常用样式：font、opacity、shadow、line、flex/grid 基础；
 - 补图片/字体资源加载的稳定路径；
 - “AI 可以生成的 UI API 白名单”第一版已建立在 `docs/ai-generation-contract.md`，并通过 `npm run test:ai-contract` 校验它和 validator 从 C 绑定读出的 LVGL 符号不漂移；
-- 工具侧已能在 App entry 和 helper Lua 文件中直接调用未暴露 LVGL API、未暴露 Runtime Lua 模块 API，或声明高于当前 Runtime 的版本/ABI 要求时提前报 `Runtime update required`；后续继续把正则扫描升级为更深层 Lua 语法解析。
+- 工具侧已能在 App entry 和 helper Lua 文件中直接调用未暴露 LVGL API、未暴露 Runtime Lua 模块 API，或声明高于当前 Runtime 的版本/ABI 要求时提前报 `Runtime update required`；API/capability 扫描已能跳过 Lua 注释和字符串；后续再视需要升级到完整 Lua AST 解析。
 
 第五优先级：设备端 App 管理。
 

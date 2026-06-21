@@ -192,6 +192,36 @@ describe("validateAppDirectory", () => {
     }
   });
 
+  it("ignores unsupported APIs that only appear inside Lua comments and strings", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-lexical-scan-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = Lexical Scan",
+        "entry = main.lua",
+        "description = Validator lexical scan",
+        "capabilities = lvgl",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), [
+        "-- lv_totally_missing_widget(root)",
+        "local note = \"i2s.write(0, 'pcm') and tmr.delay(10) are not real calls\"",
+        "local block = [[ gamepad.connect('AA:BB') ]]",
+        "local root = lv_scr_act()",
+        "lv_obj_create(root)",
+        ""
+      ].join("\n"));
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, true);
+      assert.deepEqual(result.errors, []);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects calls to unsupported Lua module APIs", () => {
     const root = mkdtempSync(join(tmpdir(), "app-validator-lua-api-"));
     try {

@@ -110,18 +110,175 @@ const CHECKED_LUA_API_MODULES = [
   "wifi"
 ];
 
+function isIdentStart(char) {
+  return /[A-Za-z_]/.test(char || "");
+}
+
+function isIdentPart(char) {
+  return /[A-Za-z0-9_]/.test(char || "");
+}
+
+function skipLuaQuotedString(source, index, quote) {
+  index++;
+  while (index < source.length) {
+    if (source[index] === "\\") {
+      index += 2;
+      continue;
+    }
+    if (source[index] === quote) {
+      return index + 1;
+    }
+    index++;
+  }
+  return index;
+}
+
+function skipLuaLongBracket(source, index) {
+  if (source[index] !== "[") {
+    return index;
+  }
+  let cursor = index + 1;
+  while (source[cursor] === "=") {
+    cursor++;
+  }
+  if (source[cursor] !== "[") {
+    return index;
+  }
+
+  const close = `]${"=".repeat(cursor - index - 1)}]`;
+  const closeIndex = source.indexOf(close, cursor + 1);
+  return closeIndex === -1 ? source.length : closeIndex + close.length;
+}
+
+function skipLuaComment(source, index) {
+  let cursor = index + 2;
+  if (source[cursor] === "[") {
+    const afterLongComment = skipLuaLongBracket(source, cursor);
+    if (afterLongComment !== cursor) {
+      return afterLongComment;
+    }
+  }
+
+  const newline = source.indexOf("\n", cursor);
+  return newline === -1 ? source.length : newline + 1;
+}
+
+function readIdentifierPath(source, index) {
+  if (!isIdentStart(source[index])) {
+    return null;
+  }
+
+  let cursor = index + 1;
+  while (isIdentPart(source[cursor])) {
+    cursor++;
+  }
+
+  let value = source.slice(index, cursor);
+  while (source[cursor] === "." && isIdentStart(source[cursor + 1])) {
+    cursor++;
+    const segmentStart = cursor;
+    cursor++;
+    while (isIdentPart(source[cursor])) {
+      cursor++;
+    }
+    value += `.${source.slice(segmentStart, cursor)}`;
+  }
+
+  return { value, end: cursor };
+}
+
+function readLuaFunctionCalls(source) {
+  const calls = [];
+  let index = 0;
+
+  while (index < source.length) {
+    const char = source[index];
+    const next = source[index + 1];
+
+    if (char === "-" && next === "-") {
+      index = skipLuaComment(source, index);
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      index = skipLuaQuotedString(source, index, char);
+      continue;
+    }
+    if (char === "[") {
+      const afterLongBracket = skipLuaLongBracket(source, index);
+      if (afterLongBracket !== index) {
+        index = afterLongBracket;
+        continue;
+      }
+    }
+    if (!isIdentStart(char) || isIdentPart(source[index - 1]) || source[index - 1] === ".") {
+      index++;
+      continue;
+    }
+
+    const identifier = readIdentifierPath(source, index);
+    if (identifier == null) {
+      index++;
+      continue;
+    }
+
+    let cursor = identifier.end;
+    while (/\s/.test(source[cursor] || "")) {
+      cursor++;
+    }
+    if (source[cursor] === "(") {
+      calls.push(identifier.value);
+    }
+    index = identifier.end;
+  }
+
+  return calls;
+}
+
+function maskLuaCommentsAndStrings(source) {
+  let output = "";
+  let index = 0;
+
+  while (index < source.length) {
+    const char = source[index];
+    const next = source[index + 1];
+    let end = index;
+
+    if (char === "-" && next === "-") {
+      end = skipLuaComment(source, index);
+    } else if (char === "\"" || char === "'") {
+      end = skipLuaQuotedString(source, index, char);
+    } else if (char === "[") {
+      end = skipLuaLongBracket(source, index);
+    }
+
+    if (end !== index) {
+      output += source.slice(index, end).replace(/[^\n]/g, " ");
+      index = end;
+      continue;
+    }
+
+    output += char;
+    index++;
+  }
+
+  return output;
+}
+
 function findUnsupportedLvglSymbols(entryContent) {
+  const codeContent = maskLuaCommentsAndStrings(entryContent);
   const unsupported = new Set();
   const localSymbols = new Set(
-    [...entryContent.matchAll(/\blocal\s+(lv_[A-Za-z0-9_]+)\b/g)]
+    [...codeContent.matchAll(/\blocal\s+(lv_[A-Za-z0-9_]+)\b/g)]
       .map((match) => match[1])
   );
   const optionalSymbols = new Set(
-    [...entryContent.matchAll(/\bif\s+(?:not\s+)?(lv_[A-Za-z0-9_]+)\s+then\b/g)]
+    [...codeContent.matchAll(/\bif\s+(?:not\s+)?(lv_[A-Za-z0-9_]+)\s+then\b/g)]
       .map((match) => match[1])
   );
-  for (const match of entryContent.matchAll(/\b(lv_[A-Za-z0-9_]+)\s*\(/g)) {
-    const symbol = match[1];
+  for (const symbol of readLuaFunctionCalls(entryContent)) {
+    if (!symbol.startsWith("lv_")) {
+      continue;
+    }
     if (symbol.endsWith("_fn") || localSymbols.has(symbol) || optionalSymbols.has(symbol)) {
       continue;
     }
@@ -133,18 +290,21 @@ function findUnsupportedLvglSymbols(entryContent) {
 }
 
 function isOptionalLuaApiProbe(entryContent, symbol) {
+  const codeContent = maskLuaCommentsAndStrings(entryContent);
   const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const guardPattern = new RegExp(`\\bif\\s+[^\\n]*\\b${escaped}\\b[^\\n]*\\bthen\\b`);
-  return guardPattern.test(entryContent);
+  return guardPattern.test(codeContent);
 }
 
 function findUnsupportedLuaApiSymbols(entryContent) {
   const unsupported = new Set();
-  const modulePattern = CHECKED_LUA_API_MODULES.join("|");
-  const apiPattern = new RegExp(`(?<![A-Za-z0-9_\\.])((?:${modulePattern})(?:\\.[A-Za-z_][A-Za-z0-9_]*){1,2})\\s*\\(`, "g");
+  const modules = new Set(CHECKED_LUA_API_MODULES);
 
-  for (const match of entryContent.matchAll(apiPattern)) {
-    const symbol = match[1];
+  for (const symbol of readLuaFunctionCalls(entryContent)) {
+    const [moduleName] = symbol.split(".");
+    if (!modules.has(moduleName) || !symbol.includes(".")) {
+      continue;
+    }
     if (SUPPORTED_LUA_API_SYMBOLS.has(symbol) || isOptionalLuaApiProbe(entryContent, symbol)) {
       continue;
     }
@@ -328,9 +488,10 @@ export function validateAppDirectory(appDir) {
     const luaFiles = listLuaFiles(appDir);
     for (const luaFile of luaFiles) {
       const entryContent = readFileSync(luaFile, "utf8");
+      const codeContent = maskLuaCommentsAndStrings(entryContent);
 
       for (const { capability, pattern } of CAPABILITY_USAGE_PATTERNS) {
-        if (pattern.test(entryContent) && !declaredCapabilities.has(capability)) {
+        if (pattern.test(codeContent) && !declaredCapabilities.has(capability)) {
           addUnique(errors, `Missing capability declaration: ${capability}`);
         }
       }
