@@ -101,6 +101,41 @@ static int l_lv_bar_create(lua_State *L)
     return create_object(L, lv_bar_create);
 }
 
+static int l_lv_slider_create(lua_State *L)
+{
+    return create_object(L, lv_slider_create);
+}
+
+static int l_lv_list_create(lua_State *L)
+{
+    return create_object(L, lv_list_create);
+}
+
+static int l_lv_switch_create(lua_State *L)
+{
+    return create_object(L, lv_switch_create);
+}
+
+static int l_lv_dropdown_create(lua_State *L)
+{
+    return create_object(L, lv_dropdown_create);
+}
+
+static int l_lv_textarea_create(lua_State *L)
+{
+    return create_object(L, lv_textarea_create);
+}
+
+static int l_lv_roller_create(lua_State *L)
+{
+    return create_object(L, lv_roller_create);
+}
+
+static int l_lv_arc_create(lua_State *L)
+{
+    return create_object(L, lv_arc_create);
+}
+
 static int l_lv_img_set_src(lua_State *L)
 {
     int id = vb_lua_lvgl_check_object_id(L, 1);
@@ -695,6 +730,232 @@ static int l_lv_bar_set_value(lua_State *L)
     return 0;
 }
 
+static int l_lv_slider_set_range(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    int min = (int)luaL_checkinteger(L, 2);
+    int max = (int)luaL_checkinteger(L, 3);
+
+    lvgl_port_lock(0);
+    lv_obj_t *slider = vb_lua_lvgl_resolve_object(id);
+    lv_slider_set_range(slider, min, max);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_slider_set_value(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    int value = (int)luaL_checkinteger(L, 2);
+    lv_anim_enable_t anim = (lv_anim_enable_t)luaL_optinteger(L, 3, LV_ANIM_OFF);
+
+    lvgl_port_lock(0);
+    lv_obj_t *slider = vb_lua_lvgl_resolve_object(id);
+    lv_slider_set_value(slider, value, anim);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_slider_get_value(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+
+    lvgl_port_lock(0);
+    lv_obj_t *slider = vb_lua_lvgl_resolve_object(id);
+    int value = lv_slider_get_value(slider);
+    lvgl_port_unlock();
+    lua_pushinteger(L, value);
+    return 1;
+}
+
+static int l_lv_list_add_text(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    const char *text = luaL_checkstring(L, 2);
+    if (!vb_lua_lvgl_can_store_object()) {
+        return luaL_error(L, "lvgl object table full");
+    }
+
+    lvgl_port_lock(0);
+    lv_obj_t *list = vb_lua_lvgl_resolve_object(id);
+    lv_obj_t *label = lv_list_add_text(list, text);
+    lvgl_port_unlock();
+    if (label == NULL) {
+        return luaL_error(L, "lvgl list text allocation failed");
+    }
+
+    lua_pushinteger(L, vb_lua_lvgl_store_object(label));
+    return 1;
+}
+
+static int l_lv_list_add_btn(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    const char *icon = lua_isnil(L, 2) ? NULL : luaL_checkstring(L, 2);
+    const char *text = luaL_checkstring(L, 3);
+    if (!vb_lua_lvgl_can_store_object()) {
+        return luaL_error(L, "lvgl object table full");
+    }
+
+    lvgl_port_lock(0);
+    lv_obj_t *list = vb_lua_lvgl_resolve_object(id);
+    lv_obj_t *button = lv_list_add_btn(list, icon, text);
+    lvgl_port_unlock();
+    if (button == NULL) {
+        return luaL_error(L, "lvgl list button allocation failed");
+    }
+
+    lua_pushinteger(L, vb_lua_lvgl_store_object(button));
+    return 1;
+}
+
+static int l_lv_dropdown_set_options(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    const char *options = luaL_checkstring(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *dropdown = vb_lua_lvgl_resolve_object(id);
+    lv_dropdown_set_options(dropdown, options);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_dropdown_set_selected(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    uint16_t selected = (uint16_t)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *dropdown = vb_lua_lvgl_resolve_object(id);
+    lv_dropdown_set_selected(dropdown, selected);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_dropdown_get_selected(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+
+    lvgl_port_lock(0);
+    lv_obj_t *dropdown = vb_lua_lvgl_resolve_object(id);
+    uint16_t selected = lv_dropdown_get_selected(dropdown);
+    lvgl_port_unlock();
+    lua_pushinteger(L, selected);
+    return 1;
+}
+
+static int l_lv_textarea_set_text(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    const char *text = luaL_checkstring(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *textarea = vb_lua_lvgl_resolve_object(id);
+    lv_textarea_set_text(textarea, text);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_textarea_add_text(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    const char *text = luaL_checkstring(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *textarea = vb_lua_lvgl_resolve_object(id);
+    lv_textarea_add_text(textarea, text);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_textarea_get_text(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+
+    lvgl_port_lock(0);
+    lv_obj_t *textarea = vb_lua_lvgl_resolve_object(id);
+    const char *text = lv_textarea_get_text(textarea);
+    lvgl_port_unlock();
+    lua_pushstring(L, text ? text : "");
+    return 1;
+}
+
+static int l_lv_roller_set_options(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    const char *options = luaL_checkstring(L, 2);
+    lv_roller_mode_t mode = (lv_roller_mode_t)luaL_optinteger(L, 3, LV_ROLLER_MODE_NORMAL);
+
+    lvgl_port_lock(0);
+    lv_obj_t *roller = vb_lua_lvgl_resolve_object(id);
+    lv_roller_set_options(roller, options, mode);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_roller_set_selected(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    uint16_t selected = (uint16_t)luaL_checkinteger(L, 2);
+    lv_anim_enable_t anim = (lv_anim_enable_t)luaL_optinteger(L, 3, LV_ANIM_OFF);
+
+    lvgl_port_lock(0);
+    lv_obj_t *roller = vb_lua_lvgl_resolve_object(id);
+    lv_roller_set_selected(roller, selected, anim);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_roller_get_selected(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+
+    lvgl_port_lock(0);
+    lv_obj_t *roller = vb_lua_lvgl_resolve_object(id);
+    uint16_t selected = lv_roller_get_selected(roller);
+    lvgl_port_unlock();
+    lua_pushinteger(L, selected);
+    return 1;
+}
+
+static int l_lv_arc_set_range(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    int min = (int)luaL_checkinteger(L, 2);
+    int max = (int)luaL_checkinteger(L, 3);
+
+    lvgl_port_lock(0);
+    lv_obj_t *arc = vb_lua_lvgl_resolve_object(id);
+    lv_arc_set_range(arc, min, max);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_arc_set_value(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+    int value = (int)luaL_checkinteger(L, 2);
+
+    lvgl_port_lock(0);
+    lv_obj_t *arc = vb_lua_lvgl_resolve_object(id);
+    lv_arc_set_value(arc, value);
+    lvgl_port_unlock();
+    return 0;
+}
+
+static int l_lv_arc_get_value(lua_State *L)
+{
+    int id = vb_lua_lvgl_check_object_id(L, 1);
+
+    lvgl_port_lock(0);
+    lv_obj_t *arc = vb_lua_lvgl_resolve_object(id);
+    int value = lv_arc_get_value(arc);
+    lvgl_port_unlock();
+    lua_pushinteger(L, value);
+    return 1;
+}
+
 static void anim_set_x(void *object, int32_t value)
 {
     lv_obj_set_x((lv_obj_t *)object, value);
@@ -822,6 +1083,30 @@ void vb_lua_lvgl_widgets_register(lua_State *L)
         { "lv_bar_create", l_lv_bar_create },
         { "lv_bar_set_range", l_lv_bar_set_range },
         { "lv_bar_set_value", l_lv_bar_set_value },
+        { "lv_slider_create", l_lv_slider_create },
+        { "lv_slider_set_range", l_lv_slider_set_range },
+        { "lv_slider_set_value", l_lv_slider_set_value },
+        { "lv_slider_get_value", l_lv_slider_get_value },
+        { "lv_list_create", l_lv_list_create },
+        { "lv_list_add_text", l_lv_list_add_text },
+        { "lv_list_add_btn", l_lv_list_add_btn },
+        { "lv_switch_create", l_lv_switch_create },
+        { "lv_dropdown_create", l_lv_dropdown_create },
+        { "lv_dropdown_set_options", l_lv_dropdown_set_options },
+        { "lv_dropdown_set_selected", l_lv_dropdown_set_selected },
+        { "lv_dropdown_get_selected", l_lv_dropdown_get_selected },
+        { "lv_textarea_create", l_lv_textarea_create },
+        { "lv_textarea_set_text", l_lv_textarea_set_text },
+        { "lv_textarea_add_text", l_lv_textarea_add_text },
+        { "lv_textarea_get_text", l_lv_textarea_get_text },
+        { "lv_roller_create", l_lv_roller_create },
+        { "lv_roller_set_options", l_lv_roller_set_options },
+        { "lv_roller_set_selected", l_lv_roller_set_selected },
+        { "lv_roller_get_selected", l_lv_roller_get_selected },
+        { "lv_arc_create", l_lv_arc_create },
+        { "lv_arc_set_range", l_lv_arc_set_range },
+        { "lv_arc_set_value", l_lv_arc_set_value },
+        { "lv_arc_get_value", l_lv_arc_get_value },
         { "lv_font_load", l_lv_font_load },
         { "lv_font_free", l_lv_font_free },
         { "lv_obj_set_size", l_lv_obj_set_size },

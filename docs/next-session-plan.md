@@ -106,6 +106,7 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - Lua `key.repeat_start(code[, delay_ms, interval_ms])` and `key.repeat_stop(code)` now generate queued LONG_START/LONG_REPEAT/LONG_END events through runtime timers for App-side repeat semantics.
   - board-verified touch-swipe input bridge: hardware task enqueues key events, Lua runner drains them on the Lua/timer loop, and app stop cleans up the queue/callbacks.
   - LVGL object delete/foreground, opacity, gradients, shadows, and property animation helpers needed by `2048`.
+  - LVGL common-control slice is build-verified for slider/list/switch/dropdown/textarea/roller/arc, with `apps/smoke_controls` included in demo packaging for board visual smoke.
   - `apps/smoke_key` input smoke app: shows the latest key event on screen and injects alternating LEFT/RIGHT events through `key.push()` for software-triggered input verification.
   - `apps/smoke_key` was packaged, uploaded, launched, and board-verified through serial logs showing alternating `LEFT`/`RIGHT` callbacks from `key.push()`.
   - `apps/smoke_touch` is now included in demo packaging and build-verified; it displays raw touch down/move/up coordinates and can self-inject `touch.push(...)` events for software smoke.
@@ -246,6 +247,7 @@ Expected result:
 - still swipe left, right, up, and down on the device screen and record whether those physical gestures update the same `smoke_key` label;
 - upload/launch `smoke_touch` and record physical down/move/up coordinate labels on the board;
 - upload/launch `smoke_gamepad` and record the software-injected `connecting`, `connected`, `update`, and `disconnected` labels before wiring a real BLE/Xbox backend;
+- upload/launch `smoke_controls` and record that slider/list/switch/dropdown/textarea/roller/arc render on the physical display and keep updating without LVGL object-table or timer errors;
 - upload/launch an `app.set_home_exit(false)` app, press physical BOOT short and long while it is running, and record that Lua receives `key.HOME` short/long-start instead of the native Launcher immediately stopping the app;
 - in `smoke_app_manager`, record that the `launch` lifecycle counter increments before handoff to `smoke_key`; when exercising `app.exit([reason])`, record the `stop` and cleanup-time `exit` counters in serial logs;
 - also launch a default-home-exit app and confirm physical BOOT HOME still requests a clean stop/return path;

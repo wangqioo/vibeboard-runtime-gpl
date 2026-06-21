@@ -142,6 +142,9 @@ void vb_lua_lvgl_register(lua_State *L)
     lua_pushinteger(L, LV_ANIM_ON);
     lua_setglobal(L, "LV_ANIM_ON");
 
+    lua_pushinteger(L, LV_ROLLER_MODE_NORMAL);
+    lua_setglobal(L, "LV_ROLLER_MODE_NORMAL");
+
     lua_pushinteger(L, 1);
     lua_setglobal(L, "ANIM_X");
 

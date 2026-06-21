@@ -159,7 +159,7 @@ AI 生成一个受限 Lua/LVGL App
 - Runtime-owned WiFi/Cubicserver/I2S 配置已经可以通过 `POST /runtime/config?name=wifi|cubicserver|i2s` 和 `npm run runtime:config` 写入 SD；WiFi 配置写入后的重启联网、I2S 真实麦克风引脚写入后的非零 PCM 录音仍需上板 smoke；
 - Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit([reason])` / `app.launch(id)` / `app.set_home_exit(enabled)` / `app.on("exit"|"launch"|"stop", cb)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App，并在请求 handoff 时派发 `launch` 事件；`app.exit([reason])` 会派发 `stop` 事件；`app.set_home_exit(false)` 允许 `voice_ai`、`nesgame` 这类 App 接管 HOME/EXIT 输入而不触发 runner 默认退出；Launcher inactive 时的物理 BOOT 短按/长按已 build-verified 为 Lua `key.HOME` short/long-start 转发，默认 HOME/EXIT 退出语义仍保留；`apps/smoke_app_manager` 已能通过一次软件 HOME 短按自动触发 `app.launch("smoke_key")`，并显示 stop/launch/exit 生命周期事件计数，方便后续上板 smoke。该能力已 build-verified，真实物理 BOOT-to-Lua HOME 和 app-to-app 上板切换仍待 smoke；
 - 还不能直接运行完整上游 HoloCubic 全量 App，只能按 App 驱动逐个补兼容层；
-- LVGL 绑定覆盖还不够广，尤其 list/arc/switch/dropdown/textarea/roller/slider、flex/grid、字体和 canvas 高级效果；
+- LVGL 绑定已新增第一批常用控件 slice：slider、list、switch、dropdown、textarea、roller、arc 的创建和最小 setter/getter 已 build-verified，并新增 `apps/smoke_controls` 进入 demo packaging；flex/grid、字体和 canvas 高级效果仍不足，`smoke_controls` 还需上板视觉 smoke；
 - 触摸滑动到 Lua `key.on` 的第一版已通过 `2048` 真机验证；Lua `touch.on/off/push` 坐标事件模块和 `apps/smoke_touch` 已进入 build-verified；Lua `gamepad` 兼容层已能用 `push_state` 软件注入连接/断开/更新生命周期事件，`apps/smoke_gamepad` 可显示这些事件用于后续上板 smoke；物理 BOOT 到 active Lua app 的 `key.HOME` short/long-start 转发已 build-verified；`key.repeat_start/stop()` 已能通过 runtime timer 生成 LONG_START/LONG_REPEAT/LONG_END。还没有真实 BLE/Xbox、BOOT 转发上板记录、硬件来源长按 repeat、`smoke_touch` 和 `smoke_gamepad` 的真实输入显示还需要上板记录；
 - Native NES 已经 build-verified 到核心启动路径，但还缺合法 ROM 上板、真实显示所有权压力测试、音频输出和 native gamepad；
 - Voice AI 已有本地 bridge skeleton、command provider 边界、一次性 PCM 文件调试入口和 I2S/GIF build verification；真实麦克风、生产 STT/LLM wrapper、凭证策略和端到端上板还没完成；
@@ -194,7 +194,7 @@ AI 生成一个受限 Lua/LVGL App
 
 第四优先级：扩展 LVGL/API 覆盖。
 
-- 补常用控件：list、arc、switch、dropdown、textarea、roller、slider；
+- 常用控件第一批已 build-verified：list、arc、switch、dropdown、textarea、roller、slider；下一步上板运行 `apps/smoke_controls`，再根据迁移 App 需求补事件回调、更多样式和控件细节；
 - 补常用样式：font、opacity、shadow、line、flex/grid 基础；
 - 补图片/字体资源加载的稳定路径；
 - 建立 “AI 可以生成的 UI API 白名单”；

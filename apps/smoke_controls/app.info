@@ -1,0 +1,4 @@
+name = smoke_controls
+entry = main.lua
+description = LVGL common control widget smoke test
+capabilities = lvgl,timer

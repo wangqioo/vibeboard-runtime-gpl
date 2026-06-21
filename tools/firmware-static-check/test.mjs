@@ -76,6 +76,8 @@ const smokeAssetsImagePath = join(repoRoot, "apps/smoke_assets/assets/icon.bin")
 const smokeVisualInfoPath = join(repoRoot, "apps/smoke_visual/app.info");
 const smokeVisualSourcePath = join(repoRoot, "apps/smoke_visual/main.lua");
 const smokeVisualBmpPath = join(repoRoot, "apps/smoke_visual/assets/icon.bmp");
+const smokeControlsInfoPath = join(repoRoot, "apps/smoke_controls/app.info");
+const smokeControlsSourcePath = join(repoRoot, "apps/smoke_controls/main.lua");
 const smokeNetworkInfoPath = join(repoRoot, "apps/smoke_network/app.info");
 const smokeNetworkSourcePath = join(repoRoot, "apps/smoke_network/main.lua");
 const smokeNetworkConfigPath = join(repoRoot, "apps/smoke_network/wifi.example.json");
@@ -1562,6 +1564,55 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /lv_bar_set_value\(bar,\s*progress,\s*LV_ANIM_ON\)/);
     assert.match(source, /tmr\.create\(\)/);
     assert.match(source, /smoke visual ok/);
+  });
+
+  it("registers common LVGL control widgets for migrated apps", () => {
+    const source = readRequired(luaLvglWidgetsSourcePath);
+
+    for (const symbol of [
+      "lv_slider_create",
+      "lv_slider_set_range",
+      "lv_slider_set_value",
+      "lv_slider_get_value",
+      "lv_list_create",
+      "lv_list_add_text",
+      "lv_list_add_btn",
+      "lv_switch_create",
+      "lv_dropdown_create",
+      "lv_dropdown_set_options",
+      "lv_dropdown_set_selected",
+      "lv_dropdown_get_selected",
+      "lv_textarea_create",
+      "lv_textarea_set_text",
+      "lv_textarea_add_text",
+      "lv_textarea_get_text",
+      "lv_roller_create",
+      "lv_roller_set_options",
+      "lv_roller_set_selected",
+      "lv_roller_get_selected",
+      "lv_arc_create",
+      "lv_arc_set_range",
+      "lv_arc_set_value",
+      "lv_arc_get_value"
+    ]) {
+      assert.match(source, new RegExp(`"${symbol}"`));
+    }
+  });
+
+  it("ships a common control widget smoke app", () => {
+    const info = readRequired(smokeControlsInfoPath);
+    const source = readRequired(smokeControlsSourcePath);
+
+    assert.match(info, /name\s*=\s*smoke_controls/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer/);
+    assert.match(source, /lv_slider_create\(root\)/);
+    assert.match(source, /lv_list_create\(root\)/);
+    assert.match(source, /lv_switch_create\(root\)/);
+    assert.match(source, /lv_dropdown_create\(root\)/);
+    assert.match(source, /lv_textarea_create\(root\)/);
+    assert.match(source, /lv_roller_create\(root\)/);
+    assert.match(source, /lv_arc_create\(root\)/);
+    assert.match(source, /smoke controls ok/);
   });
 
   it("ships MatrixRain as the first upstream display app migration", () => {
