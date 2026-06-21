@@ -175,7 +175,7 @@ git diff --check
 idf.py build
 ```
 
-The latest full verification for migration work passed through package/static/test/build layers. On 2026-06-21, `npm test`, `npm run validate:apps`, `git diff --check`, and `idf.py build` passed. The latest ESP-IDF build generated `vibeboard_runtime.bin` size `0x18e010`, with 61% free in the 4 MB app partition. Build warnings: existing NES `.mod_iram` orphan section linker warnings; `esp_lcd_touch_get_coordinates` is deprecated and should later move to `esp_lcd_touch_get_data`.
+The latest full verification for migration work passed through package/static/test/build layers. On 2026-06-21, `npm test`, `npm run validate:apps`, `git diff --check`, and `idf.py build` passed. The latest ESP-IDF build generated `vibeboard_runtime.bin` size `0x18fd90`, with 61% free in the 4 MB app partition. Build warnings: existing NES `.mod_iram` orphan section linker warnings. The board input poller has been moved from deprecated `esp_lcd_touch_get_coordinates` to `esp_lcd_touch_get_data`.
 
 On 2026-06-18, `/dev/cu.usbmodem11301` identified as:
 

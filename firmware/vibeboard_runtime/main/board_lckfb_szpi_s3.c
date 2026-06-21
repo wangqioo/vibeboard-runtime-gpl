@@ -324,28 +324,29 @@ static void board_input_task(void *arg)
 
     while (!input_stop_requested) {
         if (touch != NULL && lvgl_port_lock(0)) {
-            uint16_t x[1] = {0};
-            uint16_t y[1] = {0};
+            esp_lcd_touch_point_data_t points[1] = {0};
             uint8_t count = 0;
             esp_lcd_touch_read_data(touch);
-            bool pressed = esp_lcd_touch_get_coordinates(touch, x, y, NULL, &count, 1);
-            if (pressed && count > 0) {
+            esp_err_t touch_data_err = esp_lcd_touch_get_data(touch, points, &count, 1);
+            if (touch_data_err == ESP_OK && count > 0) {
                 vb_board_input_callback_t callback = input_callback;
                 int timestamp = board_now_ms();
+                uint16_t x = points[0].x;
+                uint16_t y = points[0].y;
                 if (!tracking) {
-                    start_x = x[0];
-                    start_y = y[0];
+                    start_x = x;
+                    start_y = y;
                     tracking = true;
                     if (callback != NULL) {
-                        callback(0, VB_BOARD_TOUCH_EVENT_DOWN, timestamp, x[0], y[0], input_user_data);
+                        callback(0, VB_BOARD_TOUCH_EVENT_DOWN, timestamp, x, y, input_user_data);
                     }
-                } else if (x[0] != last_x || y[0] != last_y) {
+                } else if (x != last_x || y != last_y) {
                     if (callback != NULL) {
-                        callback(0, VB_BOARD_TOUCH_EVENT_MOVE, timestamp, x[0], y[0], input_user_data);
+                        callback(0, VB_BOARD_TOUCH_EVENT_MOVE, timestamp, x, y, input_user_data);
                     }
                 }
-                last_x = x[0];
-                last_y = y[0];
+                last_x = x;
+                last_y = y;
             } else if (tracking) {
                 vb_board_input_callback_t callback = input_callback;
                 if (callback != NULL) {

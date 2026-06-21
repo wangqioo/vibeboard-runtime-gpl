@@ -991,7 +991,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(boardHeader, /vb_board_input_stop/);
     assert.match(boardHeader, /vb_board_input_callback_t/);
     assert.match(boardSource, /esp_lcd_touch_read_data/);
-    assert.match(boardSource, /esp_lcd_touch_get_coordinates/);
+    assert.match(boardSource, /esp_lcd_touch_point_data_t/);
+    assert.match(boardSource, /esp_lcd_touch_get_data/);
+    assert.doesNotMatch(boardSource, /esp_lcd_touch_get_coordinates/);
     assert.match(boardSource, /vb_board_input_start/);
     assert.match(boardSource, /vb_board_input_stop/);
     assert.match(boardSource, /xTaskCreatePinnedToCoreWithCaps\(board_input_task/);
