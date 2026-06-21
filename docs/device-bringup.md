@@ -2511,3 +2511,70 @@ GET /status -> {"state":"running","current_app":"2048","last_status":"ESP_OK"}
 ```
 
 Result: the migrated schema v2 apps still pass HTTP lifecycle switching, including the previously risky `conway_life -> fluid_pendant` path. Manual physical screen QA remains pending for visual details such as black screen, overlap, asset visibility, animation quality, and launcher switch-away behavior.
+
+### Runtime WiFi/NVS memory recovery and status JSON verification
+
+Date: 2026-06-21
+
+The shared ESP32-S3 board was connected as `/dev/cu.usbmodem112301` and identified as the VibeBoard test board:
+
+```text
+Chip is ESP32-S3 (QFN56) (revision v0.2)
+Features: WiFi, BLE, Embedded PSRAM 8MB (AP_3v3)
+MAC: 10:51:db:80:e2:e8
+```
+
+Initial Runtime reflashes exposed a boot-time WiFi regression. Serial logs showed runtime WiFi autoconnect could read `/sdcard/runtime/wifi.json`, but failed before `esp_netif_init()`:
+
+```text
+I runtime_wifi: runtime WiFi autoconnect using /sdcard/runtime/wifi.json
+I runtime_wifi: wifi ensure_nvs before internal_free=86988 internal_largest=57344
+W runtime_wifi: ensure_nvs failed: ESP_ERR_NO_MEM
+W vibeboard_runtime: runtime WiFi unavailable: ESP_ERR_NO_MEM
+```
+
+Moving NVS earlier and enabling `CONFIG_NVS_ALLOCATE_CACHE_IN_SPIRAM=y` did not fix it. The board still had only a 57 KB largest internal block, and `nvs_flash_init()` returned `ESP_ERR_NO_MEM` before SD/display/app registry initialization.
+
+Runtime fix:
+
+```text
+# CONFIG_ESP_WIFI_NVS_ENABLED is not set
+# CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE is not set
+CONFIG_ESP_PHY_RF_CAL_FULL=y
+CONFIG_ESP_PHY_CALIBRATION_MODE=2
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_NVS_ALLOCATE_CACHE_IN_SPIRAM=y
+```
+
+The Runtime reads WiFi credentials from SD and does not need WiFi settings persisted in NVS. Disabling PHY calibration storage trades a full calibration at boot for avoiding NVS allocation pressure. `vb_runtime_wifi_prepare()` and `vb_runtime_wifi_ensure_netif()` now treat NVS as already satisfied when both WiFi NVS and PHY calibration storage are disabled.
+
+Board verification after rebuild and flash:
+
+```text
+I runtime_wifi: wifi prepare_nvs before internal_free=89972 internal_largest=59392
+I runtime_wifi: wifi prepare_nvs after internal_free=89972 internal_largest=59392
+I runtime_wifi: runtime WiFi autoconnect using /sdcard/runtime/wifi.json
+I runtime_wifi: wifi init after internal_free=46100 internal_largest=36864
+I wifi:config NVS flash: disabled
+I wifi_init: WiFi/LWIP prefer SPIRAM
+I runtime_wifi: wifi start after internal_free=45584 internal_largest=36864
+I runtime_wifi: runtime sta got ip 192.168.1.32
+```
+
+The same pass also fixed `/status` JSON. `native_abi_version` was previously emitted without quotes, which made `npm run device:check` report `status response was not JSON` even though HTTP returned 200. The status response now parses correctly:
+
+```text
+curl -s http://192.168.1.32:8080/status
+{"sd":true,"app_count":24,"first_app":"smoke_network","install":"ok","state":"idle","running":false,"current_app":"","runtime_version":"0.1.0","lua_api_version":"0.1.0","lvgl_api_version":"0.1.0","package_schema":"vibeboard-runtime-app-package@2","native_abi_version":"vibeboard-native-module-abi@1","last_status":"ESP_OK","last_message":""}
+```
+
+Final device check:
+
+```text
+npm run device:check
+HTTP /status reachable: yes (200)
+VibeBoard Runtime: yes
+Runtime note: status JSON exposes VibeBoard Runtime metadata
+```
+
+Result: runtime WiFi autoconnect is restored on the shared board, the install service is reachable at `192.168.1.32:8080`, and `device:check` can identify the board as VibeBoard Runtime again. The board is temporarily flashed with VibeBoard Runtime at the end of this pass, but future sessions must still start with `npm run device:check` because the user may reflash this ESP32-S3 for other projects.

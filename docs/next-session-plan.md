@@ -8,7 +8,7 @@ Date: 2026-06-21
 local main with Weather/Web UI/deployment productization, Lua app manager lifecycle APIs, BOOT-to-Lua HOME forwarding, GIF support, Voice AI desktop bridge skeleton, and the first executable NES core path build-verified; board-only visual/audio/ROM/input checks remain
 ```
 
-The local work after the previous baseline migrates the upstream `2048` and `weather` apps, adds the minimum runtime API surface they need, and productizes the local upload/control workflow. It also includes hardware-driven fixes from the 2026-06-19 temporary Runtime flash, a non-destructive `device:check` preflight, the first board-verified touch-swipe-to-`key.on` bridge, an app-local double-confirm guard for `2048` exit events, staged upload/delete smoke, a local device web UI, Lua app-manager lifecycle reads, BOOT-to-Lua HOME forwarding for apps that disable default HOME exit, GIF widget support for `voice_ai`, a provider-neutral Voice AI desktop bridge, and a build-verified NES native path that links the upstream core. `2048` and `weather` have board HTTP lifecycle evidence; `2048` has user-confirmed physical swipe plus double-exit behavior. The shared ESP32-S3 board may be reflashed for other projects between sessions, so every hardware pass must start with `npm run device:check` and reflash VibeBoard Runtime only when needed.
+The local work after the previous baseline migrates the upstream `2048` and `weather` apps, adds the minimum runtime API surface they need, and productizes the local upload/control workflow. It also includes hardware-driven fixes from the 2026-06-19 and 2026-06-21 temporary Runtime flashes, a non-destructive `device:check` preflight, the first board-verified touch-swipe-to-`key.on` bridge, an app-local double-confirm guard for `2048` exit events, staged upload/delete smoke, a local device web UI, Lua app-manager lifecycle reads, BOOT-to-Lua HOME forwarding for apps that disable default HOME exit, GIF widget support for `voice_ai`, a provider-neutral Voice AI desktop bridge, and a build-verified NES native path that links the upstream core. Runtime WiFi autoconnect is restored under the current memory budget by removing WiFi/PHY NVS dependence and using full PHY calibration at boot. `2048` and `weather` have board HTTP lifecycle evidence; `2048` has user-confirmed physical swipe plus double-exit behavior. The shared ESP32-S3 board may be reflashed for other projects between sessions, so every hardware pass must start with `npm run device:check` and reflash VibeBoard Runtime only when needed.
 
 ## What Is Done
 
@@ -38,6 +38,7 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - boot reads `/sdcard/runtime/wifi.json`;
   - the current test board also accepts the existing local `/sdcard/apps/smoke_network/wifi.json`;
   - boot logs `runtime sta got ip 192.168.1.32` without manually launching `smoke_network`.
+  - 2026-06-21 regression recovery disables WiFi NVS and PHY calibration storage, uses full PHY calibration, and verifies `wifi:config NVS flash: disabled`, `WiFi/LWIP prefer SPIRAM`, and `runtime sta got ip 192.168.1.32`.
 - Uploader reliability cleanup is implemented and board-verified:
   - `upload:app` and `launch:app` default to Node native HTTP;
   - `nc` remains available as an explicit `--transport nc` fallback.
@@ -57,6 +58,7 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - package schema;
   - native ABI version;
   - last status/message.
+- `/status` now emits valid JSON for `native_abi_version`; `npm run device:check` recognizes the board as VibeBoard Runtime through status metadata.
 - Deployment productization first slice is implemented:
   - staged file upload using `/sdcard/.vibeboard-staging/<stage>`;
   - `/install/commit`;
@@ -157,6 +159,7 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - the ESP32-S3 board is also used for the user's other ESP32 firmware;
   - do not assume VibeBoard Runtime remains flashed between sessions;
   - before hardware verification, identify the port and current firmware, then temporarily flash VibeBoard Runtime if needed.
+  - at the end of the 2026-06-21 pass, `/dev/cu.usbmodem112301` was running VibeBoard Runtime and `http://192.168.1.32:8080/status` returned `app_count=24,state=idle,last_status=ESP_OK`.
 - Tooling guardrails:
   - `npm run device:check` performs the non-destructive shared-board preflight;
   - validator tests keep migrated App capabilities aligned with static API usage;
@@ -176,6 +179,8 @@ idf.py build
 ```
 
 The latest full verification for migration work passed through package/static/test/build layers. On 2026-06-21, `npm test`, `npm run validate:apps`, `git diff --check`, and `idf.py build` passed. The latest ESP-IDF build generated `vibeboard_runtime.bin` size `0x18fd10`, with 61% free in the 4 MB app partition. The board input poller has been moved from deprecated `esp_lcd_touch_get_coordinates` to `esp_lcd_touch_get_data`, and the NES `.mod_iram` sections are now mapped through `main/linker.lf` instead of relying on linker orphan placement.
+
+Later on 2026-06-21, the Runtime WiFi/NVS recovery slice passed `npm run test:firmware-static`, `idf.py build`, `idf.py -p /dev/cu.usbmodem112301 flash`, `curl -s http://192.168.1.32:8080/status`, and `npm run device:check`. The final build generated `vibeboard_runtime.bin` size `0x186010`, with 62% free in the 4 MB app partition. Board logs showed WiFi NVS disabled, full PHY calibration, WiFi/LwIP preferring SPIRAM, DHCP IP `192.168.1.32`, and valid `/status` JSON with `native_abi_version:"vibeboard-native-module-abi@1"`.
 
 On 2026-06-18, `/dev/cu.usbmodem11301` identified as:
 
@@ -213,6 +218,8 @@ Expected result:
 - no `ESP_ERR_HTTPD_HANDLERS_FULL`.
 
 If `/status` is still unreachable but serial shows the board is alive, inspect runtime WiFi state and whether an existing SD app is interfering with the launcher/install-service path.
+
+If serial shows `ensure_nvs failed: ESP_ERR_NO_MEM`, the firmware is older than the 2026-06-21 WiFi recovery slice or was built with WiFi/PHY NVS storage re-enabled. Rebuild with the current `sdkconfig.defaults` before debugging app-layer networking.
 
 ### 2. Board verification for migrated apps
 
@@ -277,7 +284,7 @@ Use the same TDD migration slice: API inventory, RED static test, minimal Runtim
 
 Deployment now has staged upload/delete, runtime-owned config writes, and the first local browser UI. Still remaining:
 
-- board-smoke the new `name=wifi` config writer by posting real credentials, rebooting, and confirming boot logs use `/sdcard/runtime/wifi.json` rather than the legacy smoke-network fallback.
+- board-smoke the new `name=wifi` config writer by posting real credentials, rebooting, and confirming boot logs use `/sdcard/runtime/wifi.json`; 2026-06-21 verified boot uses `/sdcard/runtime/wifi.json` on the current SD card, but the write-then-reboot workflow still needs a deliberate smoke from a fresh posted file.
 
 Implemented 2026-06-20:
 

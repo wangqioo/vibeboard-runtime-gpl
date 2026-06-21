@@ -639,11 +639,6 @@ static void send_json(httpd_req_t *req, const char *json)
     httpd_resp_sendstr(req, json);
 }
 
-static const char *json_string_or_null(const char *value)
-{
-    return value != NULL ? value : "null";
-}
-
 static const vb_app_registry_entry_t *find_app_by_id(const vb_app_registry_result_t *registry, const char *id)
 {
     if (registry == NULL || id == NULL) {
@@ -681,7 +676,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     const char *last_status = esp_err_to_name(vb_app_runner_last_status());
     snprintf(body,
              sizeof(body),
-             "{\"sd\":%s,\"app_count\":%d,\"first_app\":\"%s\",\"install\":\"ok\",\"state\":\"%s\",\"running\":%s,\"current_app\":\"%s\",\"runtime_version\":\"%s\",\"lua_api_version\":\"%s\",\"lvgl_api_version\":\"%s\",\"package_schema\":\"%s\",\"native_abi_version\":%s,\"last_status\":\"%s\",\"last_message\":\"%s\"}\n",
+             "{\"sd\":%s,\"app_count\":%d,\"first_app\":\"%s\",\"install\":\"ok\",\"state\":\"%s\",\"running\":%s,\"current_app\":\"%s\",\"runtime_version\":\"%s\",\"lua_api_version\":\"%s\",\"lvgl_api_version\":\"%s\",\"package_schema\":\"%s\",\"native_abi_version\":\"%s\",\"last_status\":\"%s\",\"last_message\":\"%s\"}\n",
              (s_context && s_context->sd_ok) ? "true" : "false",
              app_count,
              first_app,
@@ -692,7 +687,7 @@ static esp_err_t status_handler(httpd_req_t *req)
              VB_RUNTIME_LUA_API_VERSION,
              VB_RUNTIME_LVGL_API_VERSION,
              VB_RUNTIME_PACKAGE_SCHEMA,
-             json_string_or_null(VB_RUNTIME_NATIVE_ABI_VERSION),
+             VB_RUNTIME_NATIVE_ABI_VERSION,
              last_status,
              last_message);
     send_json(req, body);

@@ -255,6 +255,14 @@ static esp_err_t lvgl_init(vb_board_status_t *status)
 
 esp_err_t vb_board_mount_sd(vb_board_status_t *status)
 {
+    if (sd_card != NULL) {
+        if (status != NULL) {
+            status->sd_ok = true;
+            status->sd_error = ESP_OK;
+        }
+        return ESP_OK;
+    }
+
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = false,
         .max_files = 8,
@@ -281,6 +289,24 @@ esp_err_t vb_board_mount_sd(vb_board_status_t *status)
 
     sdmmc_card_print_info(stdout, sd_card);
     return ESP_OK;
+}
+
+void vb_board_unmount_sd(vb_board_status_t *status)
+{
+    if (sd_card == NULL) {
+        if (status != NULL) {
+            status->sd_ok = false;
+            status->sd_error = ESP_ERR_NOT_FOUND;
+        }
+        return;
+    }
+
+    esp_vfs_fat_sdcard_unmount(VB_SD_MOUNT_POINT, sd_card);
+    sd_card = NULL;
+    if (status != NULL) {
+        status->sd_ok = false;
+        status->sd_error = ESP_ERR_NOT_FOUND;
+    }
 }
 
 static int board_now_ms(void)
@@ -422,11 +448,31 @@ esp_err_t vb_board_start(vb_board_status_t *status)
     memset(status, 0, sizeof(*status));
 
     ESP_LOGI(TAG, "VibeBoard Runtime board start");
+    ESP_RETURN_ON_ERROR(vb_board_start_storage(status), TAG, "board storage start failed");
+    ESP_RETURN_ON_ERROR(vb_board_start_display(status), TAG, "board display start failed");
+    return ESP_OK;
+}
+
+esp_err_t vb_board_start_storage(vb_board_status_t *status)
+{
+    if (status == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     ESP_RETURN_ON_ERROR(i2c_init(), TAG, "i2c init failed");
     ESP_RETURN_ON_ERROR(pca9557_init(), TAG, "pca9557 init failed");
+    vb_board_mount_sd(status);
+    return ESP_OK;
+}
+
+esp_err_t vb_board_start_display(vb_board_status_t *status)
+{
+    if (status == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     ESP_RETURN_ON_ERROR(display_init(), TAG, "display init failed");
     ESP_RETURN_ON_ERROR(lvgl_init(status), TAG, "lvgl init failed");
     ESP_RETURN_ON_ERROR(backlight_on(), TAG, "backlight on failed");
-    vb_board_mount_sd(status);
     return ESP_OK;
 }

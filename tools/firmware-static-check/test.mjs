@@ -176,9 +176,61 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const board = readRequired(boardSourcePath);
 
     assert.match(defaults, /CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=2048/);
-    assert.match(defaults, /CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536/);
+    assert.match(defaults, /CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=0/);
     assert.match(defaults, /# CONFIG_FATFS_ALLOC_PREFER_EXTRAM is not set/);
     assert.match(board, /host\.flags\s*\|=\s*SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF/);
+  });
+
+  it("keeps runtime WiFi startup from exhausting internal RAM", () => {
+    const defaults = readRequired(sdkconfigDefaultsPath);
+    const sdkconfig = readRequired(join(firmwareRoot, "sdkconfig"));
+    const main = readRequired(mainSourcePath);
+    const board = readRequired(boardSourcePath);
+    const boardHeader = readRequired(boardHeaderPath);
+    const wifiHeader = readRequired(join(firmwareRoot, "main/runtime_wifi.h"));
+    const wifiSource = readRequired(join(firmwareRoot, "main/runtime_wifi.c"));
+
+    for (const source of [defaults, sdkconfig]) {
+      assert.match(source, /CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y/);
+      assert.match(source, /CONFIG_NVS_ALLOCATE_CACHE_IN_SPIRAM=y/);
+      assert.match(source, /# CONFIG_ESP_WIFI_NVS_ENABLED is not set/);
+      assert.match(source, /# CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE is not set/);
+      assert.match(source, /# CONFIG_ESP_PHY_RF_CAL_PARTIAL is not set/);
+      assert.match(source, /CONFIG_ESP_PHY_RF_CAL_FULL=y/);
+      assert.match(source, /CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6/);
+      assert.match(source, /CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=8/);
+      assert.match(source, /CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8/);
+      assert.match(source, /CONFIG_ESP_WIFI_MGMT_SBUF_NUM=16/);
+      assert.match(source, /# CONFIG_ESP_WIFI_ENABLE_WPA3_SAE is not set/);
+      assert.match(source, /# CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA is not set/);
+      assert.match(source, /CONFIG_LWIP_MAX_SOCKETS=10/);
+      assert.match(source, /CONFIG_LWIP_MAX_ACTIVE_TCP=8/);
+      assert.match(source, /CONFIG_LWIP_MAX_LISTENING_TCP=8/);
+      assert.match(source, /CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=16/);
+      assert.match(source, /CONFIG_LWIP_TCP_SND_BUF_DEFAULT=2920/);
+      assert.match(source, /CONFIG_LWIP_TCP_WND_DEFAULT=2920/);
+      assert.match(source, /CONFIG_LWIP_MAX_UDP_PCBS=8/);
+      assert.match(source, /CONFIG_LWIP_MAX_RAW_PCBS=4/);
+    }
+
+    assert.match(sdkconfig, /CONFIG_ESP_PHY_CALIBRATION_MODE=2/);
+
+    assert.match(defaults, /# CONFIG_ESP_WIFI_ENABLE_SAE_PK is not set/);
+    assert.match(defaults, /# CONFIG_ESP_WIFI_ENABLE_SAE_H2E is not set/);
+    assert.match(defaults, /# CONFIG_ESP_WIFI_SOFTAP_SAE_SUPPORT is not set/);
+
+    assert.match(
+      main,
+      /vb_runtime_wifi_prepare\(\)[\s\S]*vb_board_start_storage\(&board\)[\s\S]*vb_runtime_wifi_load_config_from_sd\(&wifi_config\)[\s\S]*vb_board_unmount_sd\(&board\)[\s\S]*vb_runtime_wifi_start_config\(&wifi_config\)[\s\S]*vb_board_mount_sd\(&board\)[\s\S]*vb_board_start_display\(&board\)[\s\S]*vb_app_registry_init\(\)/,
+    );
+    assert.match(boardHeader, /vb_board_unmount_sd/);
+    assert.match(board, /esp_vfs_fat_sdcard_unmount\(VB_SD_MOUNT_POINT,\s*sd_card\)/);
+    assert.match(wifiHeader, /vb_runtime_wifi_load_config_from_sd/);
+    assert.match(wifiHeader, /vb_runtime_wifi_prepare/);
+    assert.match(wifiHeader, /vb_runtime_wifi_start_config/);
+    assert.match(wifiSource, /!CONFIG_ESP_WIFI_NVS_ENABLED && !CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE/);
+    assert.match(wifiSource, /vb_runtime_wifi_prepare/);
+    assert.match(wifiSource, /vb_runtime_wifi_start_config/);
   });
 
   it("lets the LVGL flush wait loop yield to the scheduler", () => {
@@ -349,7 +401,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(abi, /VB_NATIVE_MODULE_ABI_VERSION\s+"vibeboard-native-module-abi@1"/);
     assert.match(service, /module_abi\.h/);
     assert.match(service, /VB_RUNTIME_NATIVE_ABI_VERSION\s+VB_NATIVE_MODULE_ABI_VERSION/);
-    assert.match(service, /\\"native_abi_version\\":%s/);
+    assert.match(service, /\\"native_abi_version\\":\\"%s\\"/);
     assert.doesNotMatch(service, /VB_RUNTIME_NATIVE_ABI_VERSION\s+NULL/);
   });
 
@@ -855,7 +907,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /\\"lua_api_version\\":\\"%s\\"/);
     assert.match(source, /\\"lvgl_api_version\\":\\"%s\\"/);
     assert.match(source, /\\"package_schema\\":\\"%s\\"/);
-    assert.match(source, /\\"native_abi_version\\":%s/);
+    assert.match(source, /\\"native_abi_version\\":\\"%s\\"/);
     assert.match(source, /\\"last_status\\":\\"%s\\"/);
     assert.match(source, /\\"last_message\\":\\"%s\\"/);
   });
@@ -1270,10 +1322,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /esp_wifi_connect/);
     assert.match(source, /runtime sta got ip/);
     assert.match(main, /#include "runtime_wifi\.h"/);
-    assert.match(main, /vb_runtime_wifi_start_from_sd\(\)/);
+    assert.match(main, /vb_runtime_wifi_load_config_from_sd\(&wifi_config\)/);
+    assert.match(main, /vb_runtime_wifi_start_config\(&wifi_config\)/);
     assert.match(
       main,
-      /vb_board_start\(&board\)[\s\S]*vb_runtime_wifi_start_from_sd\(\)[\s\S]*vb_install_service_start\(&s_install_context\)/,
+      /vb_board_start_storage\(&board\)[\s\S]*vb_runtime_wifi_load_config_from_sd\(&wifi_config\)[\s\S]*vb_board_unmount_sd\(&board\)[\s\S]*vb_runtime_wifi_start_config\(&wifi_config\)[\s\S]*vb_board_mount_sd\(&board\)[\s\S]*vb_board_start_display\(&board\)[\s\S]*vb_install_service_start\(&s_install_context\)/,
     );
   });
 

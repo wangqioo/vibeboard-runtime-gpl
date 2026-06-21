@@ -133,6 +133,7 @@ npm run launch:app -- http://192.168.1.32:8080 smoke_visual_remote
 - `tools/app-packager` 的 demo 打包列表已包含 `matrix_rain`、`nixie_clock`、`clock`、`conway_life`、`fluid_pendant`、`smoke_key` 和 `2048`；
 - 这些迁移已通过静态测试、packager 测试、总测试、`git diff --check` 和 ESP-IDF build；2026-06-17 已重新烧录固件并修复启动期 `main` 栈溢出、HTTP handler 数量不足和 LVGL flush 等待触发 watchdog 的问题。
 - 2026-06-19 重新连接正确 ESP32-S3 板后，临时刷回 VibeBoard Runtime 并验证 `/status`、chunked `/apps`、`2048` staged upload/list/launch 闭环；同日修复 LVGL SPI DMA internal-memory 压力、HTTPD stack 分配到 PSRAM、`/apps` 大列表 JSON 截断、Lua runner task stack 分配到 PSRAM、SDMMC/FATFS 内部 DMA 内存不足、以及 `2048` 对 no-arg batch 和小尺寸 canvas 的误用。后续真机验证又暴露 `lvgl object table full`，已改成复用释放后的对象槽、删除对象子树时同步清理 Lua 句柄表，并把对象句柄上限提高到 128；重刷后 `2048` 持续约 90 秒 HTTP 状态保持 `running,last_status=ESP_OK`。用户随后确认屏幕显示、真实触摸滑动和双次退出手势行为正常。
+- 2026-06-21 再次上板修复 Runtime WiFi 启动内存问题：串口确认旧路径在 `nvs_flash_init()` 阶段因最大内部连续块不足返回 `ESP_ERR_NO_MEM`；当前固件关闭 WiFi NVS 与 PHY calibration NVS 存储，改为启动时 full PHY calibration，并保留 WiFi/LwIP 优先用 PSRAM。重刷后日志显示 `wifi:config NVS flash: disabled`、`WiFi/LWIP prefer SPIRAM`、`runtime sta got ip 192.168.1.32`；同时修复 `/status.native_abi_version` 少引号导致的非法 JSON，`npm run device:check` 已能识别 Runtime。
 - 已新增第一版真实输入桥：触摸任务只把滑动事件入队，Lua runner 在 Lua/timer loop 中 drain 到 `key.on` 回调；`2048` 触摸滑动已由用户在真机确认通过。
 - 已新增 `apps/smoke_key` 作为通用 key 输入 smoke：屏幕显示最近输入事件，定时通过 `key.push()` 注入 LEFT/RIGHT，并通过 `key.repeat_start/stop()` 自触发 LONG_START/LONG_REPEAT/LONG_END，后续上板用它补 2048 之外的输入回归证据。
 - 已新增 `npm run device:check` 作为共享 ESP32 板的非破坏性 preflight；不会自动擦写或烧录，只报告候选串口、ESP32-S3 识别和 Runtime HTTP 状态。
@@ -156,7 +157,7 @@ AI 生成一个受限 Lua/LVGL App
 但当前还不是面向普通用户的完整产品：
 
 - 已经有可用的 Launcher、生命周期、浏览器管理 UI 和 staged install/delete，但还需要长期稳定性回归和更完整的错误恢复体验；
-- Runtime-owned WiFi/Cubicserver/I2S 配置已经可以通过 `POST /runtime/config?name=wifi|cubicserver|i2s` 和 `npm run runtime:config` 写入 SD；WiFi 配置写入后的重启联网、I2S 真实麦克风引脚写入后的非零 PCM 录音仍需上板 smoke；
+- Runtime-owned WiFi/Cubicserver/I2S 配置已经可以通过 `POST /runtime/config?name=wifi|cubicserver|i2s` 和 `npm run runtime:config` 写入 SD；当前板已从 `/sdcard/runtime/wifi.json` 启动联网，但“工具写入一份新 WiFi 配置后重启联网”的完整 smoke、以及 I2S 真实麦克风引脚写入后的非零 PCM 录音仍需上板；
 - Lua 侧已有 `app.list()` / `app.rescan()` / `app.current()` / `app.exiting()` / `app.exit([reason])` / `app.launch(id)` / `app.set_home_exit(enabled)` / `app.on("exit"|"launch"|"stop", cb)`；`app.launch(id)` 采用非重入 handoff，当前 App 先请求退出，runner 清理当前 Lua state 后再异步启动目标 App，并在请求 handoff 时派发 `launch` 事件；`app.exit([reason])` 会派发 `stop` 事件；`app.set_home_exit(false)` 允许 `voice_ai`、`nesgame` 这类 App 接管 HOME/EXIT 输入而不触发 runner 默认退出；Launcher inactive 时的物理 BOOT 短按/长按已 build-verified 为 Lua `key.HOME` short/long-start 转发，默认 HOME/EXIT 退出语义仍保留；`apps/smoke_app_manager` 已能通过一次软件 HOME 短按自动触发 `app.launch("smoke_key")`，并显示 stop/launch/exit 生命周期事件计数，方便后续上板 smoke。该能力已 build-verified，真实物理 BOOT-to-Lua HOME 和 app-to-app 上板切换仍待 smoke；
 - 还不能直接运行完整上游 HoloCubic 全量 App，只能按 App 驱动逐个补兼容层；
 - LVGL 绑定已新增第一批常用控件 slice：slider、list、switch、dropdown、textarea、roller、arc 的创建和最小 setter/getter 已 build-verified，并新增 `apps/smoke_controls` 进入 demo packaging；flex/grid、字体和 canvas 高级效果仍不足，`smoke_controls` 还需上板视觉 smoke；

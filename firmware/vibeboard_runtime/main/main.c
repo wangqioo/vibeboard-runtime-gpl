@@ -17,8 +17,37 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "VibeBoard Runtime start");
 
+    esp_err_t wifi_prepare_err = vb_runtime_wifi_prepare();
+    if (wifi_prepare_err != ESP_OK) {
+        ESP_LOGW(TAG, "runtime WiFi NVS prepare unavailable: %s", esp_err_to_name(wifi_prepare_err));
+    }
+
     vb_board_status_t board = {0};
-    ESP_ERROR_CHECK(vb_board_start(&board));
+    ESP_LOGI(TAG, "VibeBoard Runtime board start");
+    ESP_ERROR_CHECK(vb_board_start_storage(&board));
+
+    vb_runtime_wifi_config_t wifi_config = {0};
+    if (board.sd_ok) {
+        esp_err_t wifi_err = vb_runtime_wifi_load_config_from_sd(&wifi_config);
+        if (wifi_err != ESP_OK) {
+            ESP_LOGW(TAG, "runtime WiFi config unavailable: %s", esp_err_to_name(wifi_err));
+        }
+        vb_board_unmount_sd(&board);
+    }
+
+    if (wifi_config.found) {
+        esp_err_t wifi_err = vb_runtime_wifi_start_config(&wifi_config);
+        if (wifi_err != ESP_OK) {
+            ESP_LOGW(TAG, "runtime WiFi unavailable: %s", esp_err_to_name(wifi_err));
+        }
+    }
+
+    esp_err_t remount_err = vb_board_mount_sd(&board);
+    if (remount_err != ESP_OK) {
+        ESP_LOGW(TAG, "runtime SD remount unavailable: %s", esp_err_to_name(remount_err));
+    }
+
+    ESP_ERROR_CHECK(vb_board_start_display(&board));
 
     ESP_ERROR_CHECK(vb_app_registry_init());
     s_apps = heap_caps_calloc(1, sizeof(*s_apps), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -32,11 +61,6 @@ void app_main(void)
     }
 
     if (board.sd_ok) {
-        esp_err_t wifi_err = vb_runtime_wifi_start_from_sd();
-        if (wifi_err != ESP_OK) {
-            ESP_LOGW(TAG, "runtime WiFi unavailable: %s", esp_err_to_name(wifi_err));
-        }
-
         s_install_context.sd_ok = board.sd_ok;
         s_install_context.sd_error = board.sd_error;
         s_install_context.registry = s_apps;

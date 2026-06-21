@@ -6,6 +6,7 @@
 
 #include "cJSON.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_wifi_types.h"
@@ -37,8 +38,21 @@ static esp_err_t normalize_wifi_result(esp_err_t err)
     return err;
 }
 
+static void log_internal_heap(const char *stage)
+{
+    ESP_LOGI(TAG,
+             "%s internal_free=%u internal_largest=%u",
+             stage,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+}
+
 static esp_err_t ensure_nvs(void)
 {
+#if !CONFIG_ESP_WIFI_NVS_ENABLED && !CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE
+    s_nvs_ready = true;
+    return ESP_OK;
+#else
     if (s_nvs_ready) {
         return ESP_OK;
     }
@@ -56,6 +70,7 @@ static esp_err_t ensure_nvs(void)
         s_nvs_ready = true;
     }
     return err;
+#endif
 }
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
@@ -107,34 +122,58 @@ static esp_err_t ensure_event_handlers(void)
 
 esp_err_t vb_runtime_wifi_ensure_netif(void)
 {
+    log_internal_heap("wifi ensure_nvs before");
     esp_err_t err = ensure_nvs();
     if (err != ESP_OK) {
+        ESP_LOGW(TAG, "ensure_nvs failed: %s", esp_err_to_name(err));
         return err;
     }
+    log_internal_heap("wifi ensure_nvs after");
 
     if (!s_netif_ready) {
+        log_internal_heap("wifi netif_init before");
         err = esp_netif_init();
         if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "esp_netif_init failed: %s", esp_err_to_name(err));
             return err;
         }
+        log_internal_heap("wifi event_loop before");
         err = esp_event_loop_create_default();
         if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "esp_event_loop_create_default failed: %s", esp_err_to_name(err));
             return err;
         }
         s_netif_ready = true;
+        log_internal_heap("wifi event_loop after");
     }
 
     err = ensure_event_handlers();
     if (err != ESP_OK) {
+        ESP_LOGW(TAG, "ensure_event_handlers failed: %s", esp_err_to_name(err));
         return err;
     }
 
     if (s_sta_netif == NULL) {
+        log_internal_heap("wifi sta_netif before");
         s_sta_netif = esp_netif_create_default_wifi_sta();
         if (s_sta_netif == NULL) {
+            log_internal_heap("wifi sta_netif no_mem");
             return ESP_ERR_NO_MEM;
         }
+        log_internal_heap("wifi sta_netif after");
     }
+    return ESP_OK;
+}
+
+esp_err_t vb_runtime_wifi_prepare(void)
+{
+    log_internal_heap("wifi prepare_nvs before");
+    esp_err_t err = ensure_nvs();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "prepare_nvs failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    log_internal_heap("wifi prepare_nvs after");
     return ESP_OK;
 }
 
@@ -146,12 +185,17 @@ esp_err_t vb_runtime_wifi_ensure_wifi(void)
     }
     if (!s_wifi_ready) {
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        log_internal_heap("wifi init before");
         err = esp_wifi_init(&cfg);
         if (err != ESP_OK && err != ESP_ERR_WIFI_INIT_STATE) {
+            ESP_LOGW(TAG, "esp_wifi_init failed: %s", esp_err_to_name(err));
+            log_internal_heap("wifi init failed");
             return err;
         }
+        log_internal_heap("wifi init after");
         err = esp_wifi_set_ps(WIFI_PS_NONE);
         if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT) {
+            ESP_LOGW(TAG, "esp_wifi_set_ps failed: %s", esp_err_to_name(err));
             return err;
         }
         s_wifi_ready = true;
@@ -166,11 +210,15 @@ esp_err_t vb_runtime_wifi_start(void)
         return err;
     }
     if (!s_wifi_started) {
+        log_internal_heap("wifi start before");
         err = normalize_wifi_result(esp_wifi_start());
         if (err != ESP_OK) {
+            ESP_LOGW(TAG, "esp_wifi_start failed: %s", esp_err_to_name(err));
+            log_internal_heap("wifi start failed");
             return err;
         }
         s_wifi_started = true;
+        log_internal_heap("wifi start after");
     }
     return ESP_OK;
 }
@@ -248,8 +296,13 @@ static bool read_wifi_config(const char *path, char *buffer, size_t buffer_size)
     return true;
 }
 
-esp_err_t vb_runtime_wifi_start_from_sd(void)
+esp_err_t vb_runtime_wifi_load_config_from_sd(vb_runtime_wifi_config_t *config)
 {
+    if (config == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(config, 0, sizeof(*config));
+
     char json_text[VB_RUNTIME_WIFI_CONFIG_MAX] = {0};
     const char *path = VB_RUNTIME_WIFI_CONFIG_PATH;
     bool found = read_wifi_config(path, json_text, sizeof(json_text));
@@ -284,8 +337,31 @@ esp_err_t vb_runtime_wifi_start_from_sd(void)
         password_value = password->valuestring;
     }
 
-    ESP_LOGI(TAG, "runtime WiFi autoconnect using %s", path);
-    esp_err_t err = vb_runtime_wifi_start_sta(ssid->valuestring, password_value, true);
+    strlcpy(config->ssid, ssid->valuestring, sizeof(config->ssid));
+    strlcpy(config->password, password_value, sizeof(config->password));
+    config->found = true;
     cJSON_Delete(root);
-    return err;
+    ESP_LOGI(TAG, "runtime WiFi autoconnect using %s", path);
+    return ESP_OK;
+}
+
+esp_err_t vb_runtime_wifi_start_config(const vb_runtime_wifi_config_t *config)
+{
+    if (config == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!config->found) {
+        return ESP_OK;
+    }
+    return vb_runtime_wifi_start_sta(config->ssid, config->password, true);
+}
+
+esp_err_t vb_runtime_wifi_start_from_sd(void)
+{
+    vb_runtime_wifi_config_t config = {0};
+    esp_err_t err = vb_runtime_wifi_load_config_from_sd(&config);
+    if (err != ESP_OK) {
+        return err;
+    }
+    return vb_runtime_wifi_start_config(&config);
 }
