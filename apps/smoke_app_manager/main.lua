@@ -20,6 +20,10 @@ local home_exit_disabled = false
 local launch_target = "smoke_key"
 local launch_requested = false
 local software_home_injected = false
+local stop_events = 0
+local launch_events = 0
+local exit_events = 0
+local last_app_event = "none"
 
 if home_exit_available then
   local ok, err = pcall(function()
@@ -48,6 +52,8 @@ local function render()
   lines[#lines + 1] = "launch fn: " .. tostring(launch_available)
   lines[#lines + 1] = "home exit fn: " .. tostring(set_home_exit_available)
   lines[#lines + 1] = "home exit off: " .. tostring(home_exit_disabled)
+  lines[#lines + 1] = "events: stop=" .. tostring(stop_events) .. " launch=" .. tostring(launch_events) .. " exit=" .. tostring(exit_events)
+  lines[#lines + 1] = "last event: " .. tostring(last_app_event)
   lines[#lines + 1] = "soft HOME: " .. tostring(software_home_injected)
   lines[#lines + 1] = "HOME -> launch " .. launch_target .. ": " .. tostring(launch_requested)
   if err then
@@ -61,7 +67,21 @@ local function render()
   print("[smoke_app_manager]", table.concat(lines, " | "))
 end
 
+app.on("stop", function(reason)
+  stop_events = stop_events + 1
+  last_app_event = "stop:" .. tostring(reason)
+  print("[smoke_app_manager] stop callback", tostring(reason))
+end)
+
+app.on("launch", function(id)
+  launch_events = launch_events + 1
+  last_app_event = "launch:" .. tostring(id)
+  print("[smoke_app_manager] launch callback", tostring(id))
+end)
+
 app.on("exit", function()
+  exit_events = exit_events + 1
+  last_app_event = "exit"
   if type(app.set_home_exit) == "function" then
     pcall(function()
       app.set_home_exit(true)

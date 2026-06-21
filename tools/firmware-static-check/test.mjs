@@ -694,6 +694,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /"exiting"/);
     assert.match(source, /"exit",\s*lua_app_exit/);
     assert.match(source, /"on"/);
+    assert.match(source, /VB_LUA_APP_EVENT_EXIT/);
+    assert.match(source, /VB_LUA_APP_EVENT_LAUNCH/);
+    assert.match(source, /VB_LUA_APP_EVENT_STOP/);
+    assert.match(source, /vb_lua_app_dispatch_event/);
+    assert.match(source, /vb_lua_app_dispatch_event\(L,\s*state,\s*VB_LUA_APP_EVENT_STOP/);
+    assert.match(source, /vb_lua_app_dispatch_event\(L,\s*state,\s*VB_LUA_APP_EVENT_LAUNCH/);
     assert.match(source, /\*state->stop_requested\s*=\s*true/);
     assert.match(source, /vb_app_registry_scan/);
     assert.match(source, /vb_app_runner_current_id/);

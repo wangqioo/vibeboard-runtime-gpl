@@ -81,8 +81,8 @@ The local work after the previous baseline migrates the upstream `2048` and `wea
   - static tests keep the alias visible for migrated `weather` and `voice_ai` compatibility;
   - ESP-IDF build passes with `vibeboard_runtime.bin` size `0x177a70`, still 63% free in the app partition.
 - Voice AI and runtime lifecycle slices are build-verified:
-  - Runtime exposes Lua `app.list`, `app.rescan`, `app.current`, `app.exiting`, `app.exit`, `app.launch`, `app.set_home_exit`, and `app.on("exit", cb)`;
-  - `apps/smoke_app_manager` exercises those APIs, disables default HOME exit through `app.set_home_exit(false)`, maps HOME short press to `app.launch("smoke_key")`, and now self-injects one software HOME short event through `key.push(key.HOME, key.SHORT)` so handoff can be smoke-tested without precise button timing; it is included in demo packaging;
+  - Runtime exposes Lua `app.list`, `app.rescan`, `app.current`, `app.exiting`, `app.exit([reason])`, `app.launch`, `app.set_home_exit`, and `app.on("exit"|"launch"|"stop", cb)`;
+  - `apps/smoke_app_manager` exercises those APIs, disables default HOME exit through `app.set_home_exit(false)`, maps HOME short press to `app.launch("smoke_key")`, self-injects one software HOME short event through `key.push(key.HOME, key.SHORT)` so handoff can be smoke-tested without precise button timing, and displays stop/launch/exit lifecycle event counters; it is included in demo packaging;
   - LVGL GIF support is enabled with `CONFIG_LV_USE_GIF=y`, `lv_gif_create`, and `lv_gif_set_src`;
   - `desktop-bridge/server.mjs` provides a provider-neutral local bridge for `POST /api/chat`, async pending jobs, `GET /api/result`, and `GET /health`;
   - current bridge responses are mock/default provider output until real STT/LLM credentials and provider code are configured;
@@ -247,6 +247,7 @@ Expected result:
 - upload/launch `smoke_touch` and record physical down/move/up coordinate labels on the board;
 - upload/launch `smoke_gamepad` and record the software-injected `connecting`, `connected`, `update`, and `disconnected` labels before wiring a real BLE/Xbox backend;
 - upload/launch an `app.set_home_exit(false)` app, press physical BOOT short and long while it is running, and record that Lua receives `key.HOME` short/long-start instead of the native Launcher immediately stopping the app;
+- in `smoke_app_manager`, record that the `launch` lifecycle counter increments before handoff to `smoke_key`; when exercising `app.exit([reason])`, record the `stop` and cleanup-time `exit` counters in serial logs;
 - also launch a default-home-exit app and confirm physical BOOT HOME still requests a clean stop/return path;
 - keep `2048` as a regression check for directional gameplay and double-exit behavior;
 - `key.push(...)` remains available for software-triggered tests;

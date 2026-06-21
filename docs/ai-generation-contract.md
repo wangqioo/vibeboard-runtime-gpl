@@ -79,7 +79,7 @@ This list is checked against `tools/app-validator/index.mjs` by `npm run test:ai
 
 Allowed module calls:
 
-- `app.list()`, `app.rescan()`, `app.current()`, `app.exiting()`, `app.exit()`, `app.launch(id)`, `app.set_home_exit(enabled)`, `app.on("exit", callback)`
+- `app.list()`, `app.rescan()`, `app.current()`, `app.exiting()`, `app.exit([reason])`, `app.launch(id)`, `app.set_home_exit(enabled)`, `app.on("exit"|"launch"|"stop", callback)`
 - `file.exists(path)`, `file.open(path, mode)`, `file.read(path)`, `file.getcontents(path)`, `file.write(path, text)`, `file.list(path)`, `file.listdir(path)`
 - `gamepad.state()`, `gamepad.start(opts)`, `gamepad.stop()`, `gamepad.on(event, callback)`, `gamepad.off([event])`, `gamepad.rescan()`, `gamepad.push_state(state)`
 - `http.get(url[, opts], callback)`, `http.post(url[, opts], body, callback)`, `http.cubicserver.get(path, headers, callback)`

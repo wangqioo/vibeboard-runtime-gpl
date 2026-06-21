@@ -10,6 +10,13 @@
 
 static const char *TAG = "lua_app";
 
+typedef enum {
+    VB_LUA_APP_EVENT_EXIT = 0,
+    VB_LUA_APP_EVENT_LAUNCH = 1,
+    VB_LUA_APP_EVENT_STOP = 2,
+    VB_LUA_APP_EVENT_COUNT = 3,
+} vb_lua_app_event_t;
+
 static vb_lua_app_state_t *check_app_state(lua_State *L)
 {
     lua_getfield(L, LUA_REGISTRYINDEX, "vb_lua_app_state");
@@ -25,6 +32,47 @@ static void set_string_field(lua_State *L, const char *key, const char *value)
 {
     lua_pushstring(L, value ? value : "");
     lua_setfield(L, -2, key);
+}
+
+static int event_index_for_name(const char *event)
+{
+    if (strcmp(event, "exit") == 0) {
+        return VB_LUA_APP_EVENT_EXIT;
+    }
+    if (strcmp(event, "launch") == 0) {
+        return VB_LUA_APP_EVENT_LAUNCH;
+    }
+    if (strcmp(event, "stop") == 0) {
+        return VB_LUA_APP_EVENT_STOP;
+    }
+    return -1;
+}
+
+static void vb_lua_app_dispatch_event(lua_State *L,
+                                      vb_lua_app_state_t *state,
+                                      vb_lua_app_event_t event,
+                                      const char *arg)
+{
+    if (L == NULL || state == NULL || event < 0 || event >= VB_LUA_APP_EVENT_COUNT) {
+        return;
+    }
+
+    int ref = state->event_callback_refs[event];
+    if (ref == LUA_NOREF) {
+        return;
+    }
+
+    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+    int args = 0;
+    if (arg != NULL) {
+        lua_pushstring(L, arg);
+        args = 1;
+    }
+    if (lua_pcall(L, args, 0, 0) != LUA_OK) {
+        const char *err = lua_tostring(L, -1);
+        ESP_LOGW(TAG, "app event callback failed: %s", err ? err : "unknown");
+        lua_pop(L, 1);
+    }
 }
 
 static void push_app_entry(lua_State *L, const vb_app_registry_entry_t *entry)
@@ -94,12 +142,14 @@ static int lua_app_exiting(lua_State *L)
 static int lua_app_exit(lua_State *L)
 {
     vb_lua_app_state_t *state = check_app_state(L);
+    const char *reason = luaL_optstring(L, 1, "app.exit");
     if (state->stop_requested == NULL) {
         lua_pushboolean(L, false);
         lua_pushliteral(L, "stop flag missing");
         return 2;
     }
 
+    vb_lua_app_dispatch_event(L, state, VB_LUA_APP_EVENT_STOP, reason);
     *state->stop_requested = true;
     lua_pushboolean(L, true);
     return 1;
@@ -156,6 +206,7 @@ static int lua_app_launch(lua_State *L)
 
     state->pending_launch = *entry;
     state->has_pending_launch = true;
+    vb_lua_app_dispatch_event(L, state, VB_LUA_APP_EVENT_LAUNCH, entry->id);
     *state->stop_requested = true;
     lua_pushboolean(L, true);
     return 1;
@@ -166,16 +217,17 @@ static int lua_app_on(lua_State *L)
     vb_lua_app_state_t *state = check_app_state(L);
     const char *event = luaL_checkstring(L, 1);
     luaL_checktype(L, 2, LUA_TFUNCTION);
-    if (strcmp(event, "exit") != 0) {
+    int event_index = event_index_for_name(event);
+    if (event_index < 0) {
         return luaL_error(L, "unsupported app event: %s", event);
     }
 
     lua_pushvalue(L, 2);
     int ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    if (state->exit_callback_ref != LUA_NOREF) {
-        luaL_unref(L, LUA_REGISTRYINDEX, state->exit_callback_ref);
+    if (state->event_callback_refs[event_index] != LUA_NOREF) {
+        luaL_unref(L, LUA_REGISTRYINDEX, state->event_callback_refs[event_index]);
     }
-    state->exit_callback_ref = ref;
+    state->event_callback_refs[event_index] = ref;
     lua_pushboolean(L, true);
     return 1;
 }
@@ -187,7 +239,9 @@ void vb_lua_app_init(vb_lua_app_state_t *state)
     }
     state->stop_requested = NULL;
     state->home_exit_enabled = true;
-    state->exit_callback_ref = LUA_NOREF;
+    for (int i = 0; i < VB_LUA_APP_EVENT_COUNT; i++) {
+        state->event_callback_refs[i] = LUA_NOREF;
+    }
     state->has_pending_launch = false;
     memset(&state->pending_launch, 0, sizeof(state->pending_launch));
 }
@@ -204,9 +258,11 @@ void vb_lua_app_cleanup(lua_State *L, vb_lua_app_state_t *state)
     if (L == NULL || state == NULL) {
         return;
     }
-    if (state->exit_callback_ref != LUA_NOREF) {
-        luaL_unref(L, LUA_REGISTRYINDEX, state->exit_callback_ref);
-        state->exit_callback_ref = LUA_NOREF;
+    for (int i = 0; i < VB_LUA_APP_EVENT_COUNT; i++) {
+        if (state->event_callback_refs[i] != LUA_NOREF) {
+            luaL_unref(L, LUA_REGISTRYINDEX, state->event_callback_refs[i]);
+            state->event_callback_refs[i] = LUA_NOREF;
+        }
     }
 }
 
@@ -249,14 +305,5 @@ bool vb_lua_app_take_pending_launch(vb_lua_app_state_t *state, vb_app_registry_e
 
 void vb_lua_app_dispatch_exit(lua_State *L, vb_lua_app_state_t *state)
 {
-    if (L == NULL || state == NULL || state->exit_callback_ref == LUA_NOREF) {
-        return;
-    }
-
-    lua_rawgeti(L, LUA_REGISTRYINDEX, state->exit_callback_ref);
-    if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
-        const char *err = lua_tostring(L, -1);
-        ESP_LOGW(TAG, "app exit callback failed: %s", err ? err : "unknown");
-        lua_pop(L, 1);
-    }
+    vb_lua_app_dispatch_event(L, state, VB_LUA_APP_EVENT_EXIT, NULL);
 }

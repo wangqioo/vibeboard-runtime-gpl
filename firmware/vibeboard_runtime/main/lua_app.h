@@ -9,10 +9,12 @@
 extern "C" {
 #endif
 
+#define VB_LUA_APP_EVENT_CALLBACK_COUNT 3
+
 typedef struct {
     volatile bool *stop_requested;
     bool home_exit_enabled;
-    int exit_callback_ref;
+    int event_callback_refs[VB_LUA_APP_EVENT_CALLBACK_COUNT];
     bool has_pending_launch;
     vb_app_registry_entry_t pending_launch;
 } vb_lua_app_state_t;
