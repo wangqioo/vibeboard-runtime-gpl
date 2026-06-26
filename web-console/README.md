@@ -1,19 +1,32 @@
 # VibeBoard Runtime Web Console
 
-This directory is reserved for the future browser upload UI.
+The browser-facing management UI currently lives in `tools/device-web-ui/`.
 
-Phase 1 does not implement a web console. The current deployment path is the file-based app package contract:
+This `web-console/` directory is reserved for a future packaged web console if the UI is split into a larger frontend project. For now, use the local Node proxy:
 
-```text
-AI generates app.info + Lua + assets
-  -> validator checks package
-  -> user deploys files to device storage
-  -> launcher runs the app
+```bash
+npm run device:web -- --board http://192.168.1.32:8080
 ```
 
-The future web console should upload validated app packages to the runtime over WiFi or another runtime-owned transport. USB flashing remains for runtime installation and recovery, not the normal app-edit loop.
+Open:
 
-Relevant phase documents:
+```text
+http://127.0.0.1:8790
+```
+
+The current Device Web UI can:
+
+- show Runtime `/status`;
+- list compatible and legacy apps from `/apps`;
+- launch, stop, rescan, and delete apps;
+- upload a local app directory through the staged install API;
+- show recent local proxy actions.
+
+It runs on the developer machine and proxies to the board. This keeps the firmware HTTP service small and avoids requiring CORS support on the ESP32.
+
+USB flashing remains for Runtime installation and recovery, not the normal app-edit loop.
+
+Relevant docs:
 
 - [`docs/deployment-flow.md`](../docs/deployment-flow.md)
 - [`docs/app-package-format.md`](../docs/app-package-format.md)

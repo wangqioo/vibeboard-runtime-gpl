@@ -1,6 +1,6 @@
 # Deployment Flow
 
-Phase 2A defines the file contract, validates apps, and creates deployable file packages.
+The deployment flow validates app packages, writes deployable files, then installs them on the Runtime over HTTP or by SD-card copy.
 
 ```text
 AI produces app package
@@ -8,7 +8,7 @@ AI produces app package
   -> app packager writes dist/apps/<app-id>
   -> upload package contents to the runtime or copy them to SD
   -> runtime rescans /sdcard/apps
-  -> user launches from the native screen launcher or HTTP /launch
+  -> user launches from the native screen launcher, local web UI, or HTTP /launch
 ```
 
 Create a package for one app:
@@ -72,6 +72,14 @@ POST /launch?app=<id>
 
 By default, the uploader writes files under `/sdcard/.vibeboard-staging/<stage-id>/`, calls `/install/commit` to replace `/sdcard/apps/<id>`, and then confirms the app through `/apps`. If an upload fails before commit, the uploader calls `/install/abort` as best-effort cleanup. Apps can then be launched from the native `VibeBoard Apps` screen or through `/launch`.
 
+The local browser UI wraps the same board API:
+
+```bash
+npm run device:web -- --board http://<board-ip>:8080
+```
+
+Open `http://127.0.0.1:8790` to view status, list apps, upload an app directory, launch, stop, rescan, or delete apps.
+
 For old firmware that only supports direct writes, use:
 
 ```bash
@@ -80,12 +88,11 @@ npm run upload:app -- --legacy-direct http://<board-ip>:8080 dist/apps/<app-id> 
 
 Current limitations:
 
-- no browser management UI yet;
-- compatibility checks still rely on the app validator and documented runtime capabilities.
+- The browser UI is a local Node proxy, not a static UI served by the ESP32 firmware.
+- Compatibility checks still rely on the app validator, package manifest metadata, and documented runtime capabilities.
 
 Other transport options:
 
-- Browser upload through a future VibeBoard Runtime web console.
 - SD-card copy for recovery and offline installation.
 
 USB flashing is for runtime installation and recovery, not the normal app-edit loop.
