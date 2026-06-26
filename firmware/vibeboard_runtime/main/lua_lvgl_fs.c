@@ -5,11 +5,13 @@
 #include <string.h>
 
 #include "board_lckfb_szpi_s3.h"
+#include "esp_log.h"
 #include "lauxlib.h"
 #include "lua_lvgl_internal.h"
 #include "lvgl.h"
 #include "src/extra/lv_extra.h"
 
+static const char *TAG = "lua_lvgl_fs";
 static char s_app_dir[VB_LVGL_PATH_MAX];
 static lv_fs_drv_t s_sd_drv;
 static bool s_sd_drv_registered;
@@ -54,6 +56,7 @@ static bool has_traversal(const char *path)
 bool vb_lua_lvgl_resolve_asset_path(const char *path, char *resolved, size_t resolved_size)
 {
     if (path == NULL || path[0] == '\0' || has_traversal(path)) {
+        ESP_LOGE(TAG, "resolve asset failed path=%s detail=invalid or traversal", path != NULL ? path : "<null>");
         return false;
     }
 
@@ -77,6 +80,7 @@ bool vb_lua_lvgl_resolve_asset_path(const char *path, char *resolved, size_t res
     }
 
     if (path[0] == '/') {
+        ESP_LOGE(TAG, "resolve asset failed path=%s detail=unsupported absolute path", path);
         return false;
     }
 
@@ -246,6 +250,7 @@ static int l_lv_resolve_asset_path(lua_State *L)
     const char *path = luaL_checkstring(L, 1);
     char resolved[VB_LVGL_PATH_MAX];
     if (!vb_lua_lvgl_resolve_asset_path(path, resolved, sizeof(resolved))) {
+        ESP_LOGE(TAG, "resolve asset failed path=%s detail=invalid asset path", path);
         return luaL_error(L, "invalid asset path");
     }
     lua_pushstring(L, resolved);
@@ -257,6 +262,7 @@ static int l_lv_asset_exists(lua_State *L)
     const char *path = luaL_checkstring(L, 1);
     char resolved[VB_LVGL_PATH_MAX];
     if (!vb_lua_lvgl_resolve_asset_path(path, resolved, sizeof(resolved))) {
+        ESP_LOGE(TAG, "resolve asset failed path=%s detail=invalid asset path", path);
         lua_pushboolean(L, 0);
         lua_pushliteral(L, "invalid asset path");
         return 2;

@@ -2,19 +2,23 @@
 
 #include <string.h>
 
+#include "esp_err.h"
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lauxlib.h"
 #include "lua.h"
 #include "board_lckfb_szpi_s3.h"
+#include "lua_gamepad.h"
 
 #define VB_MODULE_HOST_API_VERSION 1
 #define VB_MODULE_HOST_SD_ROOT "/sdcard"
 #define VB_MODULE_HOST_DISPLAY_WIDTH 320
 #define VB_MODULE_HOST_DISPLAY_HEIGHT 240
 
+static const char *TAG = "module_host_api";
 static const char *s_display_owner = NULL;
 
 static int vb_host_serial_write(const void *data, size_t size)
@@ -173,7 +177,11 @@ static BaseType_t vb_host_task_create(TaskFunction_t entry,
     if (entry == NULL || name == NULL || stack_depth == 0) {
         return pdFAIL;
     }
-    return xTaskCreatePinnedToCore(entry, name, stack_depth, arg, priority, handle, tskNO_AFFINITY);
+    const uint32_t stack_words = (stack_depth + sizeof(StackType_t) - 1u) / sizeof(StackType_t);
+    if (stack_words == 0) {
+        return pdFAIL;
+    }
+    return xTaskCreatePinnedToCore(entry, name, stack_words, arg, priority, handle, tskNO_AFFINITY);
 }
 
 static void vb_host_task_remove(TaskHandle_t handle)
@@ -209,6 +217,9 @@ static int vb_host_display_acquire(const char *owner, vb_module_host_display_sur
     if (s_display_owner != NULL) {
         return -1;
     }
+    if (vb_board_display_takeover() != ESP_OK) {
+        return -1;
+    }
 
     s_display_owner = owner;
     memset(surface, 0, sizeof(*surface));
@@ -240,7 +251,19 @@ static int vb_host_display_push_image_dma(vb_module_host_display_surface_t *surf
     if (width == 0 || height == 0 || x + width > surface->width || y + height > surface->height) {
         return -1;
     }
-    return vb_board_draw_rgb565(x, y, width, height, rgb565) == ESP_OK ? 0 : -1;
+    esp_err_t draw_err = vb_board_draw_rgb565(x, y, width, height, rgb565);
+    if (draw_err != ESP_OK) {
+        ESP_LOGW(TAG,
+                 "display push failed owner=%s x=%u y=%u w=%u h=%u err=%s",
+                 surface->owner ? surface->owner : "",
+                 (unsigned)x,
+                 (unsigned)y,
+                 (unsigned)width,
+                 (unsigned)height,
+                 esp_err_to_name(draw_err));
+        return -1;
+    }
+    return 0;
 }
 
 static int vb_host_display_end_write(vb_module_host_display_surface_t *surface)
@@ -257,8 +280,36 @@ static void vb_host_display_release(vb_module_host_display_surface_t *surface)
     if (surface == NULL || surface->owner != s_display_owner) {
         return;
     }
+    vb_board_display_release_takeover();
     s_display_owner = NULL;
     memset(surface, 0, sizeof(*surface));
+}
+
+static int vb_host_gamepad_snapshot(uint8_t player, vb_module_host_gamepad_state_t *out)
+{
+    if (out == NULL || player > 1) {
+        return -1;
+    }
+
+    vb_lua_gamepad_snapshot_t snapshot;
+    if (!vb_lua_gamepad_snapshot(&snapshot)) {
+        return -1;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->started = snapshot.started;
+    out->connected = snapshot.connected;
+    out->connecting = snapshot.connecting;
+    out->buttons_mask = snapshot.buttons_mask;
+    out->lx = snapshot.lx;
+    out->ly = snapshot.ly;
+    out->dpad_up = snapshot.dpad_up;
+    out->dpad_down = snapshot.dpad_down;
+    out->dpad_left = snapshot.dpad_left;
+    out->dpad_right = snapshot.dpad_right;
+    strlcpy(out->address, snapshot.address, sizeof(out->address));
+    strlcpy(out->last_address, snapshot.last_address, sizeof(out->last_address));
+    return 0;
 }
 
 static int vb_host_lua_gettop(lua_State *L)
@@ -345,6 +396,7 @@ void vb_module_host_api_init(vb_module_host_api_t *api)
     api->display.push_image_dma = vb_host_display_push_image_dma;
     api->display.end_write = vb_host_display_end_write;
     api->display.release = vb_host_display_release;
+    api->gamepad.snapshot = vb_host_gamepad_snapshot;
     api->lua.gettop = vb_host_lua_gettop;
     api->lua.settop = vb_host_lua_settop;
     api->lua.pushboolean = vb_host_lua_pushboolean;

@@ -1,4 +1,4 @@
 name = smoke_key
 entry = main.lua
 description = Key input smoke test
-capabilities = lvgl,timer,input
+capabilities = lvgl,timer,input,file

@@ -14,7 +14,7 @@ Copy `config.example.json` to `config.json` on the SD card and adjust the comput
 {
   "bridge_url": "http://192.168.0.80:8790",
   "sample_rate": 16000,
-  "sample_bits": 32,
+  "sample_bits": 16,
   "max_record_ms": 10000,
   "reply_limit": 100,
   "use_gif": true

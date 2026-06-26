@@ -1,0 +1,4 @@
+name = LV Benchmark
+entry = main.lua
+description = Minimal LVGL runtime benchmark migrated from upstream lv-benchmark
+capabilities = lvgl,timer,file

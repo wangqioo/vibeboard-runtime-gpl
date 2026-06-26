@@ -1,0 +1,4 @@
+name = BTC
+entry = main.lua
+description = BTC/USDT price panel migrated from upstream HoloCubic BTC
+capabilities = lvgl,network,timer,file

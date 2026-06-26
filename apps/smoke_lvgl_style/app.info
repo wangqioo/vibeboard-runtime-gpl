@@ -1,0 +1,4 @@
+name = smoke_lvgl_style
+entry = main.lua
+description = LVGL style binding smoke test
+capabilities = lvgl,file,timer

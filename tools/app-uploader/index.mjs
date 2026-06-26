@@ -205,6 +205,14 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function boardHost(boardUrl) {
+  try {
+    return new URL(boardUrl).hostname;
+  } catch {
+    return "";
+  }
+}
+
 function makeStageId(appId) {
   const suffix = Date.now().toString(36);
   return `${appId}-${suffix}`;
@@ -349,6 +357,19 @@ export async function uploadApp({
     if (!found) {
       throw new Error(`Uploaded app ${appId} was not found after rescan`);
     }
+    try {
+      await sendBoardRequest({
+        url: `${base}/apps/file?app=${encodeURIComponent(appId)}&path=app.info`,
+        method: "GET",
+        fetchImpl,
+        requestImpl,
+        retryAttempts,
+        retryDelayMs,
+        label: `Read back ${appId}/app.info`,
+      });
+    } catch (error) {
+      throw new Error(`Uploaded app ${appId} was listed but app.info was not readable: ${error.message}`);
+    }
   }
 
   return { appId, files, confirmed: confirm, apps, staged, stageId: staged ? stageId : null, integrityChecked: integrity.checked };
@@ -448,6 +469,29 @@ export async function stopApp({
   });
 }
 
+export async function rebootBoard({
+  boardUrl,
+  fetchImpl,
+  requestImpl = sendRequest,
+  retryAttempts = 3,
+  retryDelayMs = 250,
+}) {
+  if (!boardUrl) {
+    throw new Error("boardUrl is required");
+  }
+
+  const base = boardUrl.replace(/\/+$/, "");
+  return requestJson({
+    url: `${base}/reboot`,
+    method: "POST",
+    fetchImpl,
+    requestImpl,
+    retryAttempts,
+    retryDelayMs,
+    label: "Reboot board",
+  });
+}
+
 export async function setRuntimeConfig({
   boardUrl,
   name,
@@ -475,6 +519,88 @@ export async function setRuntimeConfig({
     label: `Set runtime config ${name}`,
     body: Buffer.from(body || "", "utf8"),
   });
+}
+
+export async function runRuntimeConfigSmoke({
+  boardUrl,
+  name,
+  body,
+  fetchImpl,
+  requestImpl = sendRequest,
+  retryAttempts = 3,
+  retryDelayMs = 250,
+  reboot = false,
+  rebootPolls = 30,
+  rebootDelayMs = 1000,
+  expectAppCount = null,
+  expectIp = "",
+}) {
+  const config = await setRuntimeConfig({
+    boardUrl,
+    name,
+    body,
+    fetchImpl,
+    requestImpl,
+    retryAttempts,
+    retryDelayMs,
+  });
+
+  let rebootResult = null;
+  let status = null;
+  let statusPolls = 0;
+  if (reboot) {
+    rebootResult = await rebootBoard({
+      boardUrl,
+      fetchImpl,
+      requestImpl,
+      retryAttempts,
+      retryDelayMs,
+    });
+    for (let poll = 1; poll <= rebootPolls; poll++) {
+      statusPolls = poll;
+      if (rebootDelayMs > 0) {
+        await wait(rebootDelayMs);
+      }
+      try {
+        status = await getStatus({
+          boardUrl,
+          fetchImpl,
+          requestImpl,
+          retryAttempts: 1,
+          retryDelayMs: 0,
+        });
+        break;
+      } catch (error) {
+        if (poll >= rebootPolls) {
+          throw new Error(`Runtime did not return after reboot: ${error.message}`);
+        }
+      }
+    }
+  } else {
+    status = await getStatus({
+      boardUrl,
+      fetchImpl,
+      requestImpl,
+      retryAttempts,
+      retryDelayMs,
+    });
+    statusPolls = 1;
+  }
+
+  if (!status || status.install !== "ok" || !status.runtime_version) {
+    throw new Error(`status does not look like VibeBoard Runtime: ${JSON.stringify(status)}`);
+  }
+  if (expectAppCount !== null && status.app_count !== expectAppCount) {
+    throw new Error(`expected app_count ${expectAppCount}, got ${status.app_count}`);
+  }
+  if (expectIp) {
+    const reportedIp = status.ip || status.wifi_ip || boardHost(boardUrl);
+    if (reportedIp !== expectIp) {
+      throw new Error(`expected ip ${expectIp}, got ${reportedIp || "unknown"}`);
+    }
+  }
+
+  return { config, reboot: rebootResult, status, statusPolls };
 }
 
 export async function deleteApp({

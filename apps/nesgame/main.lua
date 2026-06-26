@@ -11,7 +11,13 @@ local nes = require("nes")
 -- 这个入口文件固定服务 Xbox BLE 手柄，不再保留网页手柄/双模式切换分支。
 APP.VERSION = "2026-04-25-nes-gamepad-minimal-selector-v3"
 APP.PLAYER = nes.PLAYER_1
+APP.APP_ROM_DIR = "roms"
+APP.APP_ROM_ABS_DIR = "/sdcard/apps/nesgame/roms"
 APP.ROM_DIR = "/sd/nes"
+APP.ROM_DIRS = {
+  APP.APP_ROM_DIR,
+  "/sd/nes",
+}
 APP.PREFERRED_ROM_PATH = rawget(_G, "NES_ROM_PATH")
 
 APP.ui = {}
@@ -35,6 +41,8 @@ APP.gamepad_connected = false
 APP.gamepad_started = false
 APP.gamepad_prev_buttons = 0
 APP.gamepad_prev_nav = 0
+APP.last_gamepad_buttons = 0
+APP.last_gamepad_mask = 0
 APP.GAMEPAD_AXIS_THRESHOLD = 0.46
 APP.GAMEPAD_NAV_LEFT = (1 << 0)
 APP.GAMEPAD_NAV_RIGHT = (1 << 1)
@@ -43,11 +51,19 @@ APP.GAMEPAD_NAV_BACK = (1 << 3)
 APP.GAMEPAD_NAV_RESCAN = (1 << 4)
 
 APP.fps_timer = nil
+APP.metrics_timer = nil
+APP.gamepad_timer = nil
+APP.last_audio_bytes = 0
 APP.fps_last_frames = 0
 APP.fps_last_us = nil
 APP.FPS_LOG_INTERVAL_MS = 1500
+APP.METRICS_INTERVAL_MS = 500
 
 local MAIN_STYLE = LV_PART_MAIN | LV_STATE_DEFAULT
+local ALIGN_LEFT_MID = LV_ALIGN_LEFT_MID or 4
+local ALIGN_RIGHT_MID = LV_ALIGN_RIGHT_MID or 6
+local ALIGN_TOP_RIGHT = LV_ALIGN_TOP_RIGHT or 2
+local update_metrics
 
 -- 统一把文本转成字符串，避免 nil 文本把 UI 或日志更新打断。
 local function text_or(value, fallback)
@@ -265,10 +281,57 @@ local function is_nes_rom_name(name)
   return s:lower():match("%.nes$") ~= nil
 end
 
+-- 生成供 smoke 工具读取的简单 JSON 字符串；当前 runtime 没有强依赖完整 JSON encoder。
+local function json_escape(value)
+  return tostring(value or ""):gsub("\\", "\\\\"):gsub("\"", "\\\""):gsub("\n", "\\n")
+end
+
+local function write_metrics(fields)
+  if not file or not file.write then
+    return
+  end
+
+  fields = fields or {}
+  local metrics = "{"
+    .. "\"ok\":" .. tostring(fields.ok ~= false) .. ","
+    .. "\"screen_mode\":\"" .. json_escape(fields.screen_mode or APP.screen_mode or "") .. "\","
+    .. "\"rom_path\":\"" .. json_escape(fields.rom_path or APP.rom_path or "") .. "\","
+    .. "\"rom_present\":" .. tostring(fields.rom_present == true) .. ","
+    .. "\"rom_count\":" .. tostring(fields.rom_count or #APP.roms or 0) .. ","
+    .. "\"selected_index\":" .. tostring(fields.selected_index or APP.selected_index or 0) .. ","
+    .. "\"started\":" .. tostring(fields.started == true) .. ","
+    .. "\"running\":" .. tostring(fields.running == true) .. ","
+    .. "\"status\":\"" .. json_escape(fields.status or APP.last_status or "") .. "\","
+    .. "\"frames\":" .. tostring(fields.frames or 0) .. ","
+    .. "\"rendered_frames\":" .. tostring(fields.rendered_frames or fields.frames or 0) .. ","
+    .. "\"audio_active\":" .. tostring(fields.audio_active == true) .. ","
+    .. "\"audio_backend\":\"" .. json_escape(fields.audio_backend or "") .. "\","
+    .. "\"audio_bytes\":" .. tostring(fields.audio_bytes or APP.last_audio_bytes or 0) .. ","
+    .. "\"last_gamepad_buttons\":" .. tostring(fields.last_gamepad_buttons or APP.last_gamepad_buttons or 0) .. ","
+    .. "\"last_gamepad_mask\":" .. tostring(fields.last_gamepad_mask or APP.last_gamepad_mask or 0) .. ","
+    .. "\"last_error\":\"" .. json_escape(fields.last_error or APP.last_open_error_text or "") .. "\""
+    .. "}"
+
+  file.write("metrics.json", metrics)
+end
+
 -- 从目录项里补齐完整路径，优先使用底层已经给出的 `entry.path`。
+local function rom_path_for_entry(dir_path, name)
+  local base = tostring(dir_path or "")
+  local filename = tostring(name or "")
+  if base == APP.APP_ROM_DIR then
+    return APP.APP_ROM_ABS_DIR .. "/" .. filename
+  end
+  return base .. "/" .. filename
+end
+
 local function entry_to_path(dir_path, entry)
   if not entry then
     return nil
+  end
+
+  if type(entry) == "string" then
+    return rom_path_for_entry(dir_path, entry)
   end
 
   if entry.path and entry.path ~= "" then
@@ -280,20 +343,22 @@ local function entry_to_path(dir_path, entry)
     return nil
   end
 
-  return tostring(dir_path or "") .. "/" .. name
+  return rom_path_for_entry(dir_path, name)
 end
 
--- 只从 `/sd/nes` 扫描 ROM 列表，并按文件名排序，保证左右切换时顺序稳定。
+-- 从指定目录扫描 ROM 列表，并按文件名排序，保证左右切换时顺序稳定。
 local function scan_roms_in_dir(dir_path)
   local entries = safe_listdir(dir_path)
   local roms = {}
 
   for _, entry in ipairs(entries) do
-    if entry and (not entry.is_dir) and is_nes_rom_name(entry.name) then
+    local name = type(entry) == "string" and entry or (entry and entry.name)
+    local is_dir = type(entry) == "table" and entry.is_dir
+    if entry and (not is_dir) and is_nes_rom_name(name) then
       local path = entry_to_path(dir_path, entry)
       if path and path ~= "" then
         roms[#roms + 1] = {
-          name = tostring(entry.name or ""),
+          name = tostring(name or ""),
           path = path,
         }
       end
@@ -305,6 +370,34 @@ local function scan_roms_in_dir(dir_path)
   end)
 
   return roms
+end
+
+-- 优先使用 app-local ROM 目录，方便 smoke 工具把合法测试 ROM 上传到应用包内；
+-- 同时保留 `/sd/nes`，兼容用户已经手动拷贝到共享目录的游戏。
+local function scan_roms()
+  local all = {}
+  local seen = {}
+
+  for _, dir_path in ipairs(APP.ROM_DIRS) do
+    local items = scan_roms_in_dir(dir_path)
+    for _, item in ipairs(items) do
+      if item and item.path and not seen[item.path] then
+        seen[item.path] = true
+        all[#all + 1] = item
+      end
+    end
+  end
+
+  table.sort(all, function(a, b)
+    local name_a = tostring(a.name or ""):lower()
+    local name_b = tostring(b.name or ""):lower()
+    if name_a == name_b then
+      return tostring(a.path or "") < tostring(b.path or "")
+    end
+    return name_a < name_b
+  end)
+
+  return all
 end
 
 -- 按完整路径匹配当前 ROM，便于切回选择页后仍然停在刚才那一项。
@@ -369,14 +462,23 @@ local function get_selected_rom()
   return APP.roms[index]
 end
 
--- 重新扫描 `/sd/nes`，并尽量保留当前或显式指定的选中项。
+-- 重新扫描 ROM 目录，并尽量保留当前或显式指定的选中项。
 local function refresh_rom_catalog(preferred_path)
-  local roms = scan_roms_in_dir(APP.ROM_DIR)
+  local roms = scan_roms()
   APP.roms = roms
 
   if #roms <= 0 then
     APP.selected_index = 0
     APP.rom_path = nil
+    write_metrics({
+      screen_mode = APP.screen_mode,
+      rom_present = false,
+      rom_count = 0,
+      selected_index = 0,
+      started = false,
+      running = false,
+      status = APP.last_status,
+    })
     return false
   end
 
@@ -398,6 +500,16 @@ local function refresh_rom_catalog(preferred_path)
 
   APP.selected_index = selected
   APP.rom_path = roms[selected].path
+  write_metrics({
+    screen_mode = APP.screen_mode,
+    rom_path = APP.rom_path,
+    rom_present = true,
+    rom_count = #APP.roms,
+    selected_index = APP.selected_index,
+    started = false,
+    running = false,
+    status = APP.last_status,
+  })
   return true
 end
 
@@ -623,7 +735,7 @@ end
 local function create_badge(parent, text, font_ref, text_color, bg_color, border_color, align, x, y, width, height)
   local box = lv_obj_create(parent)
   lv_obj_set_size(box, width or 64, height or 20)
-  lv_obj_align(box, align or LV_ALIGN_CENTER, x or 0, y or 0)
+  lv_obj_align(box, align or 0, x or 0, y or 0)
   apply_card_style(
     box,
     bg_color or 0x152435,
@@ -781,7 +893,7 @@ end
 -- 左侧主卡片底部只保留一句短提示，按连接/错误状态切换，避免主视觉被大段说明文字打散。
 local function build_rom_focus_text(has_rom, has_error)
   if not has_rom then
-    return "COPY .NES TO /SD/NES", 0xFFCB86
+    return "COPY .NES TO /APPS/NESGAME/ROMS", 0xFFCB86
   end
   if has_error then
     return "OPEN FAILED", 0xFFB773
@@ -875,7 +987,7 @@ local function build_ui()
     "NES",
     18,
     0xF5F5F7,
-    LV_ALIGN_LEFT_MID,
+    ALIGN_LEFT_MID,
     18,
     1,
     54)
@@ -884,7 +996,7 @@ local function build_ui()
     "booting",
     10,
     0x7E8790,
-    LV_ALIGN_LEFT_MID,
+    ALIGN_LEFT_MID,
     70,
     2,
     96)
@@ -897,7 +1009,7 @@ local function build_ui()
     0xAEB7C2,
     0x101215,
     0x2A2D33,
-    LV_ALIGN_RIGHT_MID,
+    ALIGN_RIGHT_MID,
     -18,
     2,
     62,
@@ -916,15 +1028,15 @@ local function build_ui()
     0xDDE8F4,
     0x101215,
     0x30343B,
-    LV_ALIGN_TOP_RIGHT,
+    ALIGN_TOP_RIGHT,
     -12,
     12,
     58,
     20
   )
 
-  APP.ui.rom_arrow_left = create_label(APP.ui.rom_box, "<", 18, 0x6D7682, LV_ALIGN_LEFT_MID, 18, 0, 16)
-  APP.ui.rom_arrow_right = create_label(APP.ui.rom_box, ">", 18, 0x6D7682, LV_ALIGN_RIGHT_MID, -18, 0, 16)
+  APP.ui.rom_arrow_left = create_label(APP.ui.rom_box, "<", 18, 0x6D7682, ALIGN_LEFT_MID, 18, 0, 16)
+  APP.ui.rom_arrow_right = create_label(APP.ui.rom_box, ">", 18, 0x6D7682, ALIGN_RIGHT_MID, -18, 0, 16)
 
   APP.ui.rom_name = create_label(APP.ui.rom_box, "-", rom_font, 0xF5F5F7, LV_ALIGN_CENTER, 0, -2, 212)
   set_label_text_align(APP.ui.rom_name, LV_TEXT_ALIGN_CENTER)
@@ -987,13 +1099,14 @@ local function render_selector_ui(status_text, detail_text)
     set_status(status_text or "NO ROM")
     set_label_text(APP.ui.rom_index, "0 / 0")
     set_label_text(APP.ui.rom_name, "NO ROM")
-    set_label_text(APP.ui.rom_state, "COPY .NES TO /SD/NES")
+    set_label_text(APP.ui.rom_state, "COPY .NES TO /APPS/NESGAME/ROMS")
     set_label_color(APP.ui.rom_state, 0xFFCB86)
     set_label_text(APP.ui.mapper, "-")
     set_label_text(APP.ui.mirror, "-")
     set_label_text(APP.ui.banks, "-")
     set_error_text(detail_text, "ERROR")
     refresh_control_hint()
+    update_metrics(status_text or "NO ROM")
     return
   end
 
@@ -1027,6 +1140,7 @@ local function render_selector_ui(status_text, detail_text)
     set_error_text(panel_text, panel_title)
   end
   refresh_control_hint()
+  update_metrics(status_text or "READY")
 end
 
 -- 停掉单个 Lua 定时器，并清空引用，避免热重载后旧定时器继续运行。
@@ -1042,6 +1156,69 @@ local function stop_timer(timer_obj)
     timer_obj:unregister()
   end)
   return nil
+end
+
+update_metrics = function(status_override)
+  local snapshot = nil
+  local state_ok, state_result = pcall(function()
+    return nes.state()
+  end)
+  if state_ok and type(state_result) == "table" then
+    snapshot = state_result
+  end
+
+  local pcm = nil
+  if snapshot and snapshot.running then
+    local audio_ok, audio_result = pcall(function()
+      return nes.read_audio(1024)
+    end)
+    if audio_ok and type(audio_result) == "string" then
+      pcm = audio_result
+      APP.last_audio_bytes = #pcm
+    end
+  end
+
+  local frames = 0
+  if snapshot then
+    frames = tonumber(snapshot.rendered_frames or snapshot.core_rendered_frames or snapshot.core_frames or snapshot.frames) or 0
+  end
+
+  write_metrics({
+    screen_mode = APP.screen_mode,
+    rom_path = APP.rom_path,
+    rom_present = #APP.roms > 0,
+    rom_count = #APP.roms,
+    selected_index = APP.selected_index,
+    started = snapshot and (snapshot.running == true or snapshot.loaded == true) or APP.screen_mode == "running",
+    running = snapshot and snapshot.running == true,
+    status = status_override or (snapshot and snapshot.status) or APP.last_status,
+    frames = frames,
+    rendered_frames = frames,
+    audio_active = snapshot and snapshot.audio_active,
+    audio_backend = snapshot and snapshot.audio_backend,
+    audio_bytes = pcm and #pcm or APP.last_audio_bytes or 0,
+    last_gamepad_buttons = APP.last_gamepad_buttons,
+    last_gamepad_mask = APP.last_gamepad_mask,
+    last_error = snapshot and (snapshot.core_last_error or snapshot.last_error) or APP.last_open_error_text or "",
+  })
+end
+
+local function stop_metrics_logging()
+  APP.metrics_timer = stop_timer(APP.metrics_timer)
+end
+
+local function start_metrics_logging()
+  stop_metrics_logging()
+  update_metrics()
+
+  if not tmr or not tmr.create then
+    return
+  end
+
+  APP.metrics_timer = tmr.create()
+  APP.metrics_timer:alarm(APP.METRICS_INTERVAL_MS, tmr.ALARM_AUTO, function()
+    update_metrics()
+  end)
 end
 
 -- 停掉 FPS 串口采样器，避免脚本热重载或退出 app 后旧定时器继续打印。
@@ -1300,9 +1477,11 @@ local function apply_gamepad_state(state, force_sync)
 
   APP.gamepad_started = snapshot.started and true or false
   APP.gamepad_connected = snapshot.connected and true or false
+  APP.last_gamepad_buttons = current_buttons
 
   if APP.screen_mode == "running" and snapshot.connected then
     APP.local_mask = build_gamepad_nes_mask(snapshot)
+    APP.last_gamepad_mask = APP.local_mask
     sync_input_mask(force_sync and true or false)
 
     if edge_pressed(prev_buttons, current_buttons, gamepad.BTN_XBOX) then
@@ -1313,6 +1492,7 @@ local function apply_gamepad_state(state, force_sync)
   else
     if APP.local_mask ~= 0 then
       APP.local_mask = 0
+      APP.last_gamepad_mask = 0
       sync_input_mask(true)
     end
 
@@ -1401,26 +1581,60 @@ local function start_gamepad_service()
   return true
 end
 
--- 首版依旧以“能稳定跑起来”为主：直接渲染、音频默认关闭、保持 256x240 原始分辨率。
+local function refresh_gamepad_selector_status()
+  local state = get_gamepad_state()
+  if state.connected then
+    render_selector_ui("XBOX READY")
+  elseif state.connecting then
+    render_selector_ui("PAIRING XBOX")
+  else
+    render_selector_ui("PAIR XBOX")
+  end
+end
+
+local function start_gamepad_service_deferred()
+  if not tmr or not tmr.create then
+    if start_gamepad_service() then
+      refresh_gamepad_selector_status()
+    end
+    return
+  end
+
+  APP.gamepad_timer = tmr.create()
+  APP.gamepad_timer:alarm(50, tmr.ALARM_SINGLE, function()
+    APP.gamepad_timer = nil
+    if start_gamepad_service() then
+      refresh_gamepad_selector_status()
+    end
+  end)
+end
+
+-- 与 smoke_nes 保持同一组板端稳定参数：单行 DMA 传输降低 LCD 内存压力，
+-- Lua fallback PCM 用于 smoke 证明音频队列可读；真实硬件音频输出后续再接。
 local function build_runtime_options()
   return {
     direct_render = true,
     demo_pattern = false,
     target_fps = 60,
+    task_stack_bytes = 6144,
+    audio_task_stack_bytes = 8192,
     frame_width = 256,
     frame_height = 240,
-    -- 256x16x2 = 8KB，双 buffer 合计约 16KB，能继续保留 DMA 流水并降低内存占用。
-    transfer_rows = 48,
+    transfer_rows = 1,
     center_on_screen = true,
-    audio_enabled = false,
+    audio_enabled = true,
+    audio_lua_fallback = true,
     audio_sample_rate = 22050,
-    audio_ringbuf_samples = 2048,
+    audio_channels = 1,
+    audio_bits_per_sample = 16,
+    audio_queue_bytes = 32768,
   }
 end
 
 -- 启动前若已有旧会话，先停掉再重开，避免 ROM 重载时和上一次运行态互相干扰。
 local function stop_previous_session()
   stop_fps_logging()
+  stop_metrics_logging()
   local snapshot = nes.state()
   if snapshot and snapshot.running then
     pcall(function()
@@ -1436,6 +1650,7 @@ show_selector_page = function(status_text, detail_text, preferred_path)
   build_ui()
   refresh_rom_catalog(preferred_path)
   render_selector_ui(status_text, detail_text)
+  start_metrics_logging()
   return #APP.roms > 0
 end
 
@@ -1462,7 +1677,7 @@ end
 start_selected_rom = function()
   local rom = get_selected_rom()
   if not rom or not rom.path or rom.path == "" then
-    render_selector_ui("NO ROM", APP.ROM_DIR)
+    render_selector_ui("NO ROM", APP.APP_ROM_DIR)
     return false
   end
 
@@ -1478,6 +1693,7 @@ start_selected_rom = function()
   if not ok then
     APP.last_open_error_path = rom.path
     APP.last_open_error_text = text_or(err, "unknown error")
+    update_metrics("OPEN FAILED")
     show_selector_page("OPEN FAILED", APP.last_open_error_text, rom.path)
     return false
   end
@@ -1488,6 +1704,7 @@ start_selected_rom = function()
   set_status("RUNNING")
   sync_input_mask(true)
   start_fps_logging()
+  start_metrics_logging()
   return true
 end
 
@@ -1590,19 +1807,7 @@ local function boot()
   clear_input_state()
   configure_home_exit_behavior()
   register_key_handlers()
-
-  if not start_gamepad_service() then
-    return false
-  end
-
-  local state = get_gamepad_state()
-  if state.connected then
-    render_selector_ui("XBOX READY")
-  elseif state.connecting then
-    render_selector_ui("PAIRING XBOX")
-  else
-    render_selector_ui("PAIR XBOX")
-  end
+  start_gamepad_service_deferred()
 
   return true
 end
@@ -1614,7 +1819,9 @@ function APP.shutdown()
   end
 
   APP.is_shutting_down = true
+  APP.gamepad_timer = stop_timer(APP.gamepad_timer)
   stop_fps_logging()
+  stop_metrics_logging()
   if gamepad then
     pcall(function()
       gamepad.off()
@@ -1635,6 +1842,7 @@ function APP.shutdown()
   pcall(function()
     nes.stop()
   end)
+  update_metrics("shutdown")
   free_rom_font()
 end
 

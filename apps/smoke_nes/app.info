@@ -1,4 +1,4 @@
 name = smoke_nes
 entry = main.lua
 description = NES native module smoke test
-capabilities = lvgl,timer,module,native
+capabilities = lvgl,timer,module,native,file

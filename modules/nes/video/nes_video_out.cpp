@@ -179,7 +179,10 @@ bool NesVideoOut::pushPixelsDMA(const module_display_chunk_t *chunk,
     if (ret != MODULE_OK)
     {
         (void)dmaWait(nullptr);
-        setError(err, "push display pixels failed");
+        if (err)
+        {
+            *err = String("push display pixels failed: ") + String(ret);
+        }
         return false;
     }
     m_stream_queued++;
@@ -346,6 +349,12 @@ bool NesVideoOut::submitTransferChunk(uint16_t start_row, uint16_t row_count, St
     m_chunk.width = m_spec.width;
     m_chunk.pitch_bytes = (uint32_t)m_spec.width * sizeof(uint16_t);
     m_chunk.pixel_format = MODULE_PIXEL_RGB565;
+
+    if (start_row == 0 && m_stream_supported && m_stream_active && !dmaWait(err))
+    {
+        m_has_chunk = false;
+        return false;
+    }
 
     const bool frame_end = ((uint32_t)start_row + (uint32_t)row_count) >= (uint32_t)m_spec.height;
     if (!pushPixelsDMA(&m_chunk, row_count, err))

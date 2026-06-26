@@ -6,6 +6,9 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include "module_abi.h"
 #include "native_module_static_adapter.h"
 
@@ -16,6 +19,13 @@ static const char *const VB_NATIVE_MODULE_ERROR_HOST_API_UNSUPPORTED = "Native m
 #define VB_NATIVE_MODULE_REQUIRED_SYMBOL "vb_native_module_init"
 #define VB_NATIVE_MODULE_HOST_API_VERSION "vibeboard-native-host@1"
 #define VB_NATIVE_MODULE_MANIFEST_MAX_BYTES 512
+#define VB_NATIVE_MODULE_OPEN_RETRIES 3
+#define VB_NATIVE_MODULE_OPEN_RETRY_DELAY_MS 75
+
+static void retry_manifest_open(void)
+{
+    vTaskDelay(pdMS_TO_TICKS(VB_NATIVE_MODULE_OPEN_RETRY_DELAY_MS));
+}
 
 static bool parse_manifest_line(vb_native_module_manifest_t *manifest, char *line)
 {
@@ -66,9 +76,20 @@ static esp_err_t read_native_manifest(const char *module_path,
                                       char *error,
                                       size_t error_size)
 {
-    FILE *file = fopen(module_path, "rb");
+    FILE *file = NULL;
+    int last_errno = 0;
+    for (int attempt = 0; attempt <= VB_NATIVE_MODULE_OPEN_RETRIES; ++attempt) {
+        file = fopen(module_path, "rb");
+        if (file != NULL) {
+            break;
+        }
+        last_errno = errno;
+        if (attempt < VB_NATIVE_MODULE_OPEN_RETRIES) {
+            retry_manifest_open();
+        }
+    }
     if (file == NULL) {
-        snprintf(error, error_size, "%s: %s errno=%d", VB_NATIVE_MODULE_ERROR_LOAD_FAILED, module_path, errno);
+        snprintf(error, error_size, "%s: %s errno=%d", VB_NATIVE_MODULE_ERROR_LOAD_FAILED, module_path, last_errno);
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -143,13 +164,27 @@ esp_err_t vb_native_module_load(const char *module_name,
     result->kind = VB_NATIVE_MODULE_KIND_NES;
 
     struct stat st;
-    if (module_path == NULL || stat(module_path, &st) != 0) {
+    int stat_errno = 0;
+    bool stat_ok = false;
+    if (module_path != NULL) {
+        for (int attempt = 0; attempt <= VB_NATIVE_MODULE_OPEN_RETRIES; ++attempt) {
+            if (stat(module_path, &st) == 0) {
+                stat_ok = true;
+                break;
+            }
+            stat_errno = errno;
+            if (attempt < VB_NATIVE_MODULE_OPEN_RETRIES) {
+                retry_manifest_open();
+            }
+        }
+    }
+    if (!stat_ok) {
         snprintf(result->error,
                  sizeof(result->error),
                  "%s: %s errno=%d",
                  VB_NATIVE_MODULE_ERROR_LOAD_FAILED,
                  module_path ? module_path : "(null)",
-                 errno);
+                 stat_errno);
         result->status = ESP_ERR_NOT_FOUND;
         return result->status;
     }

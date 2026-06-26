@@ -1,0 +1,4 @@
+name = Codex Buddy
+entry = main.lua
+description = Codex desktop buddy
+capabilities = lvgl,network,timer,input,file

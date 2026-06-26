@@ -1,4 +1,4 @@
 name = weather
 entry = main.lua
 description = Weather card
-capabilities = lvgl,network,timer,input
+capabilities = lvgl,network,timer,input,file

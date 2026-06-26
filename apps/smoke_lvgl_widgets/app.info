@@ -1,0 +1,4 @@
+name = smoke_lvgl_widgets
+entry = main.lua
+description = LVGL Phase 3 label, button, bar, and image smoke test
+capabilities = lvgl,file,timer

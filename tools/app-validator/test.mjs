@@ -15,9 +15,19 @@ const MIGRATED_APP_EXPECTED_CAPABILITIES = new Map([
   ["apps/conway_life", ["lvgl", "file", "timer"]],
   ["apps/fluid_pendant", ["lvgl", "file", "timer"]],
   ["apps/2048", ["lvgl", "file", "timer", "input"]],
-  ["apps/weather", ["lvgl", "network", "timer", "input"]],
+  ["apps/btc", ["lvgl", "network", "timer", "file"]],
+  ["apps/settings", ["lvgl", "timer", "input", "file"]],
+  ["apps/hwmon", ["lvgl", "network", "timer", "file"]],
+  ["apps/spectrum", ["lvgl", "timer", "input", "file", "audio"]],
+  ["apps/videos", ["lvgl", "timer", "input", "file"]],
+  ["apps/photos", ["lvgl", "timer", "input", "file"]],
+  ["apps/plane", ["lvgl", "timer", "input", "file"]],
+  ["apps/lv-benchmark", ["lvgl", "timer", "file"]],
+  ["apps/mini_claw", ["lvgl", "network", "timer", "file", "webui"]],
+  ["apps/weather", ["lvgl", "network", "timer", "input", "file"]],
   ["apps/voice_ai", ["lvgl", "network", "audio", "file", "timer", "input"]],
-  ["apps/nesgame", ["lvgl", "file", "timer", "input", "module", "native"]]
+  ["apps/nesgame", ["lvgl", "file", "timer", "input", "module", "native"]],
+  ["apps/smoke_app_manager", ["lvgl", "timer", "input", "file", "webui"]]
 ]);
 
 describe("parseAppInfo", () => {
@@ -142,6 +152,32 @@ describe("validateAppDirectory", () => {
     }
   });
 
+  it("requires webui capability for app route registration", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-webui-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = WebUI",
+        "entry = main.lua",
+        "description = WebUI app",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), [
+        "app.set_webui(true)",
+        "app.route('/api/ping', function(req) return { body = 'pong' } end)",
+        ""
+      ].join("\n"));
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.errors, ["Missing capability declaration: webui"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("requires lvgl capability for LVGL usage", () => {
     const root = mkdtempSync(join(tmpdir(), "app-validator-lvgl-"));
     try {
@@ -231,13 +267,15 @@ describe("validateAppDirectory", () => {
         "name = Missing Lua APIs",
         "entry = main.lua",
         "description = Missing Lua module bindings",
-        "capabilities = input,audio,timer",
+        "capabilities = input,audio,timer,webui",
         ""
       ].join("\n"));
       writeFileSync(join(appDir, "main.lua"), [
         "gamepad.connect('AA:BB:CC:DD:EE:FF')",
         "app.set_home_exit(false)",
         "app.set_status_text('ready')",
+        "app.route('/api/ping', function() end)",
+        "app.set_webui(true)",
         "i2s.write(0, 'pcm')",
         "tmr.delay(100)",
         ""
@@ -249,7 +287,6 @@ describe("validateAppDirectory", () => {
       assert.deepEqual(result.errors, [
         "Runtime update required: unsupported Lua API app.set_status_text",
         "Runtime update required: unsupported Lua API gamepad.connect",
-        "Runtime update required: unsupported Lua API i2s.write",
         "Runtime update required: unsupported Lua API tmr.delay"
       ]);
     } finally {
@@ -257,7 +294,7 @@ describe("validateAppDirectory", () => {
     }
   });
 
-  it("rejects unsupported APIs in non-entry Lua files", () => {
+  it("accepts supported Lua APIs in non-entry Lua files", () => {
     const root = mkdtempSync(join(tmpdir(), "app-validator-nested-lua-api-"));
     try {
       const appDir = join(root, "app");
@@ -274,10 +311,38 @@ describe("validateAppDirectory", () => {
 
       const result = validateAppDirectory(appDir);
 
-      assert.equal(result.ok, false);
-      assert.deepEqual(result.errors, [
-        "Runtime update required: unsupported Lua API i2s.write"
-      ]);
+      assert.equal(result.ok, true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts app-local file mutation helpers used by migrated service apps", () => {
+    const root = mkdtempSync(join(tmpdir(), "app-validator-file-helpers-"));
+    try {
+      const appDir = join(root, "app");
+      mkdirSync(appDir);
+      writeFileSync(join(appDir, "app.info"), [
+        "name = File Helpers",
+        "entry = main.lua",
+        "description = Uses the migrated file helper surface",
+        "capabilities = file",
+        ""
+      ].join("\n"));
+      writeFileSync(join(appDir, "main.lua"), [
+        "file.stat('config.json')",
+        "file.mkdir('data')",
+        "file.putcontents('data/state.txt', 'ready')",
+        "file.rename('data/state.txt', 'data/state.next')",
+        "file.remove('data/state.next')",
+        "file.rmdir('data')",
+        ""
+      ].join("\n"));
+
+      const result = validateAppDirectory(appDir);
+
+      assert.equal(result.ok, true);
+      assert.deepEqual(result.errors, []);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

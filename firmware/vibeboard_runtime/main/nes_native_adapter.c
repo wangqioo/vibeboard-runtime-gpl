@@ -24,8 +24,10 @@ typedef struct {
     uint16_t display_width;
     uint16_t display_height;
     uint32_t frames;
+    uint32_t host_gamepad_mask;
     uint8_t player_1_mask;
     uint8_t mapper;
+    bool host_gamepad_active;
     bool running;
     char last_error[96];
 } vb_nes_native_module_t;
@@ -60,6 +62,60 @@ static uint32_t runtime_mask_to_nes_mask(uint8_t mask)
         nes_mask |= (1 << 3);
     }
     return nes_mask;
+}
+
+static uint32_t module_gamepad_mask_to_nes_mask(uint32_t mask)
+{
+    uint32_t nes_mask = 0;
+    if ((mask & MODULE_GAMEPAD_A) != 0) {
+        nes_mask |= (1 << 0);
+    }
+    if ((mask & MODULE_GAMEPAD_B) != 0) {
+        nes_mask |= (1 << 1);
+    }
+    if ((mask & MODULE_GAMEPAD_SELECT) != 0) {
+        nes_mask |= (1 << 2);
+    }
+    if ((mask & MODULE_GAMEPAD_START) != 0) {
+        nes_mask |= (1 << 3);
+    }
+    if ((mask & MODULE_GAMEPAD_UP) != 0) {
+        nes_mask |= (1 << 4);
+    }
+    if ((mask & MODULE_GAMEPAD_DOWN) != 0) {
+        nes_mask |= (1 << 5);
+    }
+    if ((mask & MODULE_GAMEPAD_LEFT) != 0) {
+        nes_mask |= (1 << 6);
+    }
+    if ((mask & MODULE_GAMEPAD_RIGHT) != 0) {
+        nes_mask |= (1 << 7);
+    }
+    return nes_mask;
+}
+
+static void sync_host_gamepad(vb_nes_native_module_t *nes)
+{
+    if (nes == NULL || nes->core_runtime == NULL || nes->host_api.gamepad.snapshot == NULL ||
+        nes->host_v1.gamepad.state_mask == NULL) {
+        return;
+    }
+
+    vb_module_host_gamepad_state_t state;
+    if (nes->host_api.gamepad.snapshot(1, &state) != 0) {
+        return;
+    }
+
+    bool active = state.started || state.connected || state.connecting || state.buttons_mask != 0 ||
+                  state.dpad_up || state.dpad_down || state.dpad_left || state.dpad_right;
+    if (!active && !nes->host_gamepad_active) {
+        return;
+    }
+
+    uint32_t host_mask = active ? nes->host_v1.gamepad.state_mask(1) : 0;
+    nes->host_gamepad_mask = host_mask;
+    nes->host_gamepad_active = active;
+    nes_core_set_input_mask(nes->core_runtime, module_gamepad_mask_to_nes_mask(host_mask));
 }
 
 static void set_last_error(vb_nes_native_module_t *nes, const char *message)
@@ -173,6 +229,15 @@ static bool table_bool(lua_State *L, const char *key, bool fallback)
     return value;
 }
 
+static bool table_has_key(lua_State *L, const char *key)
+{
+    bool has_key;
+    lua_getfield(L, -1, key);
+    has_key = !lua_isnil(L, -1);
+    lua_pop(L, 1);
+    return has_key;
+}
+
 static void clamp_start_options(nes_core_options_t *options)
 {
     if (options->width == 0 || options->width > 320) {
@@ -193,8 +258,11 @@ static void clamp_start_options(nes_core_options_t *options)
     if (options->target_fps == 0 || options->target_fps > 120) {
         options->target_fps = 60;
     }
-    if (options->task_stack_bytes < 8192) {
-        options->task_stack_bytes = 16 * 1024;
+    if (options->task_stack_bytes < 4096) {
+        options->task_stack_bytes = 4096;
+    }
+    if (options->audio_task_stack_bytes < 4096) {
+        options->audio_task_stack_bytes = 4096;
     }
     if (options->audio_sample_rate == 0) {
         options->audio_sample_rate = 22050;
@@ -215,6 +283,7 @@ static void clamp_start_options(nes_core_options_t *options)
 
 static void apply_start_options(lua_State *L, int index, nes_core_options_t *options)
 {
+    bool center_on_screen;
     if (lua_isnoneornil(L, index) || options == NULL) {
         return;
     }
@@ -225,6 +294,8 @@ static void apply_start_options(lua_State *L, int index, nes_core_options_t *opt
     options->y = table_u16(L, "y", options->y);
     options->width = table_u16(L, "width", options->width);
     options->height = table_u16(L, "height", options->height);
+    options->width = table_u16(L, "frame_width", options->width);
+    options->height = table_u16(L, "frame_height", options->height);
     options->transfer_rows = table_u16(L, "transfer_rows", options->transfer_rows);
     options->target_fps = table_u32(L, "target_fps", options->target_fps);
     options->task_stack_bytes = table_u32(L, "task_stack_bytes", options->task_stack_bytes);
@@ -238,8 +309,26 @@ static void apply_start_options(lua_State *L, int index, nes_core_options_t *opt
     options->audio_volume_percent = (uint8_t)table_u32(L, "audio_volume_percent", options->audio_volume_percent);
     options->audio_sample_rate = table_u32(L, "audio_sample_rate", options->audio_sample_rate);
     options->audio_queue_bytes = table_u32(L, "audio_queue_bytes", options->audio_queue_bytes);
+    options->audio_task_stack_bytes = table_u32(L, "audio_task_stack_bytes", options->audio_task_stack_bytes);
+    options->audio_queue_bytes = table_u32(L, "audio_ringbuf_bytes", options->audio_queue_bytes);
+    if (table_has_key(L, "audio_ringbuf_samples")) {
+        uint32_t samples = table_u32(L, "audio_ringbuf_samples", 0);
+        if (samples > 0) {
+            uint16_t channels = options->audio_channels > 0 ? options->audio_channels : 1;
+            uint16_t bytes_per_sample = options->audio_bits_per_sample >= 8 ? (uint16_t)(options->audio_bits_per_sample / 8) : 2;
+            options->audio_queue_bytes = samples * channels * bytes_per_sample;
+        }
+    }
     lua_pop(L, 1);
     clamp_start_options(options);
+
+    lua_pushvalue(L, index);
+    center_on_screen = table_bool(L, "center_on_screen", false);
+    lua_pop(L, 1);
+    if (center_on_screen) {
+        options->x = (uint16_t)((320 - options->width) / 2);
+        options->y = (uint16_t)((240 - options->height) / 2);
+    }
 }
 
 esp_err_t vb_nes_native_module_init(vb_module_host_api_t *host_api, void **module)
@@ -267,12 +356,31 @@ esp_err_t vb_nes_native_module_init(vb_module_host_api_t *host_api, void **modul
     s_nes_module.display_width = host_api->display.width();
     s_nes_module.display_height = host_api->display.height();
     s_nes_module.frames = 0;
+    s_nes_module.host_gamepad_mask = 0;
     s_nes_module.player_1_mask = 0;
     s_nes_module.mapper = 0;
+    s_nes_module.host_gamepad_active = false;
     s_nes_module.running = false;
     s_nes_module.last_error[0] = '\0';
     *module = &s_nes_module;
     return ESP_OK;
+}
+
+void vb_nes_native_module_cleanup(void)
+{
+    char err[96];
+    err[0] = '\0';
+    if (s_nes_module.core_runtime != NULL) {
+        (void)nes_core_stop(s_nes_module.core_runtime, 3000, 1, err, sizeof(err));
+        nes_core_destroy(s_nes_module.core_runtime);
+        s_nes_module.core_runtime = NULL;
+    }
+    s_nes_module.running = false;
+    s_nes_module.host_gamepad_active = false;
+    s_nes_module.host_gamepad_mask = 0;
+    s_nes_module.player_1_mask = 0;
+    memset(&s_nes_module.core_status, 0, sizeof(s_nes_module.core_status));
+    s_nes_module.last_error[0] = '\0';
 }
 
 int vb_nes_native_module_state(lua_State *L, void *module)
@@ -283,6 +391,7 @@ int vb_nes_native_module_state(lua_State *L, void *module)
     }
 
     if (nes->core_runtime != NULL) {
+        sync_host_gamepad(nes);
         nes_core_status(nes->core_runtime, &nes->core_status);
         nes->running = nes->core_status.running != 0;
         nes->frames = nes->core_status.frames;
@@ -292,16 +401,24 @@ int vb_nes_native_module_state(lua_State *L, void *module)
     }
 
     lua_newtable(L);
+    lua_pushliteral(L, "linked_core");
+    lua_setfield(L, -2, "module_backend");
     lua_pushboolean(L, nes->running);
     lua_setfield(L, -2, "running");
     lua_pushinteger(L, nes->frames);
     lua_setfield(L, -2, "frames");
+    lua_pushinteger(L, nes->frames);
+    lua_setfield(L, -2, "rendered_frames");
     lua_pushinteger(L, nes->display_width);
     lua_setfield(L, -2, "display_width");
     lua_pushinteger(L, nes->display_height);
     lua_setfield(L, -2, "display_height");
     lua_pushinteger(L, nes->player_1_mask);
     lua_setfield(L, -2, "player_1_mask");
+    lua_pushinteger(L, nes->host_gamepad_mask);
+    lua_setfield(L, -2, "host_gamepad_mask");
+    lua_pushboolean(L, nes->host_gamepad_active);
+    lua_setfield(L, -2, "host_gamepad_active");
     lua_pushinteger(L, nes->mapper);
     lua_setfield(L, -2, "mapper");
     lua_pushstring(L, nes->last_error);
@@ -316,6 +433,8 @@ int vb_nes_native_module_state(lua_State *L, void *module)
     lua_setfield(L, -2, "core_loaded");
     lua_pushinteger(L, nes->core_status.frames);
     lua_setfield(L, -2, "core_frames");
+    lua_pushinteger(L, nes->core_status.frames);
+    lua_setfield(L, -2, "core_rendered_frames");
     lua_pushinteger(L, nes->core_status.started_ms);
     lua_setfield(L, -2, "started_ms");
     lua_pushinteger(L, nes->core_status.stopped_ms);
@@ -352,6 +471,22 @@ int vb_nes_native_module_state(lua_State *L, void *module)
     lua_setfield(L, -2, "audio_requested");
     lua_pushboolean(L, nes->core_status.audio_active != 0);
     lua_setfield(L, -2, "audio_active");
+    lua_pushboolean(L, nes->core_status.audio_apu_task_present != 0);
+    lua_setfield(L, -2, "audio_apu_task_present");
+    lua_pushboolean(L, nes->core_status.audio_apu_task_started != 0);
+    lua_setfield(L, -2, "audio_apu_task_started");
+    lua_pushboolean(L, nes->core_status.audio_apu_task_exited != 0);
+    lua_setfield(L, -2, "audio_apu_task_exited");
+    lua_pushinteger(L, nes->core_status.audio_apu_task_ret);
+    lua_setfield(L, -2, "audio_apu_task_ret");
+    lua_pushinteger(L, nes->core_status.audio_apu_ticks);
+    lua_setfield(L, -2, "audio_apu_ticks");
+    lua_pushinteger(L, nes->core_status.audio_sink_calls);
+    lua_setfield(L, -2, "audio_sink_calls");
+    lua_pushinteger(L, nes->core_status.audio_sink_frames);
+    lua_setfield(L, -2, "audio_sink_frames");
+    lua_pushinteger(L, nes->core_status.audio_written_bytes);
+    lua_setfield(L, -2, "audio_written_bytes");
     lua_pushinteger(L, nes->core_status.audio_queued_bytes);
     lua_setfield(L, -2, "audio_queued_bytes");
     lua_pushinteger(L, nes->core_status.audio_dropped_bytes);
@@ -407,6 +542,7 @@ int vb_nes_native_module_start(lua_State *L, void *module)
     options.audio_volume_percent = 100;
     options.audio_sample_rate = 22050;
     options.audio_queue_bytes = 32768;
+    options.audio_task_stack_bytes = 8192;
     apply_start_options(L, 2, &options);
     err[0] = '\0';
 

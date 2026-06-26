@@ -1,0 +1,4 @@
+name = HW Monitor
+entry = main.lua
+description = Minimal desktop hardware monitor migrated from upstream HoloCubic hwmon
+capabilities = lvgl,network,timer,file

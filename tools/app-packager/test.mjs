@@ -28,6 +28,15 @@ const EXPECTED_DEMO_APP_DIRS = [
   "apps/clock",
   "apps/conway_life",
   "apps/fluid_pendant",
+  "apps/btc",
+  "apps/settings",
+  "apps/hwmon",
+  "apps/spectrum",
+  "apps/videos",
+  "apps/photos",
+  "apps/plane",
+  "apps/lv-benchmark",
+  "apps/mini_claw",
   "apps/smoke_app_manager",
   "apps/smoke_controls",
   "apps/smoke_gamepad",
@@ -228,6 +237,6 @@ describe("packageDemoApps", () => {
   it("packages the curated demo and migrated apps", () => {
     const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
     const result = packageDemoApps({ repoRoot });
-    assert.deepEqual(result.map((item) => item.appId).sort(), ["2048", "clock", "conway_life", "fluid_pendant", "matrix_rain", "nesgame", "nixie_clock", "smoke_app_manager", "smoke_controls", "smoke_gamepad", "smoke_i2s", "smoke_key", "smoke_nes", "smoke_touch", "voice_ai", "weather"]);
+    assert.deepEqual(result.map((item) => item.appId).sort(), ["2048", "btc", "clock", "conway_life", "fluid_pendant", "hwmon", "lv-benchmark", "matrix_rain", "mini_claw", "nesgame", "nixie_clock", "photos", "plane", "settings", "smoke_app_manager", "smoke_controls", "smoke_gamepad", "smoke_i2s", "smoke_key", "smoke_nes", "smoke_touch", "spectrum", "videos", "voice_ai", "weather"]);
   });
 });

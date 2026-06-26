@@ -32,6 +32,7 @@ public:
     bool write(const int16_t *samples, size_t frames);
     size_t read(uint8_t *dst, size_t max_bytes);
     size_t queuedBytes() const;
+    uint32_t writtenBytes() const { return m_written_bytes; }
     uint32_t droppedBytes() const { return m_dropped_bytes; }
     bool consumeFailure(String *err = nullptr);
 
@@ -56,7 +57,9 @@ private:
     size_t m_queue_capacity = 0;
     volatile size_t m_queue_head = 0;
     volatile size_t m_queue_tail = 0;
+    uint32_t m_written_bytes = 0;
     uint32_t m_dropped_bytes = 0;
+    uint8_t m_host_zero_write_streak = 0;
     Backend m_backend = Backend::None;
     AudioSpec m_spec = {};
     bool m_requested = false;

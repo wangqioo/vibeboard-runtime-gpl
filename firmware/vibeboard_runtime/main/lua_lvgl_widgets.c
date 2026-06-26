@@ -1,8 +1,10 @@
 #include "lua_lvgl_internal.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #include "esp_lvgl_port.h"
+#include "esp_log.h"
 #include "lauxlib.h"
 #include "lvgl.h"
 #include "extra/libs/gif/lv_gif.h"
@@ -13,6 +15,39 @@
 #define VB_LVGL_ANIM_H 4
 #define VB_LVGL_ANIM_OPA 5
 #define VB_LVGL_ANIM_PATH_EASE_OUT 1
+
+static const lv_font_t *vb_lua_lvgl_font_from_ref(lua_Integer font_ref)
+{
+    switch ((int)font_ref) {
+#if LV_FONT_MONTSERRAT_10
+    case 10:
+        return &lv_font_montserrat_10;
+#endif
+#if LV_FONT_MONTSERRAT_12
+    case 12:
+        return &lv_font_montserrat_12;
+#endif
+#if LV_FONT_MONTSERRAT_14
+    case 14:
+        return &lv_font_montserrat_14;
+#endif
+#if LV_FONT_MONTSERRAT_16
+    case 16:
+        return &lv_font_montserrat_16;
+#endif
+#if LV_FONT_MONTSERRAT_28
+    case 28:
+        return &lv_font_montserrat_28;
+#endif
+    default:
+        break;
+    }
+
+    if (font_ref > 1024) {
+        return (const lv_font_t *)(uintptr_t)font_ref;
+    }
+    return LV_FONT_DEFAULT;
+}
 
 static int create_object(lua_State *L, lv_obj_t *(*create_fn)(lv_obj_t *))
 {
@@ -142,6 +177,7 @@ static int l_lv_img_set_src(lua_State *L)
     const char *src = luaL_checkstring(L, 2);
     char resolved[VB_LVGL_PATH_MAX];
     if (!vb_lua_lvgl_resolve_asset_path(src, resolved, sizeof(resolved))) {
+        ESP_LOGE("lua_lvgl_widgets", "resolve image source failed path=%s detail=invalid image source path", src);
         return luaL_error(L, "invalid image source path");
     }
 
@@ -170,6 +206,7 @@ static int l_lv_gif_set_src(lua_State *L)
     const char *src = luaL_checkstring(L, 2);
     char resolved[VB_LVGL_PATH_MAX];
     if (!vb_lua_lvgl_resolve_asset_path(src, resolved, sizeof(resolved))) {
+        ESP_LOGE("lua_lvgl_widgets", "resolve gif source failed path=%s detail=invalid gif source path", src);
         return luaL_error(L, "invalid gif source path");
     }
 
@@ -413,13 +450,13 @@ static int l_lv_obj_set_style_text_color(lua_State *L)
 static int l_lv_obj_set_style_text_font(lua_State *L)
 {
     int id = vb_lua_lvgl_check_object_id(L, 1);
-    int font = (int)luaL_checkinteger(L, 2);
+    lua_Integer font_ref = luaL_checkinteger(L, 2);
     lv_style_selector_t selector = (lv_style_selector_t)luaL_optinteger(L, 3, 0);
+    const lv_font_t *font = vb_lua_lvgl_font_from_ref(font_ref);
 
-    (void)font;
     lvgl_port_lock(0);
     lv_obj_t *object = vb_lua_lvgl_resolve_object(id);
-    lv_obj_set_style_text_font(object, LV_FONT_DEFAULT, selector);
+    lv_obj_set_style_text_font(object, font, selector);
     lvgl_port_unlock();
     return 0;
 }
@@ -1048,14 +1085,30 @@ static int l_lv_anim_del(lua_State *L)
 
 static int l_lv_font_load(lua_State *L)
 {
-    (void)luaL_checkstring(L, 1);
-    lua_pushinteger(L, 0);
+    const char *path = luaL_checkstring(L, 1);
+    char resolved[VB_LVGL_PATH_MAX];
+    if (!vb_lua_lvgl_resolve_asset_path(path, resolved, sizeof(resolved))) {
+        ESP_LOGE("lua_lvgl_widgets", "resolve font source failed path=%s detail=invalid font source path", path);
+        return luaL_error(L, "invalid font source path");
+    }
+
+    lvgl_port_lock(0);
+    lv_font_t *font = lv_font_load(resolved);
+    lvgl_port_unlock();
+    lua_pushinteger(L, (lua_Integer)(uintptr_t)font);
     return 1;
 }
 
 static int l_lv_font_free(lua_State *L)
 {
-    (void)luaL_optinteger(L, 1, 0);
+    lua_Integer font_ref = luaL_optinteger(L, 1, 0);
+    if (font_ref <= 1024) {
+        return 0;
+    }
+
+    lvgl_port_lock(0);
+    lv_font_free((lv_font_t *)(uintptr_t)font_ref);
+    lvgl_port_unlock();
     return 0;
 }
 

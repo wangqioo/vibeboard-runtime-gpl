@@ -193,6 +193,11 @@ MOD_IRAM_ATTR void Bus::clock()
 
             cpu.clock(114);
             ppu.renderScanline(ppu_scanline + 2);
+
+            if ((ppu_scanline % 24) == 21)
+            {
+                nes_port_yield();
+            }
         }
     }
     else
@@ -207,6 +212,11 @@ MOD_IRAM_ATTR void Bus::clock()
 
             cpu.clock(114);
             ppu.fakeSpriteHit(ppu_scanline + 2);
+
+            if ((ppu_scanline % 24) == 21)
+            {
+                nes_port_yield();
+            }
         }
     }
 
@@ -217,6 +227,7 @@ MOD_IRAM_ATTR void Bus::clock()
 
     // Scanline 241-261
     ppu.setVBlank();
+    nes_port_yield();
     cpu.clock(2501);
 
     ppu.clearVBlank();
@@ -305,6 +316,7 @@ IRAM_ATTR void Bus::renderImage(uint16_t scanline, uint16_t row_count)
         return;
     }
 
+    nes_port_yield();
     (void)prepareRenderBuffer();
 }
 

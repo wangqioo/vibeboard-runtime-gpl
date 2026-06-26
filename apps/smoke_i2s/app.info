@@ -1,4 +1,4 @@
 name = smoke_i2s
 entry = main.lua
 description = I2S microphone recording smoke test
-capabilities = lvgl,timer,audio
+capabilities = lvgl,timer,audio,file

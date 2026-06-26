@@ -137,6 +137,15 @@ extern "C" void nes_port_delay(uint32_t ms)
     }
 }
 
+extern "C" void nes_port_yield(void)
+{
+    if (s_host && s_host->task.yield)
+    {
+        s_host->task.yield();
+    }
+    nes_port_delay(1);
+}
+
 extern "C" uint32_t nes_port_random(void)
 {
     static uint32_t state = 0x6D2B79F5u;

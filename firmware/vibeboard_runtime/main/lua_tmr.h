@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
@@ -19,11 +20,13 @@ typedef struct {
     int period_ms;
     int mode;
     TickType_t last_run;
+    uint32_t generation;
 } vb_lua_timer_t;
 
 typedef struct {
     vb_lua_timer_t timers[VB_LUA_TMR_MAX];
     volatile bool *stop_requested;
+    uint32_t generation;
 } vb_lua_tmr_state_t;
 
 void vb_lua_tmr_init(vb_lua_tmr_state_t *state);

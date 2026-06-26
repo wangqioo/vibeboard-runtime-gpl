@@ -49,7 +49,9 @@ bool NesAudioOut::begin(const AudioSpec &spec, String *err)
     m_requested = spec.enabled;
     m_failed = false;
     m_error = "";
+    m_written_bytes = 0;
     m_dropped_bytes = 0;
+    m_host_zero_write_streak = 0;
 
     if (!spec.enabled)
     {
@@ -182,7 +184,7 @@ bool NesAudioOut::beginHostAudio(const AudioSpec &spec, String *err)
     {
         if (err)
         {
-            *err = "host audio unsupported";
+            *err = String("host audio unsupported: ") + String(ret);
         }
         return false;
     }
@@ -235,21 +237,53 @@ bool NesAudioOut::writeBytes(const void *data, size_t bytes)
     if (m_backend == Backend::HostAudio)
     {
         size_t offset = 0;
-        while (offset < bytes)
+        for (uint8_t attempts = 0; offset < bytes && attempts < 3; ++attempts)
         {
             size_t written = 0;
             const int32_t ret = m_host->audio.write(m_stream,
                                                     (const uint8_t *)data + offset,
                                                     bytes - offset,
                                                     &written);
-            if (ret != MODULE_OK || written == 0)
+            if (ret != MODULE_OK)
             {
-                setFailure("host audio write failed");
-                return false;
+                break;
+            }
+            if (written == 0)
+            {
+                if (m_host && m_host->task.delay)
+                {
+                    m_host->task.delay(1);
+                }
+                else if (m_host && m_host->time.delay)
+                {
+                    m_host->time.delay(1);
+                }
+                else if (m_host && m_host->task.yield)
+                {
+                    m_host->task.yield();
+                }
+                continue;
             }
             offset += written;
+            m_written_bytes += (uint32_t)written;
         }
-        return true;
+        if (offset > 0)
+        {
+            m_host_zero_write_streak = 0;
+            if (offset < bytes)
+            {
+                m_dropped_bytes += (uint32_t)(bytes - offset);
+            }
+            return true;
+        }
+        if (++m_host_zero_write_streak < 16)
+        {
+            m_dropped_bytes += (uint32_t)bytes;
+            return true;
+        }
+        setFailure("host audio write failed");
+        m_host_zero_write_streak = 0;
+        return false;
     }
 
     if (m_backend == Backend::LuaQueue)
@@ -334,6 +368,7 @@ bool NesAudioOut::enqueueBytes(const uint8_t *data, size_t bytes)
     }
     head = (head + bytes) % m_queue_capacity;
     __atomic_store_n(&m_queue_head, head, __ATOMIC_RELEASE);
+    m_written_bytes += (uint32_t)bytes;
     return true;
 }
 

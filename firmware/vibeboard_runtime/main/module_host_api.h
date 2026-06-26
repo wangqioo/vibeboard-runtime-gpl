@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -80,6 +81,25 @@ typedef struct {
 } vb_module_host_display_api_t;
 
 typedef struct {
+    bool started;
+    bool connected;
+    bool connecting;
+    int buttons_mask;
+    double lx;
+    double ly;
+    bool dpad_up;
+    bool dpad_down;
+    bool dpad_left;
+    bool dpad_right;
+    char address[32];
+    char last_address[32];
+} vb_module_host_gamepad_state_t;
+
+typedef struct {
+    int (*snapshot)(uint8_t player, vb_module_host_gamepad_state_t *out);
+} vb_module_host_gamepad_api_t;
+
+typedef struct {
     int (*gettop)(lua_State *L);
     void (*settop)(lua_State *L, int index);
     void (*pushboolean)(lua_State *L, int value);
@@ -99,6 +119,7 @@ typedef struct {
     vb_module_host_file_api_t file;
     vb_module_host_task_api_t task;
     vb_module_host_display_api_t display;
+    vb_module_host_gamepad_api_t gamepad;
     vb_module_host_lua_api_t lua;
 } vb_module_host_api_t;
 

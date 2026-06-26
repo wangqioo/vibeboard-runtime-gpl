@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProviderFromEnv, createVoiceBridgeServer, parseArgs, runOnceFile } from "./server.mjs";
+import { createOpenAiVoiceCommands, runOpenAiVoiceCommand } from "./openai-voice-commands.mjs";
 
 function requestJson(server, path, { method = "GET", body = Buffer.alloc(0), headers = {} } = {}) {
   return new Promise((resolve, reject) => {
@@ -139,6 +140,63 @@ describe("voice bridge providers", () => {
     assert.equal(calls[1].input.transcript, "bytes=4");
   });
 
+  it("keeps raw audio out of reply commands unless explicitly allowed", async () => {
+    const calls = [];
+    const provider = createProviderFromEnv({
+      provider: "command",
+      env: {
+        VOICE_BRIDGE_TRANSCRIBE_COMMAND: "transcribe-local",
+        VOICE_BRIDGE_REPLY_COMMAND: "reply-local",
+      },
+      runCommand: async (command, input) => {
+        calls.push({ command, input: JSON.parse(input.toString("utf8")) });
+        if (command === "transcribe-local") {
+          return JSON.stringify({ transcript: "transcript only" });
+        }
+        return JSON.stringify({ reply: "reply ok" });
+      },
+    });
+
+    await provider.transcribe({
+      audio: Buffer.from([1, 2, 3]),
+      metadata: { sampleRate: 16000, bits: 32, channels: 1, format: "pcm_s32le" },
+    });
+    await provider.reply({
+      transcript: "transcript only",
+      audio: Buffer.from([1, 2, 3]),
+      metadata: { sampleRate: 16000, bits: 32, channels: 1, format: "pcm_s32le" },
+    });
+
+    assert.equal(calls[1].command, "reply-local");
+    assert.equal("audio_base64" in calls[1].input, false);
+
+    const allowedCalls = [];
+    const providerWithAudio = createProviderFromEnv({
+      provider: "command",
+      env: {
+        VOICE_BRIDGE_TRANSCRIBE_COMMAND: "transcribe-local",
+        VOICE_BRIDGE_REPLY_COMMAND: "reply-local",
+        VOICE_BRIDGE_REPLY_INCLUDE_AUDIO: "1",
+      },
+      runCommand: async (command, input) => {
+        allowedCalls.push({ command, input: JSON.parse(input.toString("utf8")) });
+        if (command === "transcribe-local") {
+          return JSON.stringify({ transcript: "transcript with audio" });
+        }
+        return JSON.stringify({ reply: "reply ok" });
+      },
+    });
+
+    await providerWithAudio.reply({
+      transcript: "transcript with audio",
+      audio: Buffer.from([1, 2, 3]),
+      metadata: { sampleRate: 16000, bits: 32, channels: 1, format: "pcm_s32le" },
+    });
+
+    assert.equal(allowedCalls[0].command, "reply-local");
+    assert.equal(allowedCalls[0].input.audio_base64, "AQID");
+  });
+
   it("reports invalid JSON from command provider hooks", async () => {
     const provider = createProviderFromEnv({
       provider: "command",
@@ -155,6 +213,178 @@ describe("voice bridge providers", () => {
         metadata: { sampleRate: 16000, bits: 32, channels: 1, format: "pcm_s32le" },
       }),
       /bad-transcribe returned invalid JSON/,
+    );
+  });
+});
+
+describe("OpenAI voice command wrappers", () => {
+  it("transcribes PCM payloads through the OpenAI audio transcription endpoint", async () => {
+    const requests = [];
+    const commands = createOpenAiVoiceCommands({
+      env: {
+        OPENAI_API_KEY: "test-key",
+        OPENAI_TRANSCRIBE_MODEL: "gpt-4o-mini-transcribe",
+      },
+      fetch: async (url, options) => {
+        requests.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ text: "你好，VibeBoard" }),
+        };
+      },
+    });
+
+    const result = await commands.transcribe({
+      audio_base64: Buffer.from([1, 2, 3, 4]).toString("base64"),
+      metadata: { sampleRate: 16000, bits: 16, channels: 1, format: "pcm_s16le" },
+    });
+
+    assert.deepEqual(result, { transcript: "你好，VibeBoard" });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://api.openai.com/v1/audio/transcriptions");
+    assert.equal(requests[0].options.method, "POST");
+    assert.equal(requests[0].options.headers.authorization, "Bearer test-key");
+    assert.equal(requests[0].options.body.get("model"), "gpt-4o-mini-transcribe");
+    const file = requests[0].options.body.get("file");
+    assert.equal(file.name, "vibeboard.pcm.wav");
+    assert.equal(file.type, "audio/wav");
+  });
+
+  it("builds transcript-only replies through the OpenAI Responses endpoint", async () => {
+    const requests = [];
+    const commands = createOpenAiVoiceCommands({
+      env: {
+        OPENAI_API_KEY: "test-key",
+        OPENAI_REPLY_MODEL: "gpt-4.1-mini",
+        OPENAI_REPLY_SYSTEM_PROMPT: "你是设备助手",
+      },
+      fetch: async (url, options) => {
+        requests.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ output_text: "已执行" }),
+        };
+      },
+    });
+
+    const result = await commands.reply({
+      transcript: "打开天气",
+      metadata: { replyLimit: 20 },
+      audio_base64: Buffer.from([9, 9, 9]).toString("base64"),
+    });
+
+    assert.deepEqual(result, { reply: "已执行", ui_code: "" });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://api.openai.com/v1/responses");
+    assert.equal(requests[0].options.method, "POST");
+    assert.equal(requests[0].options.headers.authorization, "Bearer test-key");
+    const payload = JSON.parse(requests[0].options.body);
+    assert.equal(payload.model, "gpt-4.1-mini");
+    assert.equal(payload.input[0].content[0].text, "你是设备助手");
+    assert.match(payload.input[1].content[0].text, /打开天气/);
+    assert.equal(JSON.stringify(payload).includes("audio_base64"), false);
+  });
+
+  it("can build transcript-only replies through Chat Completions when configured", async () => {
+    const requests = [];
+    const commands = createOpenAiVoiceCommands({
+      env: {
+        OPENAI_API_KEY: "test-key",
+        OPENAI_REPLY_ENDPOINT: "chat_completions",
+        OPENAI_REPLY_MODEL: "gpt-5.4-mini",
+        OPENAI_REPLY_SYSTEM_PROMPT: "你是设备助手",
+      },
+      fetch: async (url, options) => {
+        requests.push({ url, options });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ choices: [{ message: { content: "已执行" } }] }),
+        };
+      },
+    });
+
+    const result = await commands.reply({
+      transcript: "打开天气",
+      metadata: { replyLimit: 20 },
+      audio_base64: Buffer.from([9, 9, 9]).toString("base64"),
+    });
+
+    assert.deepEqual(result, { reply: "已执行", ui_code: "" });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "https://api.openai.com/v1/chat/completions");
+    assert.equal(requests[0].options.method, "POST");
+    assert.equal(requests[0].options.headers.authorization, "Bearer test-key");
+    const payload = JSON.parse(requests[0].options.body);
+    assert.equal(payload.model, "gpt-5.4-mini");
+    assert.deepEqual(payload.messages[0], { role: "system", content: "你是设备助手" });
+    assert.match(payload.messages[1].content, /打开天气/);
+    assert.match(payload.messages[1].content, /20/);
+    assert.equal(JSON.stringify(payload).includes("audio_base64"), false);
+  });
+
+  it("runs transcribe and reply command modes from JSON stdin payloads", async () => {
+    const requests = [];
+    const fetch = async (url, options) => {
+      requests.push({ url, options });
+      if (url.endsWith("/audio/transcriptions")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ text: "语音文本" }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ output_text: "语音回复" }),
+      };
+    };
+
+    assert.deepEqual(await runOpenAiVoiceCommand({
+      mode: "transcribe",
+      inputText: JSON.stringify({
+        audio_base64: Buffer.from([1, 2, 3, 4]).toString("base64"),
+        metadata: { sampleRate: 16000, bits: 16, channels: 1, format: "pcm_s16le" },
+      }),
+      env: { OPENAI_API_KEY: "test-key" },
+      fetch,
+    }), { transcript: "语音文本" });
+
+    assert.deepEqual(await runOpenAiVoiceCommand({
+      mode: "reply",
+      inputText: JSON.stringify({
+        transcript: "语音文本",
+        metadata: { replyLimit: 24 },
+        audio_base64: Buffer.from([9, 9, 9]).toString("base64"),
+      }),
+      env: { OPENAI_API_KEY: "test-key" },
+      fetch,
+    }), { reply: "语音回复", ui_code: "" });
+
+    assert.equal(requests.length, 2);
+    assert.equal(JSON.stringify(JSON.parse(requests[1].options.body)).includes("audio_base64"), false);
+  });
+
+  it("reports non-JSON OpenAI-compatible responses with endpoint context", async () => {
+    const commands = createOpenAiVoiceCommands({
+      env: { OPENAI_API_KEY: "test-key", OPENAI_BASE_URL: "https://voice.example/v1" },
+      fetch: async () => ({
+        ok: false,
+        status: 404,
+        headers: { get: (name) => (name.toLowerCase() === "content-type" ? "text/html" : null) },
+        text: async () => "<html>not found</html>",
+      }),
+    });
+
+    await assert.rejects(
+      () => commands.transcribe({
+        audio_base64: Buffer.from([1, 2, 3, 4]).toString("base64"),
+        metadata: { sampleRate: 16000, bits: 16, channels: 1, format: "pcm_s16le" },
+      }),
+      /OpenAI transcription returned non-JSON response: HTTP 404 text\/html/,
     );
   });
 });
@@ -212,6 +442,148 @@ describe("voice bridge http api", () => {
         reply: "已收到：收到 4 bytes @ 16000",
         ui_code: "",
       });
+    });
+  });
+
+  it("passes device audio metadata headers into the provider pipeline", async () => {
+    const seen = [];
+    await withServer({
+      transcribe: async ({ audio, metadata }) => {
+        seen.push({ stage: "transcribe", audioLength: audio.length, metadata });
+        return `limit=${metadata.replyLimit}`;
+      },
+      reply: async ({ transcript, metadata }) => {
+        seen.push({ stage: "reply", transcript, metadata });
+        return { reply: `reply:${transcript}:${metadata.format}`, uiCode: "" };
+      },
+    }, async (server) => {
+      const response = await requestJson(server, "/api/chat", {
+        method: "POST",
+        body: Buffer.from([1, 2, 3, 4, 5, 6]),
+        headers: {
+          "content-type": "application/octet-stream",
+          "x-audio-format": "pcm_s32le",
+          "x-sample-rate": "24000",
+          "x-bits": "32",
+          "x-channels": "1",
+          "x-reply-limit": "42",
+        },
+      });
+
+      assert.equal(response.status, 200);
+      assert.equal(response.json.reply, "reply:limit=42:pcm_s32le");
+      assert.deepEqual(seen, [
+        {
+          stage: "transcribe",
+          audioLength: 6,
+          metadata: {
+            format: "pcm_s32le",
+            sampleRate: 24000,
+            bits: 32,
+            channels: 1,
+            replyLimit: 42,
+          },
+        },
+        {
+          stage: "reply",
+          transcript: "limit=42",
+          metadata: {
+            format: "pcm_s32le",
+            sampleRate: 24000,
+            bits: 32,
+            channels: 1,
+            replyLimit: 42,
+          },
+        },
+      ]);
+    });
+  });
+
+  it("exposes debug stats for board voice smoke verification", async () => {
+    await withServer({
+      transcribe: async ({ audio, metadata }) => `bytes=${audio.length},bits=${metadata.bits}`,
+      reply: async ({ transcript }) => ({ reply: `reply:${transcript}`, uiCode: "" }),
+    }, async (server) => {
+      const before = await requestJson(server, "/debug/stats");
+      assert.equal(before.status, 200);
+      assert.deepEqual(before.json, {
+        ok: true,
+        provider: "mock",
+        chat_requests: 0,
+        last_audio_bytes: 0,
+        last_metadata: null,
+        last_transcript: "",
+        last_reply: "",
+        last_ui_code: "",
+      });
+
+      await requestJson(server, "/api/chat", {
+        method: "POST",
+        body: Buffer.from([1, 2, 3, 4, 5]),
+        headers: {
+          "content-type": "application/octet-stream",
+          "x-sample-rate": "16000",
+          "x-bits": "32",
+          "x-channels": "1",
+        },
+      });
+
+      const after = await requestJson(server, "/debug/stats");
+      assert.equal(after.status, 200);
+      assert.deepEqual(after.json, {
+        ok: true,
+        provider: "mock",
+        chat_requests: 1,
+        last_audio_bytes: 5,
+        last_metadata: {
+          format: "pcm_s32le",
+          sampleRate: 16000,
+          bits: 32,
+          channels: 1,
+          replyLimit: 100,
+        },
+        last_transcript: "bytes=5,bits=32",
+        last_reply: "reply:bytes=5,bits=32",
+        last_ui_code: "",
+      });
+    });
+  });
+
+  it("exposes the active provider name through health and debug stats", async () => {
+    await withServer({
+      providerName: "command",
+      transcribe: async () => "transcript",
+      reply: async () => ({ reply: "reply", uiCode: "" }),
+    }, async (server) => {
+      const health = await requestJson(server, "/health");
+      assert.equal(health.status, 200);
+      assert.equal(health.json.provider, "command");
+
+      const stats = await requestJson(server, "/debug/stats");
+      assert.equal(stats.status, 200);
+      assert.equal(stats.json.provider, "command");
+      assert.equal(stats.json.last_ui_code, "");
+    });
+  });
+
+  it("tracks the last returned ui_code in debug stats", async () => {
+    await withServer({
+      providerName: "command",
+      transcribe: async () => "transcript",
+      reply: async () => ({ reply: "reply", uiCode: "return function(ctx) return { screen = ctx.new_screen() } end" }),
+    }, async (server) => {
+      const chat = await requestJson(server, "/api/chat", {
+        method: "POST",
+        body: Buffer.from([1, 2, 3]),
+        headers: { "content-type": "application/octet-stream" },
+      });
+
+      assert.equal(chat.status, 200);
+      assert.equal(chat.json.ui_code, "return function(ctx) return { screen = ctx.new_screen() } end");
+
+      const stats = await requestJson(server, "/debug/stats");
+      assert.equal(stats.status, 200);
+      assert.equal(stats.json.last_ui_code, "return function(ctx) return { screen = ctx.new_screen() } end");
     });
   });
 

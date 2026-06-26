@@ -177,3 +177,9 @@ void vb_lua_native_module_register(lua_State *L, const vb_app_registry_result_t 
 
     lua_pop(L, 2);
 }
+
+void vb_lua_native_module_cleanup(lua_State *L)
+{
+    (void)L;
+    vb_nes_native_module_cleanup();
+}

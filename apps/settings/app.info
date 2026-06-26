@@ -1,0 +1,4 @@
+name = Settings
+entry = main.lua
+description = Minimal device settings panel migrated from upstream HoloCubic settings
+capabilities = lvgl,timer,input,file

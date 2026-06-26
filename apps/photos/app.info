@@ -1,0 +1,4 @@
+name = Photos
+entry = main.lua
+description = Minimal image playlist migrated from upstream HoloCubic Photos
+capabilities = lvgl,timer,input,file

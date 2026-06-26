@@ -95,6 +95,10 @@ function parseCommandJson(command, raw) {
   }
 }
 
+function envFlagEnabled(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
 async function runJob({ audio, metadata, transcribe, reply }) {
   const transcript = await transcribe({ audio, metadata });
   const result = await reply({ transcript, audio, metadata });
@@ -205,6 +209,7 @@ export function createProviderFromEnv({
 } = {}) {
   if (provider === "mock") {
     return {
+      providerName: "mock",
       transcribe: defaultTranscribe,
       reply: defaultReply,
     };
@@ -218,7 +223,10 @@ export function createProviderFromEnv({
     throw new Error("VOICE_BRIDGE_TRANSCRIBE_COMMAND and VOICE_BRIDGE_REPLY_COMMAND are required for command provider");
   }
 
+  const includeAudioInReply = envFlagEnabled(env.VOICE_BRIDGE_REPLY_INCLUDE_AUDIO);
+
   return {
+    providerName: "command",
     transcribe: async ({ audio, metadata }) => {
       const payload = {
         audio_base64: audio.toString("base64"),
@@ -236,7 +244,7 @@ export function createProviderFromEnv({
     },
     reply: async ({ transcript, audio, metadata }) => {
       const payload = { transcript, metadata };
-      if (audio) {
+      if (includeAudioInReply && audio) {
         payload.audio_base64 = audio.toString("base64");
       }
       const raw = await runCommand(
@@ -257,17 +265,51 @@ export function createProviderFromEnv({
 
 export function createVoiceBridgeServer({
   asyncMode = false,
+  providerName = "mock",
   transcribe = defaultTranscribe,
   reply = defaultReply,
 } = {}) {
   const jobs = new Map();
+  const stats = {
+    chatRequests: 0,
+    lastAudioBytes: 0,
+    lastMetadata: null,
+    lastTranscript: "",
+    lastReply: "",
+    lastUiCode: "",
+  };
+
+  async function runTrackedJob({ audio, metadata }) {
+    stats.chatRequests += 1;
+    stats.lastAudioBytes = audio.length;
+    stats.lastMetadata = metadata;
+    const result = await runJob({ audio, metadata, transcribe, reply });
+    stats.lastTranscript = result.transcript || "";
+    stats.lastReply = result.reply || "";
+    stats.lastUiCode = result.ui_code || "";
+    return result;
+  }
 
   return createServer(async (request, response) => {
     const url = new URL(request.url, "http://localhost");
 
     try {
       if (url.pathname === "/health" && request.method === "GET") {
-        jsonResponse(response, 200, { ok: true, service: "vibeboard-voice-bridge" });
+        jsonResponse(response, 200, { ok: true, service: "vibeboard-voice-bridge", provider: providerName });
+        return;
+      }
+
+      if (url.pathname === "/debug/stats" && request.method === "GET") {
+        jsonResponse(response, 200, {
+          ok: true,
+          provider: providerName,
+          chat_requests: stats.chatRequests,
+          last_audio_bytes: stats.lastAudioBytes,
+          last_metadata: stats.lastMetadata,
+          last_transcript: stats.lastTranscript,
+          last_reply: stats.lastReply,
+          last_ui_code: stats.lastUiCode,
+        });
         return;
       }
 
@@ -279,7 +321,7 @@ export function createVoiceBridgeServer({
         }
         const metadata = parseMetadata(request);
         if (!asyncMode) {
-          jsonResponse(response, 200, await runJob({ audio, metadata, transcribe, reply }));
+          jsonResponse(response, 200, await runTrackedJob({ audio, metadata }));
           return;
         }
 
@@ -288,7 +330,7 @@ export function createVoiceBridgeServer({
           status: "pending",
           result: null,
         });
-        runJob({ audio, metadata, transcribe, reply })
+        runTrackedJob({ audio, metadata })
           .then((result) => jobs.set(id, { status: "done", result }))
           .catch((error) => jobs.set(id, { status: "done", result: { ok: false, error: error.message } }));
         jsonResponse(response, 200, { ok: true, pending: true, id });
@@ -324,8 +366,10 @@ function printHelp() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
+  let parsedArgs = false;
   try {
     const options = parseArgs();
+    parsedArgs = true;
     if (options.help) {
       printHelp();
     } else {
@@ -347,7 +391,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
   } catch (error) {
     console.error(error.message);
-    printHelp();
+    if (!parsedArgs) {
+      printHelp();
+    }
     process.exitCode = 1;
   }
 }

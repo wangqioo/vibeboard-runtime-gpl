@@ -79,13 +79,14 @@ This list is checked against `tools/app-validator/index.mjs` by `npm run test:ai
 
 Allowed module calls:
 
-- `app.list()`, `app.rescan()`, `app.current()`, `app.exiting()`, `app.exit([reason])`, `app.launch(id)`, `app.set_home_exit(enabled)`, `app.on("exit"|"launch"|"stop", callback)`
-- `file.exists(path)`, `file.open(path, mode)`, `file.read(path)`, `file.getcontents(path)`, `file.write(path, text)`, `file.list(path)`, `file.listdir(path)`
+- `app.list()`, `app.rescan()`, `app.current()`, `app.exiting()`, `app.exit([reason])`, `app.launch(id)`, `app.set_home_exit(enabled)`, `app.set_webui(enabled)`, `app.route(path, callback)`, `app.route_base()`, `app.on("exit"|"launch"|"stop", callback)`
+- `file.exists(path)`, `file.open(path, mode)`, `file.read(path)`, `file.getcontents(path)`, `file.write(path, text)`, `file.putcontents(path, text)`, `file.stat(path)`, `file.mkdir(path)`, `file.remove(path)`, `file.rename(from, to)`, `file.rmdir(path)`, `file.list(path)`, `file.listdir(path)`
 - `gamepad.state()`, `gamepad.start(opts)`, `gamepad.stop()`, `gamepad.on(event, callback)`, `gamepad.off([event])`, `gamepad.rescan()`, `gamepad.push_state(state)`
 - `http.get(url[, opts], callback)`, `http.post(url[, opts], body, callback)`, `http.cubicserver.get(path, headers, callback)`
-- `i2s.start(id, opts)`, `i2s.read(id, max_bytes[, timeout_ms])`, `i2s.stop(id)`, `i2s.status(id)`
+- `i2s.start(id, opts)`, `i2s.read(id, max_bytes[, timeout_ms])`, `i2s.write(id, data[, timeout_ms])`, `i2s.stop(id)`, `i2s.status(id)`
 - `json.decode(text)`, `json.encode(value)`, `sjson.decode(text)`, `sjson.encode(value)`
 - `key.on(callback)`, `key.off()`, `key.push(code, event)`, `key.repeat_start(code[, delay_ms, interval_ms])`, `key.repeat_stop(code)`
+- `sys()`, `sys.setbrightness(percent)`
 - `time.get()`, `time.getlocal()`, `time.settimezone(tz)`, `time.initntp(host)`
 - `tmr.create()`, `tmr.now()`, `tmr.time()`, plus timer object `alarm/start/stop/unregister/state/interval`
 - `touch.on(callback)`, `touch.off()`, `touch.push(event, x, y[, ts_ms])`
@@ -107,7 +108,7 @@ Generated UI code may use only the LVGL symbols below. If the app needs another 
 - `lv_asset_exists`, `lv_resolve_asset_path`
 - `lv_bar_create`, `lv_bar_set_range`, `lv_bar_set_value`
 - `lv_btn_create`
-- `lv_canvas_begin`, `lv_canvas_create`, `lv_canvas_draw_rect`, `lv_canvas_draw_text`, `lv_canvas_end`, `lv_canvas_fill_bg`, `lv_canvas_frame_begin`, `lv_canvas_frame_end`
+- `lv_canvas_begin`, `lv_canvas_create`, `lv_canvas_draw_rect`, `lv_canvas_draw_text`, `lv_canvas_end`, `lv_canvas_fill_bg`, `lv_canvas_frame_begin`, `lv_canvas_frame_end`, `lv_canvas_load_bmp`
 - `lv_dropdown_create`, `lv_dropdown_get_selected`, `lv_dropdown_set_options`, `lv_dropdown_set_selected`
 - `lv_font_free`, `lv_font_load`
 - `lv_gif_create`, `lv_gif_set_src`
@@ -127,7 +128,7 @@ Generated UI code may use only the LVGL symbols below. If the app needs another 
 - `lv_switch_create`
 - `lv_textarea_add_text`, `lv_textarea_create`, `lv_textarea_get_text`, `lv_textarea_set_text`
 
-Examples that must return `Runtime update required`: `app.set_status_text(...)`, `gamepad.connect(...)`, `i2s.write(...)`, `tmr.delay(...)`, unsupported `lv_*` bindings, native ABI changes, or hardware driver work.
+Examples that must return `Runtime update required`: `app.set_status_text(...)`, `gamepad.connect(...)`, `tmr.delay(...)`, unsupported `lv_*` bindings, native ABI changes, or hardware driver work.
 
 Return or report `Runtime update required` when the request needs:
 

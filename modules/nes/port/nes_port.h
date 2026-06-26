@@ -17,6 +17,7 @@ void nes_port_free(void *ptr);
 uint32_t nes_port_millis(void);
 uint64_t nes_port_micros(void);
 void nes_port_delay(uint32_t ms);
+void nes_port_yield(void);
 uint32_t nes_port_random(void);
 /**
  * @brief Convert a function pointer stored in ELF data sections to executable IROM space when needed.

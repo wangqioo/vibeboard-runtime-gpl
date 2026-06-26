@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include "app_registry.h"
 #include "board_lckfb_szpi_s3.h"
@@ -22,6 +23,18 @@ static const char *TAG = "lua_file";
 typedef struct {
     FILE *file;
 } vb_lua_file_handle_t;
+
+static vb_lua_file_handle_t *check_file(lua_State *L, int index);
+
+static void log_file_error(const char *action, const char *path, const char *detail)
+{
+    ESP_LOGE(TAG, "%s path=%s detail=%s", action, path != NULL ? path : "<null>", detail != NULL ? detail : "<none>");
+}
+
+static void log_file_errno(const char *action, const char *path, int err)
+{
+    ESP_LOGE(TAG, "%s path=%s detail=%s", action, path != NULL ? path : "<null>", strerror(err));
+}
 
 static const char *get_app_dir(lua_State *L)
 {
@@ -63,14 +76,42 @@ static bool build_joined_path(char *dest, size_t dest_size, const char *parent, 
     return true;
 }
 
+static const char *path_basename(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    return slash != NULL ? slash + 1 : path;
+}
+
+static void push_file_entry_table(lua_State *L, const char *path, const struct stat *st)
+{
+    lua_newtable(L);
+
+    lua_pushstring(L, path_basename(path));
+    lua_setfield(L, -2, "name");
+
+    lua_pushboolean(L, S_ISDIR(st->st_mode));
+    lua_setfield(L, -2, "is_dir");
+
+    lua_pushinteger(L, (lua_Integer)st->st_size);
+    lua_setfield(L, -2, "size");
+
+    lua_pushboolean(L, S_ISREG(st->st_mode));
+    lua_setfield(L, -2, "is_file");
+
+    lua_pushstring(L, path);
+    lua_setfield(L, -2, "path");
+}
+
 static bool resolve_path(lua_State *L, int arg, char *resolved, size_t resolved_size, bool write_access)
 {
     const char *path = luaL_checkstring(L, arg);
     const char *app_dir = get_app_dir(L);
     if (app_dir == NULL || app_dir[0] == '\0') {
+        log_file_error("resolve", path, "file app dir unavailable");
         return luaL_error(L, "file app dir unavailable");
     }
     if (path[0] == '\0' || has_traversal(path)) {
+        log_file_error("resolve", path, "file path escapes app sandbox");
         return luaL_error(L, "file path escapes app sandbox");
     }
 
@@ -81,6 +122,7 @@ static bool resolve_path(lua_State *L, int arg, char *resolved, size_t resolved_
 
     if (strncmp(path, "/sd/", 4) == 0) {
         if (write_access) {
+            log_file_error("resolve", path, "file write only supports app-local paths");
             return luaL_error(L, "file write only supports app-local paths");
         }
         return build_joined_path(resolved, resolved_size, VB_SD_MOUNT_POINT, path + 4);
@@ -88,6 +130,7 @@ static bool resolve_path(lua_State *L, int arg, char *resolved, size_t resolved_
 
     if (strncmp(path, VB_SD_MOUNT_POINT, strlen(VB_SD_MOUNT_POINT)) == 0) {
         if (write_access) {
+            log_file_error("resolve", path, "file write only supports app-local paths");
             return luaL_error(L, "file write only supports app-local paths");
         }
         strlcpy(resolved, path, resolved_size);
@@ -95,10 +138,15 @@ static bool resolve_path(lua_State *L, int arg, char *resolved, size_t resolved_
     }
 
     if (path[0] == '/') {
+        log_file_error("resolve", path, "file path must be app-relative or /sd/...");
         return luaL_error(L, "file path must be app-relative or /sd/...");
     }
 
-    return build_joined_path(resolved, resolved_size, app_dir, path);
+    if (!build_joined_path(resolved, resolved_size, app_dir, path)) {
+        log_file_error("resolve", path, "file path too long");
+        return false;
+    }
+    return true;
 }
 
 static int file_exists(lua_State *L)
@@ -110,7 +158,33 @@ static int file_exists(lua_State *L)
     }
 
     struct stat st;
-    lua_pushboolean(L, stat(path, &st) == 0);
+    if (stat(path, &st) != 0) {
+        log_file_errno("exists", path, errno);
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int file_stat(lua_State *L)
+{
+    char path[VB_APP_PATH_MAX];
+    if (!resolve_path(L, 1, path, sizeof(path), false)) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "path too long");
+        return 2;
+    }
+
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        log_file_errno("stat", path, errno);
+        lua_pushnil(L);
+        lua_pushfstring(L, "stat failed: %s", strerror(errno));
+        return 2;
+    }
+
+    push_file_entry_table(L, path, &st);
     return 1;
 }
 
@@ -125,6 +199,7 @@ static int file_read(lua_State *L)
 
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
+        log_file_errno("read-open", path, errno);
         lua_pushnil(L);
         lua_pushfstring(L, "open failed: %s", strerror(errno));
         return 2;
@@ -132,6 +207,7 @@ static int file_read(lua_State *L)
 
     if (fseek(file, 0, SEEK_END) != 0) {
         fclose(file);
+        log_file_error("read-seek", path, "seek failed");
         lua_pushnil(L);
         lua_pushliteral(L, "seek failed");
         return 2;
@@ -139,6 +215,7 @@ static int file_read(lua_State *L)
     long size = ftell(file);
     if (size < 0 || size > VB_LUA_FILE_MAX_READ) {
         fclose(file);
+        log_file_error("read-size", path, "file too large");
         lua_pushnil(L);
         lua_pushliteral(L, "file too large");
         return 2;
@@ -166,6 +243,7 @@ static int file_write(lua_State *L)
     const char *data = luaL_checklstring(L, 2, &len);
     FILE *file = fopen(path, "wb");
     if (file == NULL) {
+        log_file_errno("write-open", path, errno);
         lua_pushboolean(L, 0);
         lua_pushfstring(L, "open failed: %s", strerror(errno));
         return 2;
@@ -174,9 +252,219 @@ static int file_write(lua_State *L)
     fclose(file);
     lua_pushboolean(L, written == len);
     if (written != len) {
+        log_file_error("write", path, "short write");
         lua_pushliteral(L, "short write");
         return 2;
     }
+    return 1;
+}
+
+static int file_handle_write(lua_State *L)
+{
+    vb_lua_file_handle_t *handle = check_file(L, 1);
+    if (handle->file == NULL) {
+        log_file_error("handle-write", NULL, "file closed");
+        lua_pushboolean(L, 0);
+        lua_pushliteral(L, "file closed");
+        return 2;
+    }
+
+    size_t len = 0;
+    const char *data = luaL_checklstring(L, 2, &len);
+    size_t written = fwrite(data, 1, len, handle->file);
+    if (written != len) {
+        log_file_error("handle-write", NULL, "short write");
+        lua_pushboolean(L, 0);
+        lua_pushliteral(L, "short write");
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int file_handle_seek(lua_State *L)
+{
+    vb_lua_file_handle_t *handle = check_file(L, 1);
+    if (handle->file == NULL) {
+        log_file_error("handle-seek", NULL, "file closed");
+        lua_pushnil(L);
+        lua_pushliteral(L, "file closed");
+        return 2;
+    }
+
+    const char *whence = luaL_optstring(L, 2, "cur");
+    long offset = (long)luaL_optinteger(L, 3, 0);
+    int origin = SEEK_CUR;
+    if (strcmp(whence, "set") == 0) {
+        origin = SEEK_SET;
+    } else if (strcmp(whence, "cur") == 0) {
+        origin = SEEK_CUR;
+    } else if (strcmp(whence, "end") == 0) {
+        origin = SEEK_END;
+    } else {
+        lua_pushnil(L);
+        lua_pushliteral(L, "invalid seek mode");
+        return 2;
+    }
+
+    if (fseek(handle->file, offset, origin) != 0) {
+        log_file_errno("handle-seek", NULL, errno);
+        lua_pushnil(L);
+        lua_pushfstring(L, "seek failed: %s", strerror(errno));
+        return 2;
+    }
+
+    long pos = ftell(handle->file);
+    if (pos < 0) {
+        log_file_errno("handle-seek", NULL, errno);
+        lua_pushnil(L);
+        lua_pushfstring(L, "seek failed: %s", strerror(errno));
+        return 2;
+    }
+
+    lua_pushinteger(L, (lua_Integer)pos);
+    return 1;
+}
+
+static int file_handle_flush(lua_State *L)
+{
+    vb_lua_file_handle_t *handle = check_file(L, 1);
+    if (handle->file == NULL) {
+        log_file_error("handle-flush", NULL, "file closed");
+        lua_pushboolean(L, 0);
+        lua_pushliteral(L, "file closed");
+        return 2;
+    }
+
+    if (fflush(handle->file) != 0) {
+        log_file_errno("handle-flush", NULL, errno);
+        lua_pushboolean(L, 0);
+        lua_pushfstring(L, "flush failed: %s", strerror(errno));
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int file_putcontents(lua_State *L)
+{
+    char path[VB_APP_PATH_MAX];
+    if (!resolve_path(L, 1, path, sizeof(path), true)) {
+        lua_pushboolean(L, 0);
+        lua_pushliteral(L, "path too long");
+        return 2;
+    }
+
+    size_t len = 0;
+    const char *data = luaL_checklstring(L, 2, &len);
+    FILE *file = fopen(path, "wb");
+    if (file == NULL) {
+        log_file_errno("putcontents-open", path, errno);
+        lua_pushboolean(L, 0);
+        lua_pushfstring(L, "open failed: %s", strerror(errno));
+        return 2;
+    }
+
+    size_t written = fwrite(data, 1, len, file);
+    fclose(file);
+    if (written != len) {
+        log_file_error("putcontents", path, "short write");
+        lua_pushboolean(L, 0);
+        lua_pushliteral(L, "short write");
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int file_mkdir(lua_State *L)
+{
+    char path[VB_APP_PATH_MAX];
+    if (!resolve_path(L, 1, path, sizeof(path), true)) {
+        lua_pushboolean(L, 0);
+        lua_pushliteral(L, "path too long");
+        return 2;
+    }
+
+    if (mkdir(path, 0777) != 0) {
+        if (errno == EEXIST) {
+            struct stat st;
+            if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+                lua_pushboolean(L, 1);
+                return 1;
+            }
+        }
+        log_file_errno("mkdir", path, errno);
+        lua_pushboolean(L, 0);
+        lua_pushfstring(L, "mkdir failed: %s", strerror(errno));
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int file_remove(lua_State *L)
+{
+    char path[VB_APP_PATH_MAX];
+    if (!resolve_path(L, 1, path, sizeof(path), true)) {
+        lua_pushboolean(L, 0);
+        lua_pushliteral(L, "path too long");
+        return 2;
+    }
+
+    if (remove(path) != 0) {
+        log_file_errno("remove", path, errno);
+        lua_pushboolean(L, 0);
+        lua_pushfstring(L, "remove failed: %s", strerror(errno));
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int file_rename(lua_State *L)
+{
+    char from[VB_APP_PATH_MAX];
+    char to[VB_APP_PATH_MAX];
+    if (!resolve_path(L, 1, from, sizeof(from), true) || !resolve_path(L, 2, to, sizeof(to), true)) {
+        lua_pushboolean(L, 0);
+        lua_pushliteral(L, "path too long");
+        return 2;
+    }
+
+    if (rename(from, to) != 0) {
+        log_file_errno("rename", from, errno);
+        lua_pushboolean(L, 0);
+        lua_pushfstring(L, "rename failed: %s", strerror(errno));
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int file_rmdir(lua_State *L)
+{
+    char path[VB_APP_PATH_MAX];
+    if (!resolve_path(L, 1, path, sizeof(path), true)) {
+        lua_pushboolean(L, 0);
+        lua_pushliteral(L, "path too long");
+        return 2;
+    }
+
+    if (rmdir(path) != 0) {
+        log_file_errno("rmdir", path, errno);
+        lua_pushboolean(L, 0);
+        lua_pushfstring(L, "rmdir failed: %s", strerror(errno));
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
     return 1;
 }
 
@@ -191,6 +479,7 @@ static int file_list(lua_State *L)
 
     DIR *dir = opendir(path);
     if (dir == NULL) {
+        log_file_errno("list-open", path, errno);
         lua_pushnil(L);
         lua_pushfstring(L, "opendir failed: %s", strerror(errno));
         return 2;
@@ -211,6 +500,50 @@ static int file_list(lua_State *L)
     return 1;
 }
 
+static int file_listdir(lua_State *L)
+{
+    char path[VB_APP_PATH_MAX];
+    if (!resolve_path(L, 1, path, sizeof(path), false)) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "path too long");
+        return 2;
+    }
+
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        log_file_errno("listdir-open", path, errno);
+        lua_pushnil(L);
+        lua_pushfstring(L, "opendir failed: %s", strerror(errno));
+        return 2;
+    }
+
+    lua_newtable(L);
+    int index = 1;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+
+        char child_path[VB_APP_PATH_MAX];
+        if (!build_joined_path(child_path, sizeof(child_path), path, entry->d_name)) {
+            continue;
+        }
+
+        struct stat st;
+        if (stat(child_path, &st) != 0) {
+            log_file_errno("listdir-stat", child_path, errno);
+            continue;
+        }
+
+        lua_pushinteger(L, index++);
+        push_file_entry_table(L, child_path, &st);
+        lua_settable(L, -3);
+    }
+    closedir(dir);
+    return 1;
+}
+
 static vb_lua_file_handle_t *check_file(lua_State *L, int index)
 {
     return (vb_lua_file_handle_t *)luaL_checkudata(L, index, VB_LUA_FILE_HANDLE_META);
@@ -220,6 +553,7 @@ static int file_handle_read(lua_State *L)
 {
     vb_lua_file_handle_t *handle = check_file(L, 1);
     if (handle->file == NULL) {
+        log_file_error("handle-read", NULL, "file closed");
         lua_pushnil(L);
         lua_pushliteral(L, "file closed");
         return 2;
@@ -227,6 +561,7 @@ static int file_handle_read(lua_State *L)
 
     int bytes = (int)luaL_optinteger(L, 2, VB_LUA_FILE_MAX_READ);
     if (bytes <= 0 || bytes > VB_LUA_FILE_MAX_READ) {
+        log_file_error("handle-read", NULL, "invalid read size");
         return luaL_error(L, "invalid read size");
     }
     char *buffer = (char *)lua_newuserdata(L, (size_t)bytes);
@@ -242,6 +577,8 @@ static int file_handle_close(lua_State *L)
     if (handle->file != NULL) {
         fclose(handle->file);
         handle->file = NULL;
+    } else {
+        log_file_error("handle-close", NULL, "file closed");
     }
     return 0;
 }
@@ -281,6 +618,9 @@ void vb_lua_file_register(lua_State *L, const vb_app_registry_result_t *app)
     if (luaL_newmetatable(L, VB_LUA_FILE_HANDLE_META)) {
         static const luaL_Reg handle_methods[] = {
             {"read", file_handle_read},
+            {"write", file_handle_write},
+            {"seek", file_handle_seek},
+            {"flush", file_handle_flush},
             {"close", file_handle_close},
             {"__gc", file_handle_close},
             {NULL, NULL},
@@ -293,11 +633,17 @@ void vb_lua_file_register(lua_State *L, const vb_app_registry_result_t *app)
 
     static const luaL_Reg file_functions[] = {
         {"exists", file_exists},
+        {"stat", file_stat},
         {"read", file_read},
         {"getcontents", file_read},
         {"write", file_write},
+        {"putcontents", file_putcontents},
+        {"mkdir", file_mkdir},
+        {"remove", file_remove},
+        {"rename", file_rename},
+        {"rmdir", file_rmdir},
         {"list", file_list},
-        {"listdir", file_list},
+        {"listdir", file_listdir},
         {"open", file_open},
         {NULL, NULL},
     };

@@ -18,6 +18,7 @@ idf_component_register(
         "lua_lvgl_widgets.c"
         "lua_native_module.c"
         "lua_sjson.c"
+        "lua_sys.c"
         "lua_time.c"
         "lua_tmr.c"
         "lua_touch.c"
@@ -72,4 +73,13 @@ idf_component_register(
         sdmmc
         vfs
     LDFRAGMENTS "linker.lf"
+)
+
+idf_component_get_property(lvgl_lib lvgl__lvgl COMPONENT_LIB)
+target_include_directories(${lvgl_lib} PUBLIC ${CMAKE_CURRENT_LIST_DIR})
+target_sources(${lvgl_lib} PRIVATE ${CMAKE_CURRENT_LIST_DIR}/lvgl_runtime_alloc.c)
+target_compile_definitions(${lvgl_lib} PUBLIC
+    LV_MEM_CUSTOM_ALLOC=lvgl_runtime_alloc
+    LV_MEM_CUSTOM_FREE=lvgl_runtime_free
+    LV_MEM_CUSTOM_REALLOC=lvgl_runtime_realloc
 )

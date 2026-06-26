@@ -1,4 +1,4 @@
 name = smoke_app_manager
 entry = main.lua
 description = Lua app manager smoke test
-capabilities = lvgl,timer,input
+capabilities = lvgl,timer,input,file,webui

@@ -1,0 +1,4 @@
+name = Plane
+entry = main.lua
+description = Minimal sprite plane game migrated from upstream HoloCubic Plane War
+capabilities = lvgl,timer,input,file

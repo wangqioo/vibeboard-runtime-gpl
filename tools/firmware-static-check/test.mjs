@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
+const packageJsonPath = join(repoRoot, "package.json");
 const firmwareRoot = join(repoRoot, "firmware/vibeboard_runtime");
 const boardHeaderPath = join(firmwareRoot, "main/board_lckfb_szpi_s3.h");
 const boardSourcePath = join(firmwareRoot, "main/board_lckfb_szpi_s3.c");
@@ -23,6 +24,7 @@ const luaLvglInternalHeaderPath = join(firmwareRoot, "main/lua_lvgl_internal.h")
 const luaLvglFsSourcePath = join(firmwareRoot, "main/lua_lvgl_fs.c");
 const luaLvglCanvasSourcePath = join(firmwareRoot, "main/lua_lvgl_canvas.c");
 const luaLvglWidgetsSourcePath = join(firmwareRoot, "main/lua_lvgl_widgets.c");
+const lvglBmpSourcePath = join(firmwareRoot, "managed_components/lvgl__lvgl/src/extra/libs/bmp/lv_bmp.c");
 const luaFileSourcePath = join(firmwareRoot, "main/lua_file.c");
 const luaFileHeaderPath = join(firmwareRoot, "main/lua_file.h");
 const luaHttpSourcePath = join(firmwareRoot, "main/lua_http.c");
@@ -53,12 +55,17 @@ const nesHostShimSourcePath = join(firmwareRoot, "main/nes_host_v1_shim.c");
 const nesHostShimHeaderPath = join(firmwareRoot, "main/nes_host_v1_shim.h");
 const upstreamNesRoot = join(repoRoot, "modules/nes");
 const upstreamNesCoreBridgeHeaderPath = join(upstreamNesRoot, "runtime/nes_core_bridge.h");
+const upstreamNesCoreBridgeSourcePath = join(upstreamNesRoot, "runtime/nes_core_bridge.cpp");
 const upstreamNesPortHeaderPath = join(upstreamNesRoot, "port/nes_port.h");
+const upstreamNesPortSourcePath = join(upstreamNesRoot, "port/nes_port.cpp");
 const upstreamNesArduinoHeaderPath = join(upstreamNesRoot, "port/Arduino.h");
 const upstreamNesAudioHeaderPath = join(upstreamNesRoot, "audio/nes_audio_out.h");
 const moduleAbiHeaderPath = join(firmwareRoot, "main/module_abi.h");
+const runtimeVersionHeaderPath = join(firmwareRoot, "main/runtime_version.h");
 const luaTimeSourcePath = join(firmwareRoot, "main/lua_time.c");
 const luaTimeHeaderPath = join(firmwareRoot, "main/lua_time.h");
+const luaSysSourcePath = join(firmwareRoot, "main/lua_sys.c");
+const luaSysHeaderPath = join(firmwareRoot, "main/lua_sys.h");
 const luaWifiSourcePath = join(firmwareRoot, "main/lua_wifi.c");
 const luaWifiHeaderPath = join(firmwareRoot, "main/lua_wifi.h");
 const runtimeWifiSourcePath = join(firmwareRoot, "main/runtime_wifi.c");
@@ -79,6 +86,11 @@ const smokeVisualSourcePath = join(repoRoot, "apps/smoke_visual/main.lua");
 const smokeVisualBmpPath = join(repoRoot, "apps/smoke_visual/assets/icon.bmp");
 const smokeControlsInfoPath = join(repoRoot, "apps/smoke_controls/app.info");
 const smokeControlsSourcePath = join(repoRoot, "apps/smoke_controls/main.lua");
+const smokeLvglWidgetsInfoPath = join(repoRoot, "apps/smoke_lvgl_widgets/app.info");
+const smokeLvglWidgetsSourcePath = join(repoRoot, "apps/smoke_lvgl_widgets/main.lua");
+const smokeLvglWidgetsBmpPath = join(repoRoot, "apps/smoke_lvgl_widgets/assets/icon.bmp");
+const smokeLvglStyleInfoPath = join(repoRoot, "apps/smoke_lvgl_style/app.info");
+const smokeLvglStyleSourcePath = join(repoRoot, "apps/smoke_lvgl_style/main.lua");
 const smokeNetworkInfoPath = join(repoRoot, "apps/smoke_network/app.info");
 const smokeNetworkSourcePath = join(repoRoot, "apps/smoke_network/main.lua");
 const smokeNetworkConfigPath = join(repoRoot, "apps/smoke_network/wifi.example.json");
@@ -115,6 +127,29 @@ const conwayLifeFontPath = join(repoRoot, "apps/conway_life/font/time_46.bin");
 const fluidPendantInfoPath = join(repoRoot, "apps/fluid_pendant/app.info");
 const fluidPendantSourcePath = join(repoRoot, "apps/fluid_pendant/main.lua");
 const fluidPendantFontPath = join(repoRoot, "apps/fluid_pendant/font/time_46.bin");
+const btcInfoPath = join(repoRoot, "apps/btc/app.info");
+const btcSourcePath = join(repoRoot, "apps/btc/main.lua");
+const settingsInfoPath = join(repoRoot, "apps/settings/app.info");
+const settingsSourcePath = join(repoRoot, "apps/settings/main.lua");
+const hwmonInfoPath = join(repoRoot, "apps/hwmon/app.info");
+const hwmonSourcePath = join(repoRoot, "apps/hwmon/main.lua");
+const hwmonConfigPath = join(repoRoot, "apps/hwmon/config.json");
+const spectrumInfoPath = join(repoRoot, "apps/spectrum/app.info");
+const spectrumSourcePath = join(repoRoot, "apps/spectrum/main.lua");
+const codexBuddyInfoPath = join(repoRoot, "apps/codex_buddy/app.info");
+const codexBuddySourcePath = join(repoRoot, "apps/codex_buddy/main.lua");
+const codexBuddyConfigPath = join(repoRoot, "apps/codex_buddy/config.example.json");
+const codexBuddyAssetManifestPath = join(repoRoot, "apps/codex_buddy/assets/bufo/manifest.json");
+const videosInfoPath = join(repoRoot, "apps/videos/app.info");
+const videosSourcePath = join(repoRoot, "apps/videos/main.lua");
+const photosInfoPath = join(repoRoot, "apps/photos/app.info");
+const photosSourcePath = join(repoRoot, "apps/photos/main.lua");
+const planeInfoPath = join(repoRoot, "apps/plane/app.info");
+const planeSourcePath = join(repoRoot, "apps/plane/main.lua");
+const lvBenchmarkInfoPath = join(repoRoot, "apps/lv-benchmark/app.info");
+const lvBenchmarkSourcePath = join(repoRoot, "apps/lv-benchmark/main.lua");
+const miniClawInfoPath = join(repoRoot, "apps/mini_claw/app.info");
+const miniClawSourcePath = join(repoRoot, "apps/mini_claw/main.lua");
 const app2048InfoPath = join(repoRoot, "apps/2048/app.info");
 const app2048SourcePath = join(repoRoot, "apps/2048/main.lua");
 const app2048FontPath = join(repoRoot, "apps/2048/font/tile_18.bin");
@@ -122,13 +157,23 @@ const weatherInfoPath = join(repoRoot, "apps/weather/app.info");
 const weatherSourcePath = join(repoRoot, "apps/weather/main.lua");
 const voiceAiInfoPath = join(repoRoot, "apps/voice_ai/app.info");
 const voiceAiSourcePath = join(repoRoot, "apps/voice_ai/main.lua");
+const voiceAiSmokeToolPath = join(repoRoot, "tools/voice-ai-smoke/index.mjs");
+const voiceAiSmokeTestPath = join(repoRoot, "tools/voice-ai-smoke/test.mjs");
 const nesgameInfoPath = join(repoRoot, "apps/nesgame/app.info");
 const nesgameSourcePath = join(repoRoot, "apps/nesgame/main.lua");
 const nesgameNativeManifestPath = join(repoRoot, "apps/nesgame/native/nes.vbn");
+const nesgameSmokeToolPath = join(repoRoot, "tools/nesgame-smoke/index.mjs");
+const nesgameSmokeTestPath = join(repoRoot, "tools/nesgame-smoke/test.mjs");
 
 function readRequired(path) {
   assert.equal(existsSync(path), true, `${path} should exist`);
   return readFileSync(path, "utf8");
+}
+
+function functionBody(source, name) {
+  const match = source.match(new RegExp(`static int32_t ${name}\\([^)]*\\)\\n\\{([\\s\\S]*?)\\n\\}`));
+  assert.ok(match, `${name} should exist`);
+  return match[1];
 }
 
 describe("vibeboard runtime firmware static guardrails", () => {
@@ -174,11 +219,24 @@ describe("vibeboard runtime firmware static guardrails", () => {
   it("reserves internal DMA memory for SD-backed Lua apps", () => {
     const defaults = readRequired(sdkconfigDefaultsPath);
     const board = readRequired(boardSourcePath);
+    const cmake = readRequired(cmakePath);
+    const allocator = readRequired(join(firmwareRoot, "main/lvgl_runtime_alloc.c"));
 
     assert.match(defaults, /CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=2048/);
     assert.match(defaults, /CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=0/);
     assert.match(defaults, /# CONFIG_FATFS_ALLOC_PREFER_EXTRAM is not set/);
+    assert.match(defaults, /CONFIG_LV_MEM_CUSTOM_INCLUDE="lvgl_runtime_alloc\.h"/);
+    assert.doesNotMatch(defaults, /CONFIG_LV_MEM_CUSTOM_INCLUDE="stdlib\.h"/);
     assert.match(board, /host\.flags\s*\|=\s*SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF/);
+    assert.match(cmake, /idf_component_get_property\(lvgl_lib\s+lvgl__lvgl\s+COMPONENT_LIB\)/);
+    assert.match(cmake, /target_include_directories\(\$\{lvgl_lib\}\s+PUBLIC\s+\$\{CMAKE_CURRENT_LIST_DIR\}\)/);
+    assert.match(cmake, /target_sources\(\$\{lvgl_lib\}\s+PRIVATE\s+\$\{CMAKE_CURRENT_LIST_DIR\}\/lvgl_runtime_alloc\.c\)/);
+    assert.match(cmake, /LV_MEM_CUSTOM_ALLOC=lvgl_runtime_alloc/);
+    assert.match(cmake, /LV_MEM_CUSTOM_FREE=lvgl_runtime_free/);
+    assert.match(cmake, /LV_MEM_CUSTOM_REALLOC=lvgl_runtime_realloc/);
+    assert.match(allocator, /heap_caps_malloc\(size,\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
+    assert.match(allocator, /heap_caps_realloc\(ptr,\s*new_size,\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
+    assert.match(allocator, /heap_caps_free\(ptr\)/);
   });
 
   it("keeps runtime WiFi startup from exhausting internal RAM", () => {
@@ -245,15 +303,34 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /VB_LCD_DRAW_BUF_HEIGHT\s+5/);
   });
 
+  it("keeps the LVGL task stack large enough for deferred app resource loads", () => {
+    const source = readRequired(boardSourcePath);
+
+    const stackMatch = source.match(/\.task_stack\s*=\s*(\d+)/);
+    assert.ok(stackMatch, "board LVGL init overrides the default task stack");
+    assert.ok(Number(stackMatch[1]) >= 8192, "LVGL task stack must handle deferred Weather background loading");
+  });
+
   it("routes native display DMA writes through the board LCD panel", () => {
     const header = readRequired(boardHeaderPath);
     const source = readRequired(boardSourcePath);
     const hostApi = readRequired(moduleHostApiSourcePath);
 
     assert.match(header, /vb_board_draw_rgb565/);
+    assert.match(header, /vb_board_display_takeover/);
+    assert.match(header, /vb_board_display_release_takeover/);
+    assert.match(source, /lvgl_port_stop\(\)/);
+    assert.match(source, /lvgl_port_resume\(\)/);
+    assert.match(source, /s_display_takeover_active/);
     assert.match(source, /esp_lcd_panel_draw_bitmap\(lcd_panel/);
     assert.match(source, /vb_board_draw_rgb565/);
+    assert.match(source, /lvgl_port_lock\(pdMS_TO_TICKS\(100\)\)/);
+    assert.match(source, /lvgl_port_unlock\(\)/);
     assert.match(hostApi, /board_lckfb_szpi_s3\.h/);
+    assert.match(hostApi, /ESP_LOGW\(TAG,\s*"display push failed/);
+    assert.match(hostApi, /esp_err_t\s+draw_err\s*=\s*vb_board_draw_rgb565/);
+    assert.match(hostApi, /vb_board_display_takeover\(\)/);
+    assert.match(hostApi, /vb_board_display_release_takeover\(\)/);
     assert.match(hostApi, /vb_board_draw_rgb565\(x,\s*y,\s*width,\s*height,\s*rgb565\)/);
     assert.doesNotMatch(hostApi, /vb_host_display_push_image_dma[\s\S]*return\s+-1;\s*\n}/);
   });
@@ -262,6 +339,14 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const source = readRequired(boardSourcePath);
 
     assert.match(source, /\.format_if_mount_failed\s*=\s*false/);
+  });
+
+  it("keeps enough SD open files for runtime apps with live assets", () => {
+    const header = readRequired(boardHeaderPath);
+    const source = readRequired(boardSourcePath);
+
+    assert.match(header, /VB_SD_MAX_OPEN_FILES\s+16/);
+    assert.match(source, /\.max_files\s*=\s*VB_SD_MAX_OPEN_FILES/);
   });
 
   it("scans the board app directory", () => {
@@ -274,7 +359,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /VB_APP_KIND_MAX/);
     assert.match(header, /VB_APP_CAPABILITIES_MAX/);
     assert.match(header, /VB_APP_REGISTRY_MAX_APPS/);
-    assert.match(header, /VB_APP_REGISTRY_MAX_APPS\s+32/);
+    assert.match(header, /VB_APP_REGISTRY_MAX_APPS\s+48/);
     assert.match(header, /vb_app_registry_entry_t/);
     assert.match(header, /manifest_schema/);
     assert.match(header, /version/);
@@ -289,7 +374,23 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /vibeboard-runtime-app-package@2/);
     assert.match(source, /stat\(app_path,\s*&st\)/);
     assert.match(source, /skip app entry that is missing/);
-    assert.match(source, /result->apps/);
+    assert.match(source, /next->apps/);
+  });
+
+  it("keeps cached app registry entries when a rescan cannot open the apps directory", () => {
+    const source = readRequired(registrySourcePath);
+
+    assert.match(source, /heap_caps_calloc\(1,\s*sizeof\(\*next\),\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
+    assert.match(source, /vb_app_registry_result_t\s+\*next/);
+    assert.match(source, /free\(next\)/);
+    assert.doesNotMatch(source, /vb_app_registry_result_t\s+next\s*=\s*\{0\}/);
+    assert.match(source, /DIR\s+\*dir\s*=\s*opendir\(VB_APPS_PATH\)/);
+    assert.match(source, /opendir\(VB_APPS_PATH\)[\s\S]*return\s+ESP_ERR_NOT_FOUND/);
+    assert.match(source, /\*result\s*=\s*\*next/);
+    assert.doesNotMatch(
+      source,
+      /memset\(result,\s*0,\s*sizeof\(\*result\)\)[\s\S]*DIR\s+\*dir\s*=\s*opendir\(VB_APPS_PATH\)/,
+    );
   });
 
   it("exposes app manifest compatibility metadata through HTTP apps", () => {
@@ -355,8 +456,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /httpd_start/);
     assert.match(source, /VB_INSTALL_HTTPD_STACK_SIZE\s+8192/);
     assert.match(source, /config\.stack_size\s*=\s*VB_INSTALL_HTTPD_STACK_SIZE/);
-    assert.match(source, /config\.task_caps\s*=\s*\(MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
-    assert.match(source, /config\.max_uri_handlers\s*=\s*12/);
+    assert.doesNotMatch(source, /config\.task_caps\s*=\s*\(MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
+    assert.match(source, /config\.max_uri_handlers\s*=\s*16/);
     assert.match(source, /status_handler/);
     assert.match(source, /apps_handler/);
     assert.match(source, /runtime_config_handler/);
@@ -371,12 +472,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /rescan_handler/);
     assert.match(source, /launch_handler/);
     assert.match(source, /stop_handler/);
+    assert.match(source, /reboot_handler/);
     assert.match(source, /\/status/);
     assert.match(source, /\/apps/);
     assert.match(source, /register_handler\("\/runtime\/config",\s*HTTP_POST,\s*runtime_config_handler\)/);
     assert.match(source, /\/rescan/);
     assert.match(source, /\/launch/);
     assert.match(source, /\/stop/);
+    assert.match(source, /register_handler\("\/reboot",\s*HTTP_POST,\s*reboot_handler\)/);
+    assert.match(source, /esp_restart\(\)/);
     assert.match(source, /vb_app_runner_launch_async/);
     assert.match(source, /vb_app_runner_stop/);
     assert.match(source, /vb_app_runner_wait_stopped/);
@@ -422,7 +526,24 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cmake, /video\/nes_video_out\.cpp/);
     assert.match(runner, /lua_native_module\.h/);
     assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)/);
-    assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)[\s\S]*load_lua_file\(L,\s*app->first_app_path\)/);
+    assert.match(runner, /vb_lua_native_module_register\(L,\s*app\)[\s\S]*load_lua_script\(L,\s*app->first_app_path,\s*script\)/);
+  });
+
+  it("cleans up native module state when a Lua app exits", () => {
+    const runner = readRequired(runnerSourcePath);
+    const luaModuleHeader = readRequired(luaNativeModuleHeaderPath);
+    const luaModule = readRequired(luaNativeModuleSourcePath);
+    const nesNativeAdapterHeader = readRequired(nesNativeAdapterHeaderPath);
+    const nesNativeAdapter = readRequired(nesNativeAdapterSourcePath);
+
+    assert.match(luaModuleHeader, /vb_lua_native_module_cleanup/);
+    assert.match(runner, /cleanup_lua_runtime[\s\S]*vb_lua_native_module_cleanup\(L\)/);
+    assert.match(luaModule, /vb_lua_native_module_cleanup\(lua_State \*L\)/);
+    assert.match(luaModule, /vb_nes_native_module_cleanup/);
+    assert.match(nesNativeAdapterHeader, /vb_nes_native_module_cleanup/);
+    assert.match(nesNativeAdapter, /vb_nes_native_module_cleanup\(void\)/);
+    assert.match(nesNativeAdapter, /nes_core_stop\(s_nes_module\.core_runtime,\s*3000,\s*1/);
+    assert.match(nesNativeAdapter, /nes_core_destroy\(s_nes_module\.core_runtime\)/);
   });
 
   it("maps NES module IRAM sections explicitly so they are not linker orphans", () => {
@@ -438,6 +559,42 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(linker, /\[mapping:vibeboard_runtime_nes_mod_iram\]/);
     assert.match(linker, /archive:\s+libmain\.a/);
     assert.match(linker, /\*\s+\(nes_mod_iram_default\)/);
+  });
+
+  it("keeps NES core and APU tasks watchdog-friendly during long soaks", () => {
+    const bridge = readRequired(upstreamNesCoreBridgeSourcePath);
+    const bus = readRequired(join(repoRoot, "modules/nes/core/bus.cpp"));
+    const portHeader = readRequired(upstreamNesPortHeaderPath);
+    const portSource = readRequired(upstreamNesPortSourcePath);
+    const startApuTask = bridge.match(/bool\s+startApuTask\(\)[\s\S]*?\n    void\s+stopApuTask/);
+    const busClock = bus.match(/MOD_IRAM_ATTR void Bus::clock\(\)[\s\S]*?#ifdef FRAMESKIP/);
+    const renderImage = bus.match(/IRAM_ATTR void Bus::renderImage\(uint16_t scanline,\s*uint16_t row_count\)[\s\S]*?bool Bus::consumeRenderFailure/);
+
+    assert.match(portHeader, /void\s+nes_port_yield\s*\(\s*void\s*\)/);
+    assert.match(portSource, /extern\s+"C"\s+void\s+nes_port_yield\s*\(\s*void\s*\)/);
+    assert.match(portSource, /s_host->task\.yield/);
+    assert.match(portSource, /s_host->task\.yield\(\);[\s\S]*nes_port_delay\(1\);/);
+    assert.doesNotMatch(portSource, /s_host->task\.yield\(\);\s*return;/);
+    assert.match(bridge, /void\s+apuTaskLoop\(\)[\s\S]*nes_port_yield\(\)/);
+    assert.doesNotMatch(bridge, /void\s+apuTaskLoop\(\)\s*\{\s*while\s*\(\s*!m_apu_task\s*\)/);
+    assert.match(bridge, /__atomic_store_n\(&m_apu_task_started,\s*true,\s*__ATOMIC_RELEASE\);[\s\S]*while\s*\(!__atomic_load_n\(&m_apu_task_stop,\s*__ATOMIC_ACQUIRE\)\s*&&\s*!m_stop_requested\)/);
+    assert.ok(startApuTask);
+    assert.match(startApuTask[0], /__atomic_store_n\(&m_apu_task_started,\s*false,[\s\S]*m_host->task\.create\("nes_apu"/);
+    assert.doesNotMatch(startApuTask[0], /m_host->task\.create\("nes_apu"[\s\S]*__atomic_store_n\(&m_apu_task_started,\s*false,/);
+    assert.match(bridge, /__atomic_load_n\(&m_apu_task_started,\s*__ATOMIC_ACQUIRE\)/);
+    assert.match(bridge, /__atomic_add_fetch\(&m_audio_apu_ticks,\s*256u,\s*__ATOMIC_RELEASE\)/);
+    assert.match(bridge, /const uint32_t sample_rate = m_options\.audio_sample_rate > 0 \? m_options\.audio_sample_rate : 22050u/);
+    assert.match(bridge, /const uint32_t batch_us = \(uint32_t\)\(\(256ULL \* 1000000ULL\) \/ sample_rate\)/);
+    assert.match(bridge, /if \(now < next_batch_due\)[\s\S]*nes_port_delay\(sleep_us \/ 1000u\)/);
+    assert.match(bridge, /void\s+taskLoop\(\)[\s\S]*nes_port_yield\(\)/);
+    assert.match(bridge, /m_bus->clock\(\);[\s\S]*nes_port_yield\(\);[\s\S]*StageFrameClockDone/);
+    assert.ok(busClock, "Bus::clock body is present");
+    assert.match(busClock[0], /ppu_scanline \+= 3\)[\s\S]*nes_port_yield\(\)/);
+    assert.match(busClock[0], /ppu\.setVBlank\(\);[\s\S]*nes_port_yield\(\);[\s\S]*cpu\.clock\(2501\)/);
+    assert.ok(renderImage, "Bus::renderImage body is present");
+    assert.match(renderImage[0], /submitTransferChunk\(scanline,\s*row_count,\s*&err\)[\s\S]*nes_port_yield\(\)[\s\S]*prepareRenderBuffer\(\)/);
+    assert.match(bridge, /m_options\.audio_task_stack_bytes == 0[\s\S]*m_options\.audio_task_stack_bytes = 8192/);
+    assert.match(bridge, /m_host->task\.create\("nes_apu"[\s\S]*m_options\.audio_task_stack_bytes/);
   });
 
   it("keeps native module loader failures precise before NES core is ported", () => {
@@ -474,6 +631,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(loader, /min_host\s*=\s*vibeboard-native-host@1/);
     assert.match(loader, /VB_NATIVE_MODULE_REQUIRED_SYMBOL\s+"vb_native_module_init"/);
     assert.match(loader, /VB_NATIVE_MODULE_HOST_API_VERSION\s+"vibeboard-native-host@1"/);
+    assert.match(loader, /retry_manifest_open/);
+    assert.match(loader, /VB_NATIVE_MODULE_OPEN_RETRIES/);
+    assert.match(loader, /vTaskDelay\(pdMS_TO_TICKS\(VB_NATIVE_MODULE_OPEN_RETRY_DELAY_MS\)\)/);
     assert.match(loader, /native_module_static_adapter\.h/);
     assert.match(loader, /vb_native_module_static_adapter_load/);
     assert.match(hostApiHeader, /vb_module_host_api_t/);
@@ -497,6 +657,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(hostApi, /vb_host_file_read/);
     assert.match(hostApi, /vb_host_file_close/);
     assert.match(hostApi, /vb_host_task_create/);
+    assert.match(hostApi, /const uint32_t stack_words = \(stack_depth \+ sizeof\(StackType_t\) - 1u\) \/ sizeof\(StackType_t\);/);
+    assert.match(hostApi, /xTaskCreatePinnedToCore\(entry,\s*name,\s*stack_words,\s*arg,\s*priority,\s*handle,\s*tskNO_AFFINITY\)/);
+    assert.doesNotMatch(hostApi, /xTaskCreatePinnedToCore\(entry,\s*name,\s*stack_depth,\s*arg,\s*priority,\s*handle,\s*tskNO_AFFINITY\)/);
+    assert.doesNotMatch(hostApi, /xTaskCreatePinnedToCoreWithCaps\(entry[\s\S]*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT/);
     assert.match(hostApi, /vb_host_task_remove/);
     assert.match(hostApi, /vb_host_task_yield/);
     assert.match(hostApi, /vb_host_task_delay_ms/);
@@ -558,10 +722,20 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesNativeAdapter, /nes_core_options_t\s+options/);
     assert.match(nesNativeAdapter, /apply_start_options\(L,\s*2,\s*&options\)/);
     assert.match(nesNativeAdapter, /table_u32\(L,\s*"target_fps",\s*options->target_fps\)/);
+    assert.match(nesNativeAdapter, /table_u16\(L,\s*"frame_width",\s*options->width\)/);
+    assert.match(nesNativeAdapter, /table_u16\(L,\s*"frame_height",\s*options->height\)/);
+    assert.match(nesNativeAdapter, /table_bool\(L,\s*"center_on_screen",\s*false\)/);
     assert.match(nesNativeAdapter, /table_bool\(L,\s*"audio_enabled",\s*options->audio_enabled != 0\)/);
     assert.match(nesNativeAdapter, /options->audio_lua_fallback/);
     assert.match(nesNativeAdapter, /options->audio_sample_rate/);
     assert.match(nesNativeAdapter, /options->audio_queue_bytes/);
+    assert.match(nesNativeAdapter, /table_u32\(L,\s*"audio_task_stack_bytes",\s*options->audio_task_stack_bytes\)/);
+    assert.match(upstreamNesCoreBridgeHeader, /uint32_t\s+audio_task_stack_bytes/);
+    assert.match(nesNativeAdapter, /table_u32\(L,\s*"audio_ringbuf_samples",\s*0\)/);
+    assert.match(nesNativeAdapter, /bytes_per_sample/);
+    assert.match(nesNativeAdapter, /options->task_stack_bytes < 4096/);
+    assert.match(nesNativeAdapter, /options->task_stack_bytes = 4096/);
+    assert.doesNotMatch(nesNativeAdapter, /options->task_stack_bytes < 8192[\s\S]*options->task_stack_bytes = 16 \* 1024/);
     assert.match(nesNativeAdapterHeader, /vb_nes_native_module_read_audio/);
     assert.match(nesNativeAdapter, /vb_nes_native_module_read_audio/);
     assert.match(nesNativeAdapter, /nes_core_read_audio\(nes->core_runtime,\s*buf,\s*max_bytes\)/);
@@ -571,6 +745,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_running"\)/);
     assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_loaded"\)/);
     assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_frames"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"rendered_frames"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"core_rendered_frames"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"module_backend"\)/);
     assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"last_nes_mask"\)/);
     assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"display_stream_supported"\)/);
     assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"display_stream_active"\)/);
@@ -597,8 +774,17 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesHostShim, /host->sd\.open/);
     assert.match(nesHostShim, /host->file\.read/);
     assert.match(nesHostShim, /host->display\.pushImageDMA/);
+    assert.match(nesHostShim, /shim_stream_window_t/);
+    assert.match(nesHostShim, /shim_display_set_addr_window/);
+    assert.match(nesHostShim, /shim_display_push_pixels_dma/);
+    assert.match(nesHostShim, /s_source\.display\.push_image_dma\(\(vb_module_host_display_surface_t \*\)surface,\s*s_stream_window\.x,\s*s_stream_window\.y \+ s_stream_window\.pushed_rows,\s*s_stream_window\.w,\s*rows,\s*pixels\)/);
+    assert.doesNotMatch(functionBody(nesHostShim, "shim_display_set_addr_window"), /return MODULE_ERR_UNSUPPORTED;/);
+    assert.doesNotMatch(functionBody(nesHostShim, "shim_display_push_pixels_dma"), /return MODULE_ERR_UNSUPPORTED;/);
     assert.match(nesHostShim, /shim_task_create/);
     assert.match(nesHostShim, /shim_task_remove/);
+    assert.match(nesHostShim, /strcmp\(name,\s*"nes_apu"\)\s*==\s*0/);
+    assert.match(nesHostShim, /xTaskCreatePinnedToCoreWithCaps\([\s\S]*tskNO_AFFINITY,[\s\S]*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT/);
+    assert.match(nesHostShim, /vTaskDeleteWithCaps/);
     assert.match(nesHostShim, /host->task\.create\s*=\s*shim_task_create/);
     assert.match(nesHostShim, /host->task\.remove\s*=\s*shim_task_remove/);
     assert.match(nesHostShim, /MODULE_ERR_UNSUPPORTED/);
@@ -616,6 +802,19 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(luaModule, /vb_nes_native_module_start/);
     assert.match(luaModule, /vb_nes_native_module_input_set_mask/);
     assert.match(luaModule, /return\s+luaL_error\(L,\s*"%s",\s*result\.error\)/);
+    assert.match(upstreamNesCoreBridgeHeader, /audio_written_bytes/);
+    assert.match(upstreamNesCoreBridgeHeader, /audio_apu_task_present/);
+    assert.match(upstreamNesCoreBridgeHeader, /audio_apu_task_started/);
+    assert.match(upstreamNesCoreBridgeHeader, /audio_apu_task_ret/);
+    assert.match(upstreamNesCoreBridgeHeader, /audio_apu_ticks/);
+    assert.match(upstreamNesCoreBridgeHeader, /audio_sink_calls/);
+    assert.match(upstreamNesCoreBridgeHeader, /audio_queued_bytes/);
+    assert.match(nesNativeAdapter, /audio_written_bytes/);
+    assert.match(nesNativeAdapter, /audio_apu_task_present/);
+    assert.match(nesNativeAdapter, /audio_apu_task_started/);
+    assert.match(nesNativeAdapter, /audio_apu_task_ret/);
+    assert.match(nesNativeAdapter, /audio_apu_ticks/);
+    assert.match(nesNativeAdapter, /audio_sink_calls/);
   });
 
   it("returns a core-backed NES Lua module after native manifest validation", () => {
@@ -643,6 +842,47 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesNativeAdapter, /"core_running"/);
   });
 
+  it("bridges Lua gamepad state into the native NES host API", () => {
+    const luaGamepadHeader = readRequired(luaGamepadHeaderPath);
+    const luaGamepad = readRequired(luaGamepadSourcePath);
+    const hostApiHeader = readRequired(moduleHostApiHeaderPath);
+    const hostApi = readRequired(moduleHostApiSourcePath);
+    const nesHostShim = readRequired(nesHostShimSourcePath);
+    const nesNativeAdapter = readRequired(nesNativeAdapterSourcePath);
+    const moduleAbi = readRequired(upstreamNesCoreBridgeHeaderPath.replace("runtime/nes_core_bridge.h", "include/module_abi.h"));
+
+    assert.match(luaGamepadHeader, /vb_lua_gamepad_snapshot_t/);
+    assert.match(luaGamepadHeader, /vb_lua_gamepad_snapshot\(/);
+    assert.match(luaGamepad, /vb_lua_gamepad_snapshot\(vb_lua_gamepad_snapshot_t\s+\*out\)/);
+    assert.match(luaGamepad, /out->buttons_mask\s*=\s*s_gamepad\.buttons_mask/);
+    assert.match(luaGamepad, /out->dpad_up\s*=\s*s_gamepad\.dpad_up/);
+
+    assert.match(hostApiHeader, /vb_module_host_gamepad_state_t/);
+    assert.match(hostApiHeader, /vb_module_host_gamepad_api_t/);
+    assert.match(hostApiHeader, /vb_module_host_gamepad_api_t\s+gamepad/);
+    assert.match(hostApi, /#include\s+"lua_gamepad\.h"/);
+    assert.match(hostApi, /static\s+int\s+vb_host_gamepad_snapshot/);
+    assert.match(hostApi, /vb_lua_gamepad_snapshot\(&snapshot\)/);
+    assert.match(hostApi, /api->gamepad\.snapshot\s*=\s*vb_host_gamepad_snapshot/);
+
+    assert.match(nesHostShim, /static\s+uint32_t\s+shim_gamepad_state_mask\(uint8_t\s+player\)/);
+    assert.match(moduleAbi, /uint32_t\s+\(\*state_mask\)\(uint8_t\s+player\)/);
+    assert.match(nesHostShim, /MODULE_GAMEPAD_A/);
+    assert.match(nesHostShim, /MODULE_GAMEPAD_SELECT/);
+    assert.match(nesHostShim, /MODULE_GAMEPAD_START/);
+    assert.match(nesHostShim, /MODULE_GAMEPAD_UP/);
+    assert.match(nesHostShim, /MODULE_GAMEPAD_HOME/);
+    assert.match(nesHostShim, /host->gamepad\.state_mask\s*=\s*shim_gamepad_state_mask/);
+
+    assert.match(nesNativeAdapter, /uint32_t\s+host_gamepad_mask/);
+    assert.match(nesNativeAdapter, /bool\s+host_gamepad_active/);
+    assert.match(nesNativeAdapter, /static\s+uint32_t\s+module_gamepad_mask_to_nes_mask\(uint32_t\s+mask\)/);
+    assert.match(nesNativeAdapter, /static\s+void\s+sync_host_gamepad\(vb_nes_native_module_t\s+\*nes\)/);
+    assert.match(nesNativeAdapter, /nes_core_set_input_mask\(nes->core_runtime,\s*module_gamepad_mask_to_nes_mask\(host_mask\)\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"host_gamepad_mask"\)/);
+    assert.match(nesNativeAdapter, /lua_setfield\(L,\s*-2,\s*"host_gamepad_active"\)/);
+  });
+
   it("routes the migrated NES app through require('nes') instead of assuming a global module", () => {
     const app = readRequired(nesgameSourcePath);
     const info = readRequired(nesgameInfoPath);
@@ -658,6 +898,75 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nativeManifest, /abi\s*=\s*vibeboard-native-module-abi@1/);
     assert.match(nativeManifest, /symbol\s*=\s*vb_native_module_init/);
     assert.match(nativeManifest, /min_host\s*=\s*vibeboard-native-host@1/);
+  });
+
+  it("keeps nesgame smokeable with app-local ROM fallback and machine-readable metrics", () => {
+    const app = readRequired(nesgameSourcePath);
+    const packageJson = readRequired(packageJsonPath);
+    const smokeTool = readRequired(nesgameSmokeToolPath);
+    const smokeTest = readRequired(nesgameSmokeTestPath);
+
+    assert.match(app, /APP\.APP_ROM_DIR\s*=\s*"roms"/);
+    assert.match(app, /APP\.APP_ROM_ABS_DIR\s*=\s*"\/sdcard\/apps\/nesgame\/roms"/);
+    assert.match(app, /APP\.ROM_DIRS\s*=\s*\{[\s\S]*APP\.APP_ROM_DIR[\s\S]*"\/sd\/nes"[\s\S]*\}/);
+    assert.match(app, /scan_roms\(\)/);
+    assert.match(app, /for\s+_,\s*dir_path\s+in\s+ipairs\(APP\.ROM_DIRS\)/);
+    assert.match(app, /type\(entry\)\s*==\s*"string"/);
+    assert.match(app, /rom_path_for_entry/);
+    assert.match(app, /metrics\.json/);
+    assert.match(app, /write_metrics/);
+    assert.match(app, /rom_present/);
+    assert.match(app, /rom_count/);
+    assert.match(app, /selected_index/);
+    assert.match(app, /screen_mode/);
+    assert.match(app, /rendered_frames/);
+    assert.match(app, /audio_bytes/);
+    assert.match(app, /last_gamepad_buttons/);
+    assert.match(app, /last_gamepad_mask/);
+    assert.match(app, /metrics_timer/);
+    assert.match(app, /gamepad_timer/);
+    assert.match(app, /start_gamepad_service_deferred/);
+    assert.match(app, /APP\.gamepad_timer:alarm\(50,\s*tmr\.ALARM_SINGLE/);
+    const bootSequence = app.match(/local function boot\(\)[\s\S]*?return true\s+end/);
+    assert.ok(bootSequence, "nesgame boot sequence is present");
+    assert.ok(
+      bootSequence[0].indexOf("start_gamepad_service_deferred()") > bootSequence[0].indexOf("register_key_handlers()"),
+      "nesgame should defer BLE/gamepad startup until after key registration",
+    );
+    assert.doesNotMatch(app, /if\s+not\s+start_gamepad_service\(\)\s+then\s+return\s+false\s+end/);
+    assert.match(app, /local\s+update_metrics/);
+    assert.match(app, /update_metrics\s*=\s*function\(status_override\)/);
+    assert.ok(
+      app.indexOf("local update_metrics") < app.indexOf("local function render_selector_ui"),
+      "update_metrics must be predeclared before render_selector_ui so Lua does not resolve it as a nil global",
+    );
+    assert.match(app, /nes\.read_audio/);
+    assert.match(app, /task_stack_bytes\s*=\s*6144/);
+    assert.match(app, /audio_task_stack_bytes\s*=\s*8192/);
+    assert.match(app, /transfer_rows\s*=\s*1/);
+    assert.match(app, /audio_enabled\s*=\s*true/);
+    assert.match(app, /audio_lua_fallback\s*=\s*true/);
+    assert.match(app, /audio_queue_bytes\s*=\s*32768/);
+    assert.match(app, /COPY \.NES TO \/APPS\/NESGAME\/ROMS/);
+    assert.match(app, /local\s+ALIGN_LEFT_MID\s*=\s*LV_ALIGN_LEFT_MID\s+or\s+4/);
+    assert.match(app, /local\s+ALIGN_RIGHT_MID\s*=\s*LV_ALIGN_RIGHT_MID\s+or\s+6/);
+    assert.match(app, /local\s+ALIGN_TOP_RIGHT\s*=\s*LV_ALIGN_TOP_RIGHT\s+or\s+2/);
+    assert.doesNotMatch(app, /lv_obj_align\(box,\s*align\s+or\s+LV_ALIGN_CENTER/);
+    assert.match(packageJson, /"test:nesgame-smoke":\s*"node --test tools\/nesgame-smoke\/test\.mjs"/);
+    assert.match(packageJson, /"nesgame:smoke":\s*"node tools\/nesgame-smoke\/index\.mjs"/);
+    assert.match(smokeTool, /uploadSmokeNesRom/);
+    assert.match(smokeTool, /runLifecycleSmoke/);
+    assert.match(smokeTool, /waitForSelectorMetrics/);
+    assert.match(smokeTool, /selectorHasRom/);
+    assert.match(smokeTool, /\/input\/key\?code=/);
+    assert.match(smokeTool, /--inject-gamepad/);
+    assert.match(smokeTool, /\/input\/gamepad/);
+    assert.match(smokeTool, /last_gamepad_mask/);
+    assert.match(smokeTool, /waitForRunningMetrics/);
+    assert.match(smokeTool, /requireFrameGrowth/);
+    assert.match(smokeTool, /nesgame smoke ok/);
+    assert.match(smokeTest, /uploads a smoke ROM, launches nesgame, verifies selector metrics, injects start, and verifies frame growth/);
+    assert.match(smokeTest, /verify running NES input through HTTP gamepad injection/);
   });
 
   it("supports staged app install commit, abort, and delete operations", () => {
@@ -693,9 +1002,41 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /validate_stage_manifest\(stage_path\)[\s\S]*rename\(stage_path,\s*app_path\)/);
   });
 
+  it("preserves the previous app directory when staged commit replacement fails", () => {
+    const source = readRequired(installServiceSourcePath);
+    const commitStart = source.indexOf("static esp_err_t install_commit_handler");
+    const abortStart = source.indexOf("static esp_err_t install_abort_handler", commitStart);
+    assert.ok(commitStart >= 0, "install_commit_handler should exist");
+    assert.ok(abortStart > commitStart, "install_abort_handler should follow install_commit_handler");
+    const commit = source.slice(commitStart, abortStart);
+
+    assert.match(source, /static esp_err_t build_commit_backup_path/);
+    assert.match(commit, /char backup_path\[VB_APP_PATH_MAX\]/);
+    assert.match(commit, /build_commit_backup_path\(backup_path,\s*sizeof\(backup_path\),\s*stage\)/);
+    assert.match(commit, /rename\(app_path,\s*backup_path\)/);
+    assert.match(commit, /rename\(stage_path,\s*app_path\)/);
+    assert.match(commit, /rename\(backup_path,\s*app_path\)/);
+    assert.match(commit, /remove_tree\(backup_path\)/);
+    assert.ok(
+      commit.indexOf("rename(app_path, backup_path)") < commit.indexOf("rename(stage_path, app_path)"),
+      "old app should be moved to backup before staged app replaces it",
+    );
+    assert.ok(
+      commit.indexOf("rename(backup_path, app_path)") > commit.indexOf("rename(stage_path, app_path)"),
+      "old app restore should happen only after staged app replacement fails",
+    );
+    assert.doesNotMatch(
+      commit,
+      /remove_tree\(app_path\)[\s\S]{0,200}rename\(stage_path,\s*app_path\)/,
+      "commit must not delete the old app immediately before moving the staged app into place",
+    );
+  });
+
   it("exposes Lua runner lifecycle for launcher and HTTP launch", () => {
     const header = readRequired(join(firmwareRoot, "main/app_runner.h"));
     const runner = readRequired(runnerSourcePath);
+    const boardHeader = readRequired(boardHeaderPath);
+    const board = readRequired(boardSourcePath);
     const main = readRequired(mainSourcePath);
 
     assert.match(header, /vb_app_runner_lifecycle_state_t/);
@@ -708,6 +1049,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /vb_app_runner_current_state_name/);
     assert.match(header, /vb_app_runner_run_entry/);
     assert.match(header, /vb_app_runner_launch_async/);
+    assert.match(header, /vb_app_runner_launch_async_from_registry/);
     assert.match(header, /vb_app_runner_launch_options_t/);
     assert.match(header, /vb_app_runner_launch_async_with_options/);
     assert.match(header, /vb_app_runner_stop/);
@@ -730,6 +1072,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /s_runner_state\.last_message[\s\S]*s_runner_state\.lifecycle_state\s*=\s*VB_APP_RUNNER_STATE_IDLE/);
     assert.match(runner, /vb_app_runner_run[\s\S]*reserve_runner_start/);
     assert.match(runner, /VB_LUA_TASK_STACK_SIZE/);
+    assert.match(runner, /#define\s+VB_LUA_TASK_STACK_SIZE\s+\(48\s*\*\s*1024\)/);
     assert.match(runner, /xTaskCreatePinnedToCoreWithCaps/);
     assert.match(runner, /MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT/);
     assert.match(runner, /vb_app_registry_entry_t/);
@@ -737,16 +1080,64 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /s_runner_state/);
     assert.match(runner, /stop_requested/);
     assert.match(runner, /vb_lua_tmr_set_stop_flag/);
-    assert.match(runner, /luaL_newstate/);
+    assert.match(runner, /lua_psram_alloc/);
+    assert.match(runner, /lua_newstate\(lua_psram_alloc,\s*NULL,\s*0\)/);
+    assert.match(runner, /heap_caps_realloc\(ptr,\s*nsize,\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
+    assert.doesNotMatch(runner, /luaL_newstate/);
     assert.match(runner, /luaL_openlibs/);
-    assert.match(runner, /load_lua_file/);
-    assert.match(runner, /lua_load/);
-    assert.match(runner, /heap_caps_malloc\(VB_LUA_SCRIPT_READ_CHUNK,\s*MALLOC_CAP_INTERNAL\s*\|\s*MALLOC_CAP_DMA\s*\|\s*MALLOC_CAP_8BIT\)/);
-    assert.match(runner, /fread\(reader->buffer,\s*1,\s*VB_LUA_SCRIPT_READ_CHUNK/);
+    assert.match(runner, /preload_lua_file/);
+    assert.match(runner, /FILE\s+\*file\s*=\s*fopen\(path,\s*"rb"\)/);
+    assert.match(runner, /fseek\(file,\s*0,\s*SEEK_END\)/);
+    assert.match(runner, /ftell\(file\)/);
+    assert.match(runner, /heap_caps_malloc\(\(size_t\)size,\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
+    assert.match(runner, /fread\(data,\s*1,\s*\(size_t\)size,\s*file\)/);
+    assert.match(runner, /load_lua_script/);
+    assert.match(runner, /luaL_loadbufferx\(L,\s*script->data,\s*script->size,\s*chunk_name,\s*NULL\)/);
+    assert.match(runner, /preload_lua_file\(app->first_app_path,\s*&context\.script/);
+    assert.match(runner, /context->registry\s*=\s*\*registry/);
+    assert.match(runner, /context->registry\.first_app_path/);
+    assert.match(runner, /preload_lua_file\(context->registry\.first_app_path,\s*&context->script/);
+    assert.match(runner, /run_lua_file\(&context->registry,\s*&context->script/);
+    assert.match(runner, /free_lua_script\(&context->script\)/);
+    assert.match(runner, /s_script_reader_mutex/);
+    assert.match(runner, /StaticSemaphore_t\s+s_script_reader_mutex_buffer/);
+    assert.match(runner, /xSemaphoreCreateMutexStatic\(&s_script_reader_mutex_buffer\)/);
+    assert.doesNotMatch(runner, /xSemaphoreCreateMutex\(\)/);
+    assert.match(runner, /xSemaphoreTake\(s_script_reader_mutex,\s*portMAX_DELAY\)/);
+    assert.match(runner, /xSemaphoreGive\(s_script_reader_mutex\)/);
+    assert.doesNotMatch(runner, /heap_caps_malloc\(VB_LUA_SCRIPT_READ_CHUNK/);
+    assert.doesNotMatch(runner, /script read buffer alloc failed/);
+    assert.doesNotMatch(runner, /lua_load\(L,\s*lua_script_reader/);
+    assert.doesNotMatch(runner, /open\(path,\s*O_RDONLY\)/);
+    assert.doesNotMatch(runner, /read\(fd,\s*script\s*\+\s*offset/);
+    assert.doesNotMatch(runner, /fread\(reader->buffer,\s*1,\s*VB_LUA_SCRIPT_READ_CHUNK/);
+    assert.doesNotMatch(runner, /#include\s+"ff\.h"/);
+    assert.doesNotMatch(boardHeader, /vb_board_resolve_sd_fatfs_path/);
+    assert.doesNotMatch(board, /ff_diskio_get_pdrv_card/);
     assert.doesNotMatch(runner, /luaL_dofile/);
     assert.match(runner, /Lua app ok/);
     assert.doesNotMatch(main, /vb_app_runner_run\(s_apps,\s*&run\)/);
     assert.match(main, /vb_launcher_ui_show\(s_apps,\s*scan_err\)/);
+  });
+
+  it("marks Lua apps running only after the script reaches the event loop", () => {
+    const runner = readRequired(runnerSourcePath);
+
+    const runLuaFile = runner.match(/static esp_err_t run_lua_file[\s\S]*?static void lua_task/);
+    assert.ok(runLuaFile, "run_lua_file body is present");
+    const loadIndex = runLuaFile[0].indexOf("load_lua_script");
+    const runningIndex = runLuaFile[0].indexOf("set_running_if_starting()");
+    const loopIndex = runLuaFile[0].indexOf("vb_lua_tmr_run_loop");
+    assert.ok(loadIndex >= 0, "run_lua_file loads the Lua script");
+    assert.ok(runningIndex > loadIndex, "runner marks running after Lua script load");
+    assert.ok(loopIndex > runningIndex, "runner marks running before entering timer loop");
+
+    const luaTask = runner.match(/static void lua_task[\s\S]*?static void lua_async_task/);
+    const luaAsyncTask = runner.match(/static void lua_async_task[\s\S]*?esp_err_t vb_app_runner_run/);
+    assert.ok(luaTask, "lua_task body is present");
+    assert.ok(luaAsyncTask, "lua_async_task body is present");
+    assert.doesNotMatch(luaTask[0], /set_running_if_starting\(\)/);
+    assert.doesNotMatch(luaAsyncTask[0], /set_running_if_starting\(\)/);
   });
 
   it("registers a read-only Lua app manager module", () => {
@@ -757,6 +1148,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(header, /vb_lua_app_register/);
     assert.match(header, /vb_lua_app_set_stop_flag/);
+    assert.match(header, /vb_lua_app_set_registry/);
+    assert.match(header, /const\s+vb_app_registry_result_t\s+\*registry/);
     assert.match(source, /luaL_Reg\s+functions/);
     assert.match(source, /"list"/);
     assert.match(source, /"rescan",\s*lua_app_rescan/);
@@ -771,12 +1164,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /vb_lua_app_dispatch_event\(L,\s*state,\s*VB_LUA_APP_EVENT_STOP/);
     assert.match(source, /vb_lua_app_dispatch_event\(L,\s*state,\s*VB_LUA_APP_EVENT_LAUNCH/);
     assert.match(source, /\*state->stop_requested\s*=\s*true/);
-    assert.match(source, /vb_app_registry_scan/);
+    assert.match(source, /push_registry_apps/);
+    assert.match(source, /state->registry/);
+    assert.doesNotMatch(source, /vb_app_registry_scan/);
     assert.match(source, /vb_app_runner_current_id/);
     assert.match(source, /vb_app_runner_current_state_name/);
     assert.match(source, /vb_lua_app_dispatch_exit/);
     assert.match(runner, /#include\s+"lua_app\.h"/);
     assert.match(runner, /vb_lua_app_set_stop_flag\(&runtime\.app,\s*&s_runner_state\.stop_requested\)/);
+    assert.match(runner, /vb_lua_app_set_registry\(&runtime\.app,\s*app\)/);
     assert.match(runner, /vb_lua_app_register\(L,\s*&runtime\.app\)/);
     assert.match(runner, /vb_lua_app_dispatch_exit\(L,\s*&runtime->app\)/);
     assert.match(cmake, /"lua_app\.c"/);
@@ -823,16 +1219,52 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(source, /lua_app_launch[\s\S]*vb_app_runner_launch_async/);
   });
 
+  it("exposes a minimal Lua WebUI route bridge for active apps", () => {
+    const source = readRequired(luaAppSourcePath);
+    const header = readRequired(luaAppHeaderPath);
+    const runner = readRequired(runnerSourcePath);
+    const runnerHeader = readRequired(runnerHeaderPath);
+    const install = readRequired(installServiceSourcePath);
+
+    assert.match(header, /webui_enabled/);
+    assert.match(header, /route_callback_ref/);
+    assert.match(header, /vb_lua_app_dispatch_webui/);
+    assert.match(source, /lua_app_route_base/);
+    assert.match(source, /lua_app_set_webui/);
+    assert.match(source, /lua_app_route/);
+    assert.match(source, /"route_base",\s*lua_app_route_base/);
+    assert.match(source, /"set_webui",\s*lua_app_set_webui/);
+    assert.match(source, /"route",\s*lua_app_route/);
+    assert.match(source, /VB_LUA_APP_WEBUI_ROUTE_WILDCARD\s+"\/app\/\*"/);
+    assert.match(source, /state->webui_enabled\s*=\s*lua_toboolean\(L,\s*1\)/);
+    assert.match(source, /luaL_ref\(L,\s*LUA_REGISTRYINDEX\)/);
+    assert.match(source, /vb_lua_app_dispatch_webui/);
+    assert.match(runnerHeader, /vb_app_runner_dispatch_webui/);
+    assert.match(runner, /vb_app_runner_dispatch_webui\(const char \*path/);
+    assert.match(runner, /s_active_runtime/);
+    assert.match(runner, /vb_lua_app_dispatch_webui\(.*&runtime->app/);
+    assert.match(install, /webui_handler/);
+    assert.match(install, /register_handler\("\/app\/\*",\s*HTTP_GET,\s*webui_handler\)/);
+    assert.match(install, /register_handler\("\/app\/\*",\s*HTTP_POST,\s*webui_handler\)/);
+    assert.match(install, /req->content_len/);
+    assert.match(install, /httpd_req_recv/);
+    assert.match(install, /vb_app_runner_dispatch_webui/);
+    assert.match(install, /HTTPD_404_NOT_FOUND/);
+  });
+
   it("exposes the last Lua runner result for launcher failure feedback", () => {
     const header = readRequired(runnerHeaderPath);
     const runner = readRequired(runnerSourcePath);
 
     assert.match(header, /vb_app_runner_last_status/);
     assert.match(header, /vb_app_runner_last_message/);
+    assert.match(header, /vb_app_runner_note_launch_failure/);
     assert.match(runner, /last_message/);
     assert.match(runner, /vb_app_runner_last_status/);
     assert.match(runner, /vb_app_runner_last_message/);
     assert.match(runner, /strlcpy\(s_runner_state\.last_message/);
+    assert.match(runner, /vb_app_runner_note_launch_failure/);
+    assert.match(runner, /s_runner_state\.lifecycle_state\s*=\s*VB_APP_RUNNER_STATE_FAILED/);
   });
 
   it("keeps native launcher refresh and stop controls on the device screen", () => {
@@ -862,10 +1294,27 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /vb_launcher_ui_note_async_launch/);
     assert.match(source, /vb_launcher_ui_note_async_launch/);
     assert.match(installService, /#include "launcher_ui\.h"/);
-    assert.match(installService, /note_launcher_async_launch/);
-    assert.match(installService, /before_start\s*=\s*note_launcher_async_launch/);
-    assert.match(installService, /vb_app_runner_launch_async_with_options\(&selected_app,\s*&launch_options\)/);
+    assert.match(installService, /match_uri_without_query/);
+    assert.match(installService, /uri\[i\]\s*==\s*'\?'/);
+    assert.match(installService, /httpd_uri_match_wildcard\(reference_uri,\s*uri,\s*path_len\)/);
+    assert.match(installService, /config\.uri_match_fn\s*=\s*match_uri_without_query/);
+    assert.doesNotMatch(installService, /config\.uri_match_fn\s*=\s*httpd_uri_match_wildcard/);
+    assert.match(installService, /launch_deferred_task/);
+    assert.match(installService, /heap_caps_calloc\(1,\s*sizeof\(\*job\),\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
+    assert.match(installService, /heap_caps_free\(job\)/);
+    assert.match(installService, /xTaskCreatePinnedToCoreWithCaps\(launch_deferred_task/);
+    assert.match(installService, /xTaskCreatePinnedToCoreWithCaps\([\s\S]*launch_deferred_task[\s\S]*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT/);
+    assert.doesNotMatch(installService, /xTaskCreatePinnedToCore\(launch_deferred_task/);
+    assert.match(installService, /scan_err\s*=\s*vb_app_registry_scan\(s_context->registry\)/);
+    assert.match(installService, /scan_err\s*!=\s*ESP_OK/);
+    assert.doesNotMatch(installService, /scan_err\s*!=\s*ESP_OK\s*&&\s*scan_err\s*!=\s*ESP_ERR_NOT_FOUND/);
+    assert.match(installService, /send_json\(req,\s*body\)[\s\S]*return\s+ESP_OK/);
+    assert.match(installService, /selected_index/);
+    assert.match(installService, /queue_launch_after_response\(s_context->registry,\s*selected_index\)/);
+    assert.match(installService, /launch_deferred_task[\s\S]*vb_app_runner_launch_async_from_registry\(&job->registry,\s*job->selected_index\)/);
+    assert.doesNotMatch(installService, /launch_handler[\s\S]*vb_app_runner_launch_async_from_registry\(s_context->registry,\s*selected_index\)/);
     assert.doesNotMatch(installService, /vb_app_runner_launch_async\(&selected_app\)/);
+    assert.doesNotMatch(installService, /vb_app_runner_launch_async_with_options\(&selected_app,\s*&launch_options\)/);
     assert.match(source, /vb_app_runner_is_running/);
     assert.match(source, /vb_app_runner_current_state_name/);
     assert.match(source, /vb_app_runner_last_message/);
@@ -882,7 +1331,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const installService = readRequired(installServiceSourcePath);
     const launcher = readRequired(launcherSourcePath);
 
-    assert.match(runnerHeader, /VB_APP_RUNNER_STOP_TIMEOUT_MS\s+5000/);
+    const stopTimeoutMatch = runnerHeader.match(/VB_APP_RUNNER_STOP_TIMEOUT_MS\s+(\d+)/);
+    assert.ok(stopTimeoutMatch, "runner stop timeout constant is declared");
+    assert.ok(Number(stopTimeoutMatch[1]) >= 15000, "heavy Lua apps need at least 15s to unwind during stop");
     assert.match(installService, /vb_app_runner_wait_stopped\(VB_APP_RUNNER_STOP_TIMEOUT_MS\)/);
     assert.match(launcher, /vb_app_runner_wait_stopped\(VB_APP_RUNNER_STOP_TIMEOUT_MS\)/);
     assert.doesNotMatch(installService, /vb_app_runner_wait_stopped\(1500\)/);
@@ -996,6 +1447,28 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /vb_lua_tmr_register\(L,\s*&runtime\.tmr\)/);
   });
 
+  it("defers timers created inside timer callbacks to a later scheduler pass", () => {
+    const header = readRequired(luaTmrHeaderPath);
+    const source = readRequired(luaTmrSourcePath);
+
+    assert.match(header, /uint32_t\s+generation/);
+    assert.match(source, /typedef struct \{\s+int index;\s+uint32_t generation;/);
+    assert.match(source, /handle->generation\s*=\s*timer->generation/);
+    assert.match(source, /timer->generation != handle->generation/);
+    assert.match(source, /state->generation\+\+/);
+    assert.match(source, /const\s+uint32_t\s+run_generation\s*=\s*state->generation/);
+    assert.match(source, /timer->generation\s*>\s*run_generation/);
+  });
+
+  it("releases one-shot timer slots after their callback runs", () => {
+    const source = readRequired(luaTmrSourcePath);
+
+    assert.match(source, /static void release_timer_slot\(lua_State \*L,\s*vb_lua_tmr_state_t \*state,\s*vb_lua_timer_t \*timer\)/);
+    assert.match(source, /release_timer_slot\(L,\s*state,\s*timer\)/);
+    assert.match(source, /timer->mode == TMR_ALARM_SINGLE[\s\S]*release_timer_slot\(L,\s*state,\s*timer\)/);
+    assert.match(source, /timer->mode == TMR_ALARM_SEMI[\s\S]*timer->active = false/);
+  });
+
   it("registers a minimal Lua key module for interactive apps", () => {
     const header = readRequired(luaKeyHeaderPath);
     const source = readRequired(luaKeySourcePath);
@@ -1081,6 +1554,33 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(boardSource, /lua_State/);
   });
 
+  it("exposes a narrow HTTP key injection smoke hook for active Lua apps", () => {
+    const installService = readRequired(installServiceSourcePath);
+
+    assert.match(installService, /#include\s+"lua_key\.h"/);
+    assert.match(installService, /static\s+esp_err_t\s+input_key_handler\(httpd_req_t\s+\*req\)/);
+    assert.match(installService, /parse_key_code/);
+    assert.match(installService, /parse_key_event/);
+    assert.match(installService, /vb_app_runner_enqueue_key\(code,\s*event\)/);
+    assert.match(installService, /register_handler\("\/input\/key",\s*HTTP_POST,\s*input_key_handler\)/);
+    assert.match(installService, /injected/);
+    assert.doesNotMatch(installService, /atoi\(.*code/);
+    assert.doesNotMatch(installService, /atoi\(.*event/);
+  });
+
+  it("exposes a read-only app file endpoint for smoke artifacts", () => {
+    const installService = readRequired(installServiceSourcePath);
+
+    assert.match(installService, /static\s+esp_err_t\s+app_file_handler\(httpd_req_t\s+\*req\)/);
+    assert.match(installService, /register_handler\("\/apps\/file",\s*HTTP_GET,\s*app_file_handler\)/);
+    assert.match(installService, /get_query_value\(req,\s*"app"/);
+    assert.match(installService, /get_query_value\(req,\s*"path"/);
+    assert.match(installService, /reject_unsafe_path\(app\)/);
+    assert.match(installService, /reject_unsafe_path\(path\)/);
+    assert.match(installService, /fopen\(full_path,\s*"rb"\)/);
+    assert.match(installService, /httpd_resp_send_chunk/);
+  });
+
   it("bridges board touch coordinates into a Lua touch module through the runner loop", () => {
     const boardHeader = readRequired(boardHeaderPath);
     const boardSource = readRequired(boardSourcePath);
@@ -1126,7 +1626,17 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /file_read/);
     assert.match(source, /file_write/);
     assert.match(source, /file_list/);
+    assert.match(source, /file_listdir/);
     assert.match(source, /file_open/);
+    assert.match(source, /file_stat/);
+    assert.match(source, /file_mkdir/);
+    assert.match(source, /file_remove/);
+    assert.match(source, /file_rename/);
+    assert.match(source, /file_rmdir/);
+    assert.match(source, /file_putcontents/);
+    assert.match(source, /file_handle_write/);
+    assert.match(source, /file_handle_seek/);
+    assert.match(source, /file_handle_flush/);
     assert.match(source, /getcontents/);
     assert.match(source, /listdir/);
     assert.match(source, /VB_SD_MOUNT_POINT/);
@@ -1158,6 +1668,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(httpHeader, /vb_lua_http_register/);
     assert.match(httpSource, /http_get/);
     assert.match(httpSource, /http_post/);
+    assert.match(httpSource, /http_cubicserver_get/);
+    assert.match(httpSource, /get_timeout\(L,\s*options_index\)/);
+    assert.doesNotMatch(httpSource, /perform_get_url\(full_url,\s*VB_HTTP_DEFAULT_TIMEOUT_MS/);
+    assert.match(httpSource, /luaL_error\(L,\s*"cubicserver base_url missing"/);
+    assert.doesNotMatch(httpSource, /snprintf\(base_url,\s*sizeof\(base_url\),\s*"%s",\s*VB_HTTP_CUBICSERVER_BASE_URL\)/);
     assert.match(httpSource, /esp_http_client_perform/);
     assert.match(httpSource, /esp_http_client_get_status_code/);
     assert.match(sjsonHeader, /vb_lua_sjson_register/);
@@ -1196,24 +1711,174 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /vb_lua_time_register\(L\)/);
   });
 
+  it("registers a sys Lua module for runtime version and display brightness", () => {
+    const runner = readRequired(runnerSourcePath);
+    const cmake = readRequired(cmakePath);
+    const sysHeader = readRequired(luaSysHeaderPath);
+    const sysSource = readRequired(luaSysSourcePath);
+    const versionHeader = readRequired(runtimeVersionHeaderPath);
+    const service = readRequired(installServiceSourcePath);
+    const boardHeader = readRequired(boardHeaderPath);
+    const boardSource = readRequired(boardSourcePath);
+
+    assert.match(cmake, /lua_sys\.c/);
+    assert.match(runner, /lua_sys\.h/);
+    assert.match(runner, /vb_lua_sys_register\(L\)/);
+    assert.match(runner, /vb_lua_sys_register\(L\)[\s\S]*vb_lua_time_register\(L\)/);
+    assert.match(sysHeader, /vb_lua_sys_register/);
+    assert.match(sysSource, /#include "board_lckfb_szpi_s3\.h"/);
+    assert.match(sysSource, /#include "runtime_version\.h"/);
+    assert.match(sysSource, /sys_version/);
+    assert.match(sysSource, /sys_getbrightness/);
+    assert.match(sysSource, /sys_setbrightness/);
+    assert.match(sysSource, /VB_RUNTIME_VERSION/);
+    assert.match(sysSource, /vb_board_get_backlight_percent/);
+    assert.match(sysSource, /vb_board_set_backlight_percent/);
+    assert.match(sysSource, /lua_setglobal\(L,\s*"sys"\)/);
+    assert.match(versionHeader, /VB_RUNTIME_VERSION\s+"0\.1\.0"/);
+    assert.match(service, /#include "runtime_version\.h"/);
+    assert.doesNotMatch(service, /#define VB_RUNTIME_VERSION "0\.1\.0"/);
+    assert.match(boardHeader, /vb_board_set_backlight_percent/);
+    assert.match(boardHeader, /vb_board_get_backlight_percent/);
+    assert.match(boardSource, /s_backlight_percent/);
+    assert.match(boardSource, /level < 0 \|\| level > 100/);
+    assert.match(boardSource, /ledc_set_duty\(LEDC_LOW_SPEED_MODE,\s*LEDC_CHANNEL_0,\s*duty\)/);
+  });
+
+  it("keeps weather cubicserver requests below the app stop timeout", () => {
+    const weatherSource = readRequired(weatherSourcePath);
+    const runnerHeader = readRequired(runnerHeaderPath);
+
+    const stopTimeoutMatch = runnerHeader.match(/VB_APP_RUNNER_STOP_TIMEOUT_MS\s+(\d+)/);
+    assert.ok(stopTimeoutMatch, "runner stop timeout constant is declared");
+    const stopTimeoutMs = Number(stopTimeoutMatch[1]);
+
+    const weatherTimeoutMatch = weatherSource.match(/WEATHER_HTTP_TIMEOUT_MS\s*=\s*(\d+)/);
+    assert.ok(weatherTimeoutMatch, "weather declares an explicit HTTP timeout");
+    const weatherTimeoutMs = Number(weatherTimeoutMatch[1]);
+
+    assert.ok(weatherTimeoutMs > 0, "weather HTTP timeout is positive");
+    assert.ok(
+      weatherTimeoutMs < stopTimeoutMs,
+      `weather HTTP timeout ${weatherTimeoutMs}ms must stay below app stop timeout ${stopTimeoutMs}ms`,
+    );
+    assert.match(weatherSource, /CUBICSERVER_CONFIG_PATH\s*=\s*"\/sd\/runtime\/cubicserver\.json"/);
+    assert.match(weatherSource, /file\.exists\(APP\.CUBICSERVER_CONFIG_PATH\)/);
+    assert.match(weatherSource, /APP\.state\.last_error\s*=\s*"Cubic config missing"/);
+    assert.match(weatherSource, /http\.cubicserver\.get\(url,\s*\{\s*timeout_ms\s*=\s*APP\.WEATHER_HTTP_TIMEOUT_MS\s*\}/);
+  });
+
+  it("defers weather network startup until the app can observe stop requests", () => {
+    const weatherSource = readRequired(weatherSourcePath);
+
+    assert.match(weatherSource, /APP\.timers\.initial_fetch\s*=\s*tmr\.create\(\)/);
+    assert.match(weatherSource, /APP\.timers\.initial_fetch:alarm\(APP\.INITIAL_FETCH_DELAY_MS,\s*tmr\.ALARM_SINGLE/);
+    assert.match(weatherSource, /if not APP\.running or maybe_stop_for_exit\(\) then return end\s+request_weather\(\)/);
+
+    const initialDelayMatch = weatherSource.match(/INITIAL_FETCH_DELAY_MS\s*=\s*(\d+)/);
+    assert.ok(initialDelayMatch, "weather declares an initial fetch delay");
+    assert.ok(Number(initialDelayMatch[1]) >= 1000, "weather leaves a stop window before the first network request");
+
+    assert.match(weatherSource, /UI_BOOT_DELAY_MS\s*=\s*\d+/);
+    assert.match(weatherSource, /local function init_startup_shell\(\)/);
+    assert.match(weatherSource, /local function stage_full_ui\(\)/);
+    assert.match(weatherSource, /local function stage_fonts\(\)/);
+    assert.match(weatherSource, /local function stage_assets\(\)/);
+    assert.match(weatherSource, /local function stage_boot_step\(\)/);
+    assert.match(weatherSource, /APP\.state\.boot_stage\s*=\s*\(APP\.state\.boot_stage or 0\)\s*\+\s*1/);
+    assert.match(weatherSource, /APP\.timers\.stage_boot\s*=\s*tmr\.create\(\)/);
+    assert.match(weatherSource, /APP\.timers\.stage_boot:alarm\(APP\.UI_BOOT_DELAY_MS,\s*tmr\.ALARM_AUTO/);
+    assert.match(weatherSource, /if not stage_boot_step\(\) then/);
+    assert.match(weatherSource, /APP\.timers\.stage_boot:stop\(\)/);
+    assert.match(weatherSource, /APP\.timers\.stage_boot:unregister\(\)/);
+    assert.match(weatherSource, /APP\.state\.boot_stage == 1[\s\S]*stage_full_ui\(\)/);
+    assert.match(weatherSource, /APP\.state\.boot_stage == 2[\s\S]*stage_fonts\(\)/);
+    assert.match(weatherSource, /APP\.state\.boot_stage == 3[\s\S]*stage_assets\(\)/);
+    assert.match(weatherSource, /assets_ready\s*=\s*false/);
+    assert.match(weatherSource, /fonts_ready\s*=\s*false/);
+    assert.match(weatherSource, /boot_stage\s*=\s*0/);
+    assert.match(weatherSource, /background_pending\s*=\s*false/);
+    assert.match(weatherSource, /METRICS_PATH\s*=\s*"metrics\.json"/);
+    assert.match(weatherSource, /local function write_metrics\(\)/);
+    assert.match(weatherSource, /file\.write\(APP\.METRICS_PATH/);
+    assert.match(weatherSource, /\\"ui_ready\\":/);
+    assert.match(weatherSource, /\\"fonts_ready\\":/);
+    assert.match(weatherSource, /\\"assets_ready\\":/);
+    assert.match(weatherSource, /\\"visual_assets_ready\\":/);
+    assert.match(weatherSource, /\\"visual_asset_attempts\\":/);
+    assert.match(weatherSource, /\\"visual_asset_error\\":/);
+    assert.match(weatherSource, /\\"background_ready\\":/);
+    assert.match(weatherSource, /\\"background_attempts\\":/);
+    assert.match(weatherSource, /\\"background_error\\":/);
+    assert.match(weatherSource, /\\"boot_stage\\":/);
+    assert.match(weatherSource, /stage_full_ui\(\)[\s\S]*write_metrics\(\)/);
+    assert.match(weatherSource, /stage_fonts\(\)[\s\S]*write_metrics\(\)/);
+    assert.match(weatherSource, /stage_assets\(\)[\s\S]*write_metrics\(\)/);
+    assert.match(weatherSource, /stage_assets\(\)[\s\S]*APP\.state\.last_error\s*=\s*"assets ready"/);
+    assert.match(weatherSource, /local function lazy_load_visual_assets\(\)/);
+    assert.match(weatherSource, /lazy_load_visual_assets\(\)[\s\S]*APP\.state\.visual_assets_ready\s*=\s*true/);
+    assert.match(weatherSource, /local function lazy_load_background\(\)/);
+    const backgroundBody = weatherSource.match(/local function lazy_load_background\(\)([\s\S]*?)\n    end\n\n    local function schedule_background_load\(\)/);
+    assert.ok(backgroundBody, "weather lazy background body is present");
+    assert.match(backgroundBody[1], /APP\.state\.background_error\s*=\s*"loading"/);
+    assert.match(backgroundBody[1], /lv_canvas_load_bmp\(APP\.ui\.bg_canvas,\s*background_asset_path\(weather_kind\(\)\)\)/);
+    assert.match(backgroundBody[1], /APP\.state\.background_ready\s*=\s*true/);
+    assert.doesNotMatch(backgroundBody[1], /lv_obj_set_style_bg_color/);
+    assert.match(weatherSource, /local function schedule_background_load\(\)/);
+    assert.match(weatherSource, /APP\.state\.background_error\s*=\s*"queued"/);
+    assert.match(weatherSource, /APP\.timers\.stage_boot\s*=\s*nil\s+end\s+APP\.state\.background_pending\s*=\s*true/);
+    assert.match(weatherSource, /APP\.state\.background_pending\s*=\s*false\s+schedule_background_load\(\)[\s\S]*lazy_load_background\(\)/);
+    assert.doesNotMatch(weatherSource, /APP\.timers\.background\s*=/);
+    assert.doesNotMatch(weatherSource, /timer:alarm\(APP\.BACKGROUND_LOAD_DELAY_MS/);
+    assert.match(weatherSource, /stage_assets\(\)[\s\S]*lazy_load_visual_assets\(\)/);
+    const stageAssetsBody = weatherSource.match(/local function stage_assets\(\)([\s\S]*?)\n    end\n\n    local function stage_boot_step\(\)/);
+    assert.ok(stageAssetsBody, "weather stage_assets body is present");
+    assert.doesNotMatch(stageAssetsBody[1], /init_ui\(\)/);
+    assert.doesNotMatch(stageAssetsBody[1], /asset_path\("bg"/);
+    assert.doesNotMatch(stageAssetsBody[1], /lazy_load_background\(\)/);
+    assert.match(weatherSource, /stop_reason ~= "reload" and not APP\.state\.assets_ready[\s\S]*release_startup_page\(\)/);
+    assert.match(weatherSource, /stop_reason ~= "reload" and not APP\.state\.assets_ready[\s\S]*clear_root\(\)/);
+    assert.match(weatherSource, /if not APP\.state\.fonts_ready then\s+release_fonts\(\)/);
+
+    const bootSequence = weatherSource.match(/init_time_module\(\)\s+init_startup_shell\(\)[\s\S]*bind_input\(\)\s+start_timers\(\)/);
+    assert.ok(bootSequence, "weather boot sequence is present");
+    assert.doesNotMatch(bootSequence[0], /init_ui\(\)/);
+    assert.doesNotMatch(bootSequence[0], /render_weather\(\)/);
+    assert.doesNotMatch(bootSequence[0], /render_forecast\(\)/);
+    assert.doesNotMatch(bootSequence[0], /request_weather\(\)/);
+    assert.match(bootSequence[0], /bind_input\(\)\s+start_timers\(\)/);
+  });
+
   it("tracks migrated app runtime API gaps before hardware runs", () => {
     const http = readRequired(luaHttpSourcePath);
     const sjson = readRequired(luaSjsonSourcePath);
     const canvas = readRequired(luaLvglCanvasSourcePath);
     const widgetSource = readRequired(luaLvglWidgetsSourcePath);
     const weather = readRequired(weatherSourcePath);
+    const btc = readRequired(btcSourcePath);
     const voiceAi = readRequired(voiceAiSourcePath);
+    const voiceAiSmokeTool = readRequired(voiceAiSmokeToolPath);
+    const voiceAiSmokeTest = readRequired(voiceAiSmokeTestPath);
     const nesgame = readRequired(nesgameSourcePath);
 
     assert.match(weather, /http\.cubicserver\.get/);
     assert.match(http, /http_cubicserver_get/);
-    assert.match(http, /VB_HTTP_CUBICSERVER_BASE_URL/);
     assert.match(http, /VB_HTTP_CUBICSERVER_CONFIG_PATH\s+"\/sdcard\/runtime\/cubicserver\.json"/);
     assert.match(http, /load_cubicserver_base_url/);
     assert.match(http, /cJSON_GetObjectItem\(root,\s*"base_url"\)/);
     assert.match(http, /lua_setfield\(L,\s*-2,\s*"cubicserver"\)/);
+    assert.match(http, /apply_headers/);
+    assert.match(http, /esp_http_client_set_header\(client,\s*key,\s*value\)/);
+    assert.match(http, /lua_isfunction\(L,\s*3\)/);
+    assert.match(http, /lua_isfunction\(L,\s*4\)/);
+    assert.match(http, /call_callback/);
+    assert.match(http, /lua_call\(L,\s*2,\s*0\)/);
 
     assert.match(weather, /json\.decode/);
+    assert.match(btc, /json\.decode/);
+    assert.match(btc, /http\.get/);
+    assert.match(btc, /metrics\.json/);
+    assert.match(btc, /BASE_URL\s*=\s*"https:\/\/data-api\.binance\.vision"/);
     assert.match(voiceAi, /json\.decode/);
     assert.match(sjson, /lua_setglobal\(L,\s*"sjson"\)/);
     assert.match(sjson, /lua_setglobal\(L,\s*"json"\)/);
@@ -1233,7 +1898,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(canvas, /"lv_canvas_blur_ver"/);
 
     assert.match(voiceAi, /lv_gif_set_src/);
+    assert.match(voiceAi, /local\s+root\s*=\s*lv_scr_act\(\)/);
+    assert.doesNotMatch(voiceAi, /lv_obj_create\(nil\)/);
     assert.match(readRequired(sdkconfigDefaultsPath), /CONFIG_LV_USE_GIF=y/);
+    assert.match(readRequired(sdkconfigDefaultsPath), /CONFIG_LV_USE_PNG=y/);
+    assert.match(readRequired(join(firmwareRoot, "sdkconfig")), /CONFIG_LV_USE_PNG=y/);
     assert.match(widgetSource, /lv_gif_create/);
     assert.match(widgetSource, /"lv_gif_create"/);
     assert.match(widgetSource, /lv_gif_set_src/);
@@ -1241,6 +1910,58 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(voiceAi, /key\.SHORT/);
     assert.match(voiceAi, /key\.EXIT/);
+    assert.match(voiceAi, /http\.post\(bridge_url\("\/api\/chat"\),\s*\{\s*headers\s*=\s*headers/);
+    assert.match(voiceAi, /\["Content-Type"\]\s*=\s*"application\/octet-stream"/);
+    assert.match(voiceAi, /http\.get\(bridge_url\("\/api\/result\?id="/);
+    assert.match(voiceAi, /metrics\.json/);
+    assert.match(voiceAi, /submit_count/);
+    assert.match(voiceAi, /home_events/);
+    assert.match(voiceAi, /last_key_event/);
+    assert.match(voiceAi, /init_stage/);
+    assert.match(voiceAi, /metrics_error/);
+    assert.match(voiceAi, /font_loaded/);
+    assert.match(voiceAi, /font_handle/);
+    assert.match(voiceAi, /font_src/);
+    assert.match(voiceAi, /font_error/);
+    assert.match(voiceAi, /S\.font_loaded = true/);
+    assert.match(voiceAi, /S\.font_error = ok and \("invalid handle " \.\. tostring\(handle\)\) or tostring\(handle\)/);
+    assert.match(voiceAi, /load_font_ref\("\/sd\/apps\/weather\/font\/weather_ui_12\.bin",\s*FONT_12\)/);
+    assert.match(voiceAi, /use_gif/);
+    assert.match(voiceAi, /gif_visible/);
+    assert.match(voiceAi, /gif_state/);
+    assert.match(voiceAi, /gif_src/);
+    assert.match(voiceAi, /S\.shown_gif_src/);
+    assert.match(voiceAi, /last_i2s_error/);
+    assert.match(voiceAi, /read_recording_chunk\(80\)/);
+    assert.match(voiceAi, /MAX_RECORD_BYTES\s*=\s*262144/);
+    assert.match(voiceAi, /local function max_record_bytes\(\)/);
+    assert.match(voiceAi, /if S\.record_bytes >= byte_limit then\s*stop_recording_and_send\(\)/);
+    assert.match(voiceAi, /if #pcm > remaining then\s*pcm = pcm:sub\(1,\s*remaining\)/);
+    assert.match(voiceAi, /last_http_code/);
+    assert.match(voiceAi, /DEFAULT_BRIDGE_URL\s*=\s*"http:\/\/192\.168\.1\.26:8790"/);
+    assert.match(voiceAi, /local function load_config\(\)[\s\S]*return true, "default"/);
+    assert.match(voiceAi, /set_init_stage\("load_config"\)/);
+    assert.match(voiceAi, /local function finish_boot\(\)[\s\S]*set_init_stage\("ready"\)\s*write_metrics\(\)/);
+    assert.match(voiceAi, /local function schedule_boot\(\)/);
+    assert.match(voiceAi, /APP\.boot_timer:alarm\(50,\s*tmr\.ALARM_SINGLE/);
+    assert.match(voiceAi, /set_init_stage\("scheduled_boot",\s*true\)\s*schedule_boot\(\)/);
+    assert.doesNotMatch(voiceAi, /set_init_stage\("build_ui"\)\s*build_ui\(\)\s*set_init_stage\("start_timers"\)\s*start_timers\(\)\s*set_init_stage\("update_ui"\)\s*update_ui\(\)\s*set_init_stage\("ready"\)\s*write_metrics\(\)\s*$/);
+    assert.doesNotMatch(voiceAi, /set_init_stage\("load_config", true\)/);
+    assert.doesNotMatch(voiceAi, /file\.open\("config\.json", "r"\)/);
+    assert.doesNotMatch(voiceAi, /file\.read\("config\.json"\)/);
+    assert.doesNotMatch(voiceAi, /handle:read\(1024\)/);
+    assert.match(voiceAi, /pcall\(load_config\)/);
+    assert.doesNotMatch(voiceAi, /getcontents\(APP\.APP_DIR \.\. "\/config\.json"\)/);
+    assert.match(voiceAiSmokeTool, /--require-gif/);
+    assert.match(voiceAiSmokeTool, /--require-font/);
+    assert.match(voiceAiSmokeTool, /hasVisibleGifMetrics/);
+    assert.match(voiceAiSmokeTool, /hasLoadedFontMetrics/);
+    assert.match(voiceAiSmokeTool, /gif_visible/);
+    assert.match(voiceAiSmokeTool, /font_loaded/);
+    assert.match(voiceAiSmokeTest, /can require voice_ai to expose an enabled visible GIF in metrics before recording/);
+    assert.match(voiceAiSmokeTest, /can require voice_ai to expose a loaded custom font in metrics before recording/);
+    assert.match(voiceAiSmokeTest, /fails when GIF metrics are required but not visible/);
+    assert.match(voiceAiSmokeTest, /fails when font metrics are required but not loaded/);
     assert.match(readRequired(luaKeySourcePath), /SHORT/);
     assert.match(readRequired(luaKeySourcePath), /EXIT/);
 
@@ -1273,10 +1994,43 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /EVT_UPDATE/);
     assert.match(source, /BTN_XBOX/);
     assert.match(runner, /#include\s+"lua_gamepad\.h"/);
-    assert.match(runner, /vb_lua_gamepad_register\(L\)/);
+    assert.match(runner, /vb_lua_gamepad_register\(L,\s*&runtime\.gamepad\)/);
   });
 
-  it("registers a Lua I2S recording module for Voice AI", () => {
+  it("queues HTTP gamepad smoke injection through the active Lua runner", () => {
+    const header = readRequired(luaGamepadHeaderPath);
+    const source = readRequired(luaGamepadSourcePath);
+    const runnerHeader = readRequired(runnerHeaderPath);
+    const runner = readRequired(runnerSourcePath);
+    const installService = readRequired(installServiceSourcePath);
+
+    assert.match(header, /typedef\s+struct\s+\{[\s\S]*buttons_mask[\s\S]*address\[32\][\s\S]*\}\s+vb_lua_gamepad_pending_state_t/);
+    assert.match(header, /void\s+vb_lua_gamepad_init/);
+    assert.match(header, /esp_err_t\s+vb_lua_gamepad_enqueue/);
+    assert.match(header, /int\s+vb_lua_gamepad_process_pending/);
+    assert.match(source, /xQueueCreate\(VB_LUA_GAMEPAD_QUEUE_DEPTH,\s*sizeof\(vb_lua_gamepad_pending_state_t\)\)/);
+    assert.match(source, /vb_lua_gamepad_pending_state_t\s+queued\s*=\s*\*pending/);
+    assert.match(source, /xQueueSend\(queue,\s*&queued,\s*0\)/);
+    assert.match(source, /xQueueReceive\(queue,\s*&pending,\s*0\)/);
+    assert.match(source, /push_state_table/);
+    assert.match(runnerHeader, /vb_app_runner_enqueue_gamepad/);
+    assert.match(runner, /vb_lua_gamepad_state_t\s+gamepad/);
+    assert.match(runner, /vb_lua_gamepad_init\(&runtime\.gamepad\)/);
+    assert.match(runner, /vb_lua_gamepad_register\(L,\s*&runtime\.gamepad\)/);
+    assert.match(runner, /vb_lua_gamepad_process_pending\(L,\s*&runtime->gamepad\)/);
+    assert.match(runner, /vb_app_runner_enqueue_gamepad\(const\s+vb_lua_gamepad_pending_state_t\s+\*state\)/);
+    assert.match(runner, /vb_lua_gamepad_enqueue\(&runtime->gamepad,\s*state\)/);
+    assert.match(runner, /vb_lua_gamepad_cleanup\(L,\s*&runtime->gamepad\)/);
+    assert.match(installService, /#include\s+"lua_gamepad\.h"/);
+    assert.match(installService, /static\s+esp_err_t\s+input_gamepad_handler\(httpd_req_t\s+\*req\)/);
+    assert.match(installService, /parse_bool_query/);
+    assert.match(installService, /parse_int_query/);
+    assert.match(installService, /vb_app_runner_enqueue_gamepad\(&state\)/);
+    assert.match(installService, /register_handler\("\/input\/gamepad",\s*HTTP_POST,\s*input_gamepad_handler\)/);
+    assert.doesNotMatch(installService, /atoi\(.*buttons/);
+  });
+
+  it("registers a Lua I2S recording and playback module for Voice AI", () => {
     const header = readRequired(luaI2sHeaderPath);
     const source = readRequired(luaI2sSourcePath);
     const cmake = readRequired(cmakePath);
@@ -1286,6 +2040,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /vb_lua_i2s_register/);
     assert.match(source, /i2s_start/);
     assert.match(source, /i2s_read/);
+    assert.match(source, /i2s_write/);
     assert.match(source, /i2s_stop/);
     assert.match(source, /i2s_status/);
     assert.match(source, /MODE_MASTER/);
@@ -1294,9 +2049,80 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /FORMAT_I2S/);
     assert.match(source, /\/sdcard\/runtime\/i2s\.json/);
     assert.match(source, /i2s_channel_read/);
+    assert.match(source, /i2s_channel_write/);
     assert.match(source, /i2s_channel_disable/);
+    assert.match(source, /dout_pin/);
+    assert.match(source, /tx_bytes/);
+    assert.match(source, /stop_port\(port\)/);
+    assert.doesNotMatch(source, /if \(port->started\) \{\s*lua_pushboolean\(L,\s*true\);\s*return 1;\s*\}/);
     assert.match(runner, /#include\s+"lua_i2s\.h"/);
     assert.match(runner, /vb_lua_i2s_register\(L\)/);
+  });
+
+  it("routes NES host audio writes through the runtime I2S TX helper", () => {
+    const i2sHeader = readRequired(luaI2sHeaderPath);
+    const i2sSource = readRequired(luaI2sSourcePath);
+    const nesHostShim = readRequired(join(firmwareRoot, "main/nes_host_v1_shim.c"));
+    const nesAudioOut = readRequired(join(repoRoot, "modules/nes/audio/nes_audio_out.cpp"));
+    const nesAudioOutHeader = readRequired(join(repoRoot, "modules/nes/audio/nes_audio_out.h"));
+
+    assert.match(i2sHeader, /vb_i2s_tx_stream_begin/);
+    assert.match(i2sHeader, /vb_i2s_tx_stream_write/);
+    assert.match(i2sHeader, /vb_i2s_tx_stream_end/);
+    assert.match(i2sSource, /i2s_channel_write/);
+    assert.match(i2sSource, /VB_I2S_TX_STREAM_DMA_COUNT\s+2/);
+    assert.match(i2sSource, /VB_I2S_TX_STREAM_DMA_LEN\s+64/);
+    assert.match(i2sSource, /VB_I2S_TX_STREAM_ERR_NEW_CHANNEL\s+10000/);
+    assert.match(i2sSource, /VB_I2S_TX_STREAM_ERR_INIT_STD\s+20000/);
+    assert.match(i2sSource, /VB_I2S_TX_STREAM_ERR_ENABLE\s+30000/);
+    assert.match(i2sSource, /encode_tx_stream_error\(esp_err_t err,\s*int stage\)/);
+    assert.match(i2sSource, /encode_tx_stream_error\(err,\s*VB_I2S_TX_STREAM_ERR_NEW_CHANNEL\)/);
+    assert.match(i2sSource, /encode_tx_stream_error\(err,\s*failure_stage\)/);
+    assert.match(nesHostShim, /#include\s+"lua_i2s\.h"/);
+    assert.match(nesHostShim, /vb_i2s_tx_stream_begin\(/);
+    assert.match(nesHostShim, /vb_i2s_tx_stream_begin\(0,/);
+    assert.match(nesHostShim, /s_last_audio_begin_error/);
+    assert.match(i2sSource, /s_tx_streams\[VB_I2S_MAX_PORTS\]/);
+    assert.doesNotMatch(i2sSource, /vb_i2s_tx_stream_begin[\s\S]*?heap_caps_calloc/);
+    assert.match(nesHostShim, /vb_i2s_tx_stream_write\(stream,\s*samples,\s*bytes,\s*&written,\s*20\)/);
+    assert.match(nesHostShim, /vb_i2s_tx_stream_end\(/);
+    assert.match(nesAudioOutHeader, /m_host_zero_write_streak/);
+    assert.match(nesAudioOut, /host audio unsupported: "\)\s*\+\s*String\(ret\)/);
+    assert.match(nesAudioOut, /attempts\s*<\s*3/);
+    assert.match(nesAudioOut, /m_dropped_bytes\s*\+=\s*\(uint32_t\)\(bytes\s*-\s*offset\)/);
+    assert.match(nesAudioOut, /\+\+m_host_zero_write_streak\s*<\s*16/);
+    assert.match(nesAudioOut, /setFailure\("host audio write failed"\);[\s\S]*return false;/);
+    assert.match(nesHostShim, /strcmp\(name,\s*"nes_apu"\)\s*==\s*0/);
+    assert.match(nesHostShim, /else[\s\S]*xTaskCreatePinnedToCore\([^;]*core/);
+    assert.doesNotMatch(nesHostShim, /\(void\)core;/);
+    const nesVideoOut = readRequired(join(repoRoot, "modules/nes/video/nes_video_out.cpp"));
+    assert.match(nesVideoOut, /String\("push display pixels failed: "\)\s*\+\s*String\(ret\)/);
+    const coreBridge = readRequired(join(repoRoot, "modules/nes/runtime/nes_core_bridge.cpp"));
+    assert.match(coreBridge, /beginAudioOutput\(\)/);
+    assert.match(coreBridge, /setStage\(StageCartridgeBegin[\s\S]*beginAudioOutput\(\)[\s\S]*setStage\(StageVideoBegin/);
+    assert.match(coreBridge, /m_bus->cpu\.apu\.setAudioSink\(audioSinkCallback,\s*this\)/);
+    assert.doesNotMatch(nesHostShim, /static int32_t shim_audio_begin[\s\S]*?\(void\)desc;[\s\S]*?\(void\)out_stream;[\s\S]*?return MODULE_ERR_UNSUPPORTED;/);
+    assert.doesNotMatch(nesHostShim, /static int32_t shim_audio_write[\s\S]*?\(void\)samples;[\s\S]*?\(void\)bytes;[\s\S]*?return MODULE_ERR_UNSUPPORTED;/);
+    assert.doesNotMatch(nesHostShim, /static int32_t shim_audio_end[\s\S]*?\(void\)stream;[\s\S]*?return MODULE_ERR_UNSUPPORTED;/);
+  });
+
+  it("resets the NES display stream when a new frame starts with an unfinished stream", () => {
+    const nesVideoOut = readRequired(join(repoRoot, "modules/nes/video/nes_video_out.cpp"));
+    const submitBody = nesVideoOut.match(/bool NesVideoOut::submitTransferChunk[\s\S]*?void NesVideoOut::cancelTransferChunk/);
+    assert.ok(submitBody, "NesVideoOut::submitTransferChunk body is present");
+    assert.match(submitBody[0], /start_row\s*==\s*0[\s\S]*m_stream_active[\s\S]*dmaWait\(err\)/);
+    assert.ok(
+      submitBody[0].indexOf("start_row == 0") < submitBody[0].indexOf("pushPixelsDMA"),
+      "new-frame stream reset happens before pushing pixels",
+    );
+  });
+
+  it("closes the NES ROM file handle after successful PSRAM preload", () => {
+    const cartridge = readRequired(join(repoRoot, "modules/nes/core/cartridge.cpp"));
+    assert.match(
+      cartridge,
+      /if\s*\(preload_result\s*==\s*RomPreloadResult::Success\)\s*\{\s*rom\.close\(\);\s*\}/,
+    );
   });
 
   it("starts optional runtime Wi-Fi from SD before serving installs", () => {
@@ -1393,6 +2219,18 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(widgetSource, /lv_obj_set_style_bg_grad_stop/);
     assert.match(widgetSource, /lv_obj_set_style_text_color/);
     assert.match(widgetSource, /lv_obj_set_style_text_font/);
+    assert.match(widgetSource, /vb_lua_lvgl_font_from_ref/);
+    assert.match(widgetSource, /case 10:[\s\S]*lv_font_montserrat_10/);
+    assert.match(widgetSource, /case 12:[\s\S]*lv_font_montserrat_12/);
+    assert.match(widgetSource, /case 14:[\s\S]*lv_font_montserrat_14/);
+    assert.match(widgetSource, /case 16:[\s\S]*lv_font_montserrat_16/);
+    assert.match(widgetSource, /case 28:[\s\S]*lv_font_montserrat_28/);
+    assert.match(widgetSource, /const lv_font_t \*font = vb_lua_lvgl_font_from_ref\(font_ref\);/);
+    assert.doesNotMatch(widgetSource, /\(void\)font;\s*lvgl_port_lock\(0\);[\s\S]*?lv_obj_set_style_text_font\(object,\s*LV_FONT_DEFAULT,\s*selector\);/);
+    assert.match(readRequired(sdkconfigDefaultsPath), /CONFIG_LV_FONT_SIMSUN_16_CJK=y/);
+    assert.match(readRequired(sdkconfigDefaultsPath), /CONFIG_LV_FONT_DEFAULT_SIMSUN_16_CJK=y/);
+    assert.match(readRequired(join(firmwareRoot, "sdkconfig")), /CONFIG_LV_FONT_SIMSUN_16_CJK=y/);
+    assert.match(readRequired(join(firmwareRoot, "sdkconfig")), /CONFIG_LV_FONT_DEFAULT_SIMSUN_16_CJK=y/);
     assert.match(widgetSource, /lv_obj_set_style_text_opa/);
     assert.match(widgetSource, /lv_obj_set_style_text_align/);
     assert.match(widgetSource, /lv_obj_set_style_text_letter_space/);
@@ -1421,6 +2259,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(widgetSource, /lv_img_set_zoom/);
     assert.match(widgetSource, /lv_font_load/);
     assert.match(widgetSource, /lv_font_free/);
+    assert.match(widgetSource, /vb_lua_lvgl_resolve_asset_path\(path,\s*resolved,\s*sizeof\(resolved\)\)/);
+    assert.match(widgetSource, /lv_font_t \*font = lv_font_load\(resolved\);/);
+    assert.match(widgetSource, /lua_pushinteger\(L,\s*\(lua_Integer\)\(uintptr_t\)font\);/);
+    assert.match(widgetSource, /lv_font_free\(\(lv_font_t \*\)\(uintptr_t\)font_ref\);/);
+    assert.doesNotMatch(widgetSource, /static int l_lv_font_load[\s\S]*?lua_pushinteger\(L,\s*0\);[\s\S]*?return 1;/);
     assert.match(widgetSource, /lv_btn_create/);
     assert.match(widgetSource, /lv_bar_create/);
     assert.match(widgetSource, /lv_bar_set_value/);
@@ -1450,6 +2293,43 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /LV_ANIM_OFF/);
     assert.match(source, /LV_ANIM_ON/);
     assert.match(runner, /vb_lua_lvgl_register\(L\)/);
+  });
+
+  it("keeps LVGL BMP decoding usable for streamed weather backgrounds", () => {
+    const defaults = readRequired(sdkconfigDefaultsPath);
+    const bmpSource = readRequired(lvglBmpSourcePath);
+    const weatherSource = readRequired(weatherSourcePath);
+
+    assert.match(defaults, /CONFIG_LV_COLOR_16_SWAP=y/);
+    assert.match(defaults, /CONFIG_LV_USE_BMP=y/);
+    assert.match(bmpSource, /lv_fs_open\(&b\.f,\s*dsc->src,\s*LV_FS_MODE_RD\)/);
+    assert.match(bmpSource, /if\(res != LV_FS_RES_OK\) return LV_RES_INV;/);
+    assert.doesNotMatch(bmpSource, /if\(res == LV_RES_OK\) return LV_RES_INV;/);
+    assert.match(bmpSource, /dsc->img_data = NULL;/);
+    assert.match(bmpSource, /static lv_res_t decoder_read_line/);
+    assert.match(bmpSource, /lv_fs_seek\(&b->f,\s*p,\s*LV_FS_SEEK_SET\)/);
+    assert.match(bmpSource, /lv_fs_read\(&b->f,\s*buf,\s*len \* \(b->bpp \/ 8\),\s*NULL\)/);
+
+    assert.match(weatherSource, /local function background_asset_path\(kind\)/);
+    assert.match(weatherSource, /APP\.ASSET_DIR \.\. "\/bg\/" \.\. tostring\(kind or "partly"\) \.\. "\.bmp"/);
+    const canvasSource = readRequired(luaLvglCanvasSourcePath);
+    assert.match(canvasSource, /static int l_lv_canvas_load_bmp\(lua_State \*L\)/);
+    assert.match(canvasSource, /vb_lua_lvgl_resolve_asset_path\(src,\s*resolved,\s*sizeof\(resolved\)\)/);
+    assert.match(canvasSource, /fread\(header,\s*1,\s*sizeof\(header\),\s*file\)/);
+    assert.match(canvasSource, /heap_caps_malloc\(sizeof\(s_canvas_buffer\),\s*MALLOC_CAP_SPIRAM \| MALLOC_CAP_8BIT\)/);
+    assert.match(canvasSource, /lv_color_make/);
+    assert.match(canvasSource, /memcpy\(s_canvas_buffer,\s*scratch,\s*sizeof\(s_canvas_buffer\)\)/);
+    assert.match(canvasSource, /lv_obj_invalidate\(canvas\)/);
+    assert.match(canvasSource, /"lv_canvas_load_bmp"/);
+    assert.match(weatherSource, /APP\.ui\.bg_canvas\s*=\s*lv_canvas_create\(root,\s*APP\.SCREEN_W,\s*APP\.SCREEN_H\)/);
+
+    const backgroundBody = weatherSource.match(/local function lazy_load_background\(\)([\s\S]*?)\n    end\n\n    local function schedule_background_load\(\)/);
+    assert.ok(backgroundBody, "weather lazy background body is present");
+    assert.match(backgroundBody[1], /APP\.state\.background_error\s*=\s*"loading"/);
+    assert.match(backgroundBody[1], /lv_canvas_load_bmp\(APP\.ui\.bg_canvas,\s*background_asset_path\(weather_kind\(\)\)\)/);
+    assert.match(backgroundBody[1], /APP\.state\.background_ready\s*=\s*true/);
+    assert.doesNotMatch(backgroundBody[1], /APP\.state\.background_error\s*=\s*"probe"/);
+    assert.doesNotMatch(backgroundBody[1], /asset_path\("bg"/);
   });
 
   it("registers LVGL canvas drawing for MatrixRain-style apps", () => {
@@ -1527,10 +2407,18 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const source = readRequired(smokeKeySourcePath);
 
     assert.match(info, /name\s*=\s*smoke_key/);
-    assert.match(info, /capabilities\s*=\s*lvgl,timer,input/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,input,file/);
     assert.match(source, /key\.on\(function\(evt_code,\s*evt_type,\s*ts_ms\)/);
     assert.match(source, /key\.push\(key\.LEFT/);
     assert.match(source, /key\.push\(key\.RIGHT/);
+    assert.match(source, /pcall\(key\.repeat_start,\s*key\.UP/);
+    assert.match(source, /pcall\(key\.repeat_stop,\s*key\.UP/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /event_counts/);
+    assert.match(source, /UP:LONG_REPEAT/);
+    assert.match(source, /UP:LONG_END/);
+    assert.match(source, /app\.exiting\(\)/);
+    assert.match(source, /timer:stop\(\)/);
     assert.doesNotMatch(source, /\[key\.START\]\s*=\s*"START"/);
     assert.match(source, /lv_label_set_text\(event_label/);
     assert.match(source, /smoke key event/);
@@ -1555,7 +2443,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const source = readRequired(smokeGamepadSourcePath);
 
     assert.match(info, /name\s*=\s*smoke_gamepad/);
-    assert.match(info, /capabilities\s*=\s*lvgl,timer,input/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,input,file/);
     assert.match(source, /gamepad\.start/);
     assert.match(source, /gamepad\.on\(gamepad\.EVT_CONNECTING/);
     assert.match(source, /gamepad\.on\(gamepad\.EVT_CONNECTED/);
@@ -1564,6 +2452,17 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /gamepad\.push_state/);
     assert.match(source, /gamepad\.state/);
     assert.match(source, /gamepad\.BTN_XBOX/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /buttons_mask/);
+    assert.match(source, /xbox_seen/);
+    assert.match(source, /left_seen/);
+    assert.match(source, /right_seen/);
+    assert.match(source, /pair_events/);
+    assert.match(source, /last_address/);
+    assert.match(source, /local\s+connect_failed\s*=\s*0/);
+    assert.match(source, /gamepad\.on\(gamepad\.EVT_CONNECT_FAILED/);
+    assert.match(source, /connect_failed\s*=\s*connect_failed\s*\+\s*1/);
+    assert.match(source, /connect_failed\\":%d/);
   });
 
   it("ships an I2S recording smoke app", () => {
@@ -1574,14 +2473,20 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(info, /capabilities\s*=\s*lvgl,timer,audio/);
     assert.match(source, /i2s\.start/);
     assert.match(source, /i2s\.read/);
+    assert.match(source, /i2s\.write/);
     assert.match(source, /i2s\.status/);
     assert.match(source, /i2s\.stop/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /tx_bytes/);
+    assert.match(source, /writes/);
+    assert.match(source, /file\.write/);
   });
 
   it("ships a file smoke app", () => {
     const info = readRequired(smokeFileInfoPath);
     const source = readRequired(smokeFileSourcePath);
     const config = readRequired(smokeFileConfigPath);
+    const fileModule = readRequired(luaFileSourcePath);
 
     assert.match(info, /name\s*=\s*smoke_file/);
     assert.match(info, /capabilities\s*=\s*file/);
@@ -1592,12 +2497,25 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /file\.open\("config\.json",\s*"r"\)/);
     assert.match(source, /smoke file ok/);
     assert.match(config, /"city"\s*:\s*"Shanghai"/);
+    assert.match(fileModule, /log_file_error/);
+    assert.match(fileModule, /log_file_errno/);
+    assert.match(fileModule, /file app dir unavailable/);
+    assert.match(fileModule, /file path escapes app sandbox/);
+    assert.match(fileModule, /file write only supports app-local paths/);
+    assert.match(fileModule, /file path must be app-relative or \/sd\//);
+    assert.match(fileModule, /file path too long/);
+    assert.match(fileModule, /read-open/);
+    assert.match(fileModule, /read-seek/);
+    assert.match(fileModule, /read-size/);
+    assert.match(fileModule, /write-open/);
+    assert.match(fileModule, /list-open/);
   });
 
   it("ships an asset path smoke app", () => {
     const info = readRequired(smokeAssetsInfoPath);
     const source = readRequired(smokeAssetsSourcePath);
     const image = readRequired(smokeAssetsImagePath);
+    const fsSource = readRequired(luaLvglFsSourcePath);
 
     assert.match(info, /name\s*=\s*smoke_assets/);
     assert.match(info, /capabilities\s*=\s*lvgl,file/);
@@ -1615,12 +2533,17 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /lv_obj_clear_flag\(root,\s*LV_OBJ_FLAG_SCROLLABLE\)/);
     assert.match(source, /smoke assets ok/);
     assert.match(image, /VIBEBOARD_ASSET_SMOKE/);
+    assert.match(fsSource, /resolve asset failed path=%s detail=invalid or traversal/);
+    assert.match(fsSource, /resolve asset failed path=%s detail=unsupported absolute path/);
+    assert.match(fsSource, /resolve asset failed path=%s detail=invalid asset path/);
   });
 
   it("ships a visual smoke app with a real BMP asset and common widgets", () => {
     const info = readRequired(smokeVisualInfoPath);
     const source = readRequired(smokeVisualSourcePath);
     const bmp = readFileSync(smokeVisualBmpPath);
+    const canvasSource = readRequired(luaLvglCanvasSourcePath);
+    const widgetSource = readRequired(luaLvglWidgetsSourcePath);
 
     assert.match(info, /name\s*=\s*smoke_visual/);
     assert.match(info, /capabilities\s*=\s*lvgl,file,timer/);
@@ -1635,6 +2558,16 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /lv_bar_set_value\(bar,\s*progress,\s*LV_ANIM_ON\)/);
     assert.match(source, /tmr\.create\(\)/);
     assert.match(source, /smoke visual ok/);
+    assert.match(canvasSource, /resolve bmp source failed path=%s detail=invalid BMP source path/);
+    assert.match(canvasSource, /resolve bmp source failed path=%s detail=unsupported BMP format/);
+    assert.match(canvasSource, /resolve bmp source failed path=%s detail=BMP row too large/);
+    assert.match(canvasSource, /resolve bmp source failed path=%s detail=BMP canvas buffer allocation failed/);
+    assert.match(canvasSource, /open bmp failed path=%s detail=%s/);
+    assert.match(canvasSource, /read bmp failed path=%s detail=header read failed/);
+    assert.match(canvasSource, /read bmp failed path=%s detail=pixel read failed/);
+    assert.match(widgetSource, /resolve image source failed path=%s detail=invalid image source path/);
+    assert.match(widgetSource, /resolve gif source failed path=%s detail=invalid gif source path/);
+    assert.match(widgetSource, /resolve font source failed path=%s detail=invalid font source path/);
   });
 
   it("registers common LVGL control widgets for migrated apps", () => {
@@ -1684,6 +2617,57 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /lv_roller_create\(root\)/);
     assert.match(source, /lv_arc_create\(root\)/);
     assert.match(source, /smoke controls ok/);
+  });
+
+  it("ships the Phase 3 LVGL widgets smoke app", () => {
+    const info = readRequired(smokeLvglWidgetsInfoPath);
+    const source = readRequired(smokeLvglWidgetsSourcePath);
+    const bmp = readFileSync(smokeLvglWidgetsBmpPath);
+
+    assert.match(info, /name\s*=\s*smoke_lvgl_widgets/);
+    assert.match(info, /capabilities\s*=\s*lvgl,file,timer/);
+    assert.equal(bmp.subarray(0, 2).toString("ascii"), "BM");
+    assert.match(source, /lv_resolve_asset_path\("assets\/icon\.bmp"\)/);
+    assert.match(source, /lv_asset_exists\(APP\.icon_path\)/);
+    assert.match(source, /lv_label_create\(root\)/);
+    assert.match(source, /lv_img_create\(root\)/);
+    assert.match(source, /lv_img_set_src\(image,\s*APP\.icon_path\)/);
+    assert.match(source, /lv_obj_set_pos\(image,\s*18,\s*46\)/);
+    assert.match(source, /lv_btn_create\(root\)/);
+    assert.match(source, /lv_bar_create\(root\)/);
+    assert.match(source, /lv_bar_set_range\(bar,\s*0,\s*100\)/);
+    assert.match(source, /lv_bar_set_value\(APP\.ui\.bar,\s*APP\.progress,\s*LV_ANIM_ON\)/);
+    assert.match(source, /lv_obj_add_flag\(hidden,\s*LV_OBJ_FLAG_HIDDEN\)/);
+    assert.match(source, /lv_label_set_long_mode\(status,\s*LV_LABEL_LONG_CLIP\)/);
+    assert.match(source, /tmr\.create\(\)/);
+    assert.match(source, /alarm\(50,\s*tmr\.ALARM_SINGLE\s*or\s*0,\s*function\(\)/);
+    assert.match(source, /file\.write\(APP\.METRICS_PATH,\s*body\)/);
+    assert.match(source, /"boot_error":/);
+    assert.match(source, /APP\.boot_error\s*=\s*tostring\(err\s*or\s*"boot failed"\)/);
+    assert.match(source, /smoke lvgl widgets ok/);
+  });
+
+  it("ships the Phase 3 LVGL style smoke app", () => {
+    const info = readRequired(smokeLvglStyleInfoPath);
+    const source = readRequired(smokeLvglStyleSourcePath);
+
+    assert.match(info, /name\s*=\s*smoke_lvgl_style/);
+    assert.match(info, /capabilities\s*=\s*lvgl,file,timer/);
+    assert.match(source, /LV_PART_MAIN/);
+    assert.match(source, /LV_STATE_DEFAULT/);
+    assert.match(source, /lv_obj_set_style_opa\(card,\s*238,\s*MAIN\)/);
+    assert.match(source, /lv_obj_set_style_bg_opa\(card,\s*235,\s*MAIN\)/);
+    assert.match(source, /lv_obj_set_style_border_opa\(card,\s*160,\s*MAIN\)/);
+    assert.match(source, /lv_obj_set_style_text_font\(title,\s*FONT_16,\s*MAIN\)/);
+    assert.match(source, /lv_obj_set_style_text_font\(metric,\s*FONT_28,\s*MAIN\)/);
+    assert.match(source, /lv_obj_set_style_text_align\(metric,\s*TEXT_CENTER,\s*MAIN\)/);
+    assert.match(source, /lv_label_set_long_mode\(detail,\s*LONG_WRAP\)/);
+    assert.match(source, /rawget\(_G,\s*"lv_label_set_recolor"\)/);
+    assert.match(source, /alarm\(50,\s*tmr\.ALARM_SINGLE\s*or\s*0,\s*function\(\)/);
+    assert.match(source, /file\.write\(APP\.METRICS_PATH,\s*body\)/);
+    assert.match(source, /"boot_error":/);
+    assert.match(source, /APP\.boot_error\s*=\s*tostring\(err\s*or\s*"boot failed"\)/);
+    assert.match(source, /smoke lvgl style ok/);
   });
 
   it("ships MatrixRain as the first upstream display app migration", () => {
@@ -1775,7 +2759,318 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /time_getlocal_fn/);
     assert.match(source, /tmr\.create/);
     assert.match(source, /APP\.init_viper_engine/);
+    assert.match(source, /local\s+ok\s*=\s*pcall_fn\(app_on_fn,\s*"imu"/);
+    assert.match(source, /if ok then\s+imu_registered = true/);
     assert.ok(font.length > 0);
+  });
+
+  it("ships BTC as a minimal upstream network price migration", () => {
+    const info = readRequired(btcInfoPath);
+    const source = readRequired(btcSourcePath);
+
+    assert.match(info, /name = BTC/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,network,timer,file/);
+    assert.match(source, /BTC_APP/);
+    assert.match(source, /SYMBOL\s*=\s*"BTCUSDT"/);
+    assert.match(source, /data-api\.binance\.vision/);
+    assert.match(source, /CONFIG_PATH\s*=\s*"config\.json"/);
+    assert.match(source, /local function load_config\(\)/);
+    assert.match(source, /cfg\.base_url/);
+    assert.match(source, /cfg\.symbol/);
+    assert.match(source, /http\.get/);
+    assert.match(source, /json\.decode/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /network_attempts/);
+    assert.match(source, /price_ready/);
+    assert.match(source, /tmr\.create/);
+    assert.doesNotMatch(source, /lv_canvas_create/);
+  });
+
+  it("ships Settings as a minimal upstream device settings migration", () => {
+    const info = readRequired(settingsInfoPath);
+    const source = readRequired(settingsSourcePath);
+
+    assert.match(info, /name = Settings/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,timer,input,file/);
+    assert.match(source, /SETTINGS_APP/);
+    assert.match(source, /selected_index/);
+    assert.match(source, /brightness/);
+    assert.match(source, /key\.on/);
+    assert.match(source, /key\.off/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /settings_ready/);
+    assert.match(source, /selection_changes/);
+    assert.match(source, /tmr\.create/);
+    assert.doesNotMatch(source, /wifi\.mode/);
+    assert.doesNotMatch(source, /gamepad\.start/);
+    assert.doesNotMatch(source, /app\.set_webui/);
+  });
+
+  it("ships HW Monitor as a minimal upstream host metrics migration", () => {
+    const info = readRequired(hwmonInfoPath);
+    const source = readRequired(hwmonSourcePath);
+    const config = readRequired(hwmonConfigPath);
+
+    assert.match(info, /name = HW Monitor/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,network,timer,file/);
+    assert.match(source, /HWMON_APP/);
+    assert.match(source, /CONFIG_PATH\s*=\s*"config\.json"/);
+    assert.match(source, /DEFAULT_STATE_URL/);
+    assert.match(source, /local function load_config\(\)/);
+    assert.match(source, /http\.get/);
+    assert.match(source, /json\.decode/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /hwmon_ready/);
+    assert.match(source, /fetch_attempts/);
+    assert.match(source, /cpu_usage/);
+    assert.match(source, /gpu_usage/);
+    assert.match(source, /mem_usage/);
+    assert.match(source, /tmr\.create/);
+    assert.match(source, /app\.exiting\(\)/);
+    assert.match(config, /"state_url"/);
+    assert.doesNotMatch(source, /httpd\./);
+    assert.doesNotMatch(source, /app\.set_webui/);
+    assert.doesNotMatch(source, /app\.route_base/);
+  });
+
+  it("ships Spectrum as a minimal real-audio visualizer migration", () => {
+    const info = readRequired(spectrumInfoPath);
+    const source = readRequired(spectrumSourcePath);
+
+    assert.match(info, /name = Spectrum/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,timer,input,file,audio/);
+    assert.match(source, /SPECTRUM_APP/);
+    assert.match(source, /audio_started/);
+    assert.match(source, /audio_reads/);
+    assert.match(source, /band_levels/);
+    assert.match(source, /band_frequencies/);
+    assert.match(source, /goertzel_power/);
+    assert.match(source, /FRAME_BYTES\s*=\s*512/);
+    assert.match(source, /WINDOW_SAMPLES\s*=\s*128/);
+    assert.match(source, /i2s\.start/);
+    assert.match(source, /i2s\.read/);
+    assert.match(source, /TICK_MS\s*=\s*500/);
+    assert.doesNotMatch(source, /TICK_MS\s*=\s*40/);
+    assert.match(source, /RENDER_EVERY_FRAMES\s*=\s*2/);
+    assert.match(source, /I2S_READ_TIMEOUT_MS\s*=\s*0/);
+    assert.doesNotMatch(source, /I2S_READ_TIMEOUT_MS\s*=\s*20/);
+    assert.match(source, /app and app\.exiting and app\.exiting\(\)/);
+    assert.match(source, /lv_obj_create/);
+    assert.match(source, /APP\.ui\.spectrum/);
+    assert.match(source, /local function bar_text\(\)/);
+    assert.doesNotMatch(source, /init_bars_step/);
+    assert.doesNotMatch(source, /APP\.bars/);
+    assert.doesNotMatch(source, /APP\.bar_x/);
+    assert.doesNotMatch(source, /lv_obj_set_height/);
+    assert.match(source, /lv_obj_set_pos/);
+    assert.doesNotMatch(source, /lv_obj_get_x/);
+    assert.match(source, /key\.on/);
+    assert.match(source, /key\.off/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /audio_ready/);
+    assert.match(source, /timer_error/);
+    assert.match(source, /tick_phase/);
+    assert.match(source, /tick_count/);
+    assert.match(source, /local function tick_frame\(\)/);
+    assert.match(source, /pcall\(tick_frame\)/);
+    assert.match(source, /frames/);
+    assert.match(source, /mode_changes/);
+    assert.match(source, /tmr\.create/);
+    assert.match(source, /app\.exiting\(\)/);
+    assert.doesNotMatch(source, /spectrum\./);
+    assert.doesNotMatch(source, /synthetic_bins/);
+    assert.doesNotMatch(source, /lv_canvas_create/);
+    assert.doesNotMatch(source, /lv_canvas_draw_line/);
+    assert.doesNotMatch(source, /lv_canvas_draw_polyline/);
+  });
+
+  it("ships Codex Buddy as a deterministic desktop bridge migration", () => {
+    const info = readRequired(codexBuddyInfoPath);
+    const source = readRequired(codexBuddySourcePath);
+    const config = readRequired(codexBuddyConfigPath);
+    const manifest = readRequired(codexBuddyAssetManifestPath);
+    const requiredGifs = [
+      "sleep.gif",
+      "idle_0.gif",
+      "busy.gif",
+      "attention.gif",
+      "celebrate.gif",
+      "dizzy.gif",
+      "heart.gif",
+    ];
+
+    assert.match(info, /name = Codex Buddy/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,network,timer,input,file/);
+    assert.match(source, /CODEX_BUDDY_APP/);
+    assert.match(source, /APP_DIR\s*=\s*"\/sd\/apps\/codex_buddy"/);
+    assert.match(source, /CONFIG_PATH\s*=\s*"config\.json"/);
+    assert.match(source, /DEFAULT_BRIDGE_URL/);
+    assert.match(source, /local function load_config\(\)/);
+    assert.match(source, /http\.get\(state_url\(\)/);
+    assert.match(source, /http\.post\(permission_url\(\)/);
+    assert.match(source, /json\.decode/);
+    assert.match(source, /lv_gif_create/);
+    assert.match(source, /lv_gif_set_src/);
+    assert.match(source, /assets\/bufo/);
+    assert.match(source, /key\.on/);
+    assert.match(source, /key\.off/);
+    assert.match(source, /app\.set_home_exit\(false\)/);
+    assert.match(source, /app\.set_home_exit\(true\)/);
+    assert.match(source, /tmr\.create/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /buddy_ready/);
+    assert.match(source, /online/);
+    assert.match(source, /polls/);
+    assert.match(source, /last_http_code/);
+    assert.match(source, /pet_state/);
+    assert.match(source, /gif_visible/);
+    assert.match(source, /gif_state/);
+    assert.match(source, /prompt_seen/);
+    assert.match(source, /permission_posts/);
+    assert.match(source, /app\.exiting\(\)/);
+    assert.match(config, /"bridge_url"/);
+    for (const gif of requiredGifs) {
+      assert.match(manifest, new RegExp(`"${gif}"`));
+      assert.equal(existsSync(join(repoRoot, "apps/codex_buddy/assets/bufo", gif)), true, `${gif} should exist`);
+    }
+    assert.doesNotMatch(source, /httpd\./);
+    assert.doesNotMatch(source, /lv_canvas_create/);
+  });
+
+  it("ships Videos as a minimal GIF playlist migration", () => {
+    const info = readRequired(videosInfoPath);
+    const source = readRequired(videosSourcePath);
+
+    assert.match(info, /name = Videos/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,timer,input,file/);
+    assert.match(source, /VIDEOS_APP/);
+    assert.match(source, /APP_DIR\s*=\s*"\/sd\/apps\/videos"/);
+    assert.match(source, /VIDEO_DIR\s*=\s*"videos"/);
+    assert.match(source, /file\.listdir/);
+    assert.match(source, /lv_gif_create/);
+    assert.match(source, /lv_gif_set_src/);
+    assert.match(source, /key\.on/);
+    assert.match(source, /key\.off/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /videos_ready/);
+    assert.match(source, /gif_count/);
+    assert.match(source, /selection_changes/);
+    assert.match(source, /tmr\.create/);
+    assert.match(source, /app\.exiting\(\)/);
+    assert.doesNotMatch(source, /http\./);
+    assert.doesNotMatch(source, /app\.set_webui/);
+  });
+
+  it("ships Photos as a minimal image playlist migration", () => {
+    const info = readRequired(photosInfoPath);
+    const source = readRequired(photosSourcePath);
+
+    assert.match(info, /name = Photos/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,timer,input,file/);
+    assert.match(source, /PHOTOS_APP/);
+    assert.match(source, /APP_DIR\s*=\s*"\/sd\/apps\/photos"/);
+    assert.match(source, /PHOTO_DIR\s*=\s*"photos"/);
+    assert.match(source, /file\.listdir/);
+    assert.match(source, /lv_img_create/);
+    assert.match(source, /lv_img_set_src/);
+    assert.match(source, /key\.on/);
+    assert.match(source, /key\.off/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /photos_ready/);
+    assert.match(source, /image_count/);
+    assert.match(source, /selection_changes/);
+    assert.match(source, /tmr\.create/);
+    assert.match(source, /app\.exiting\(\)/);
+    assert.doesNotMatch(source, /lv_canvas_draw_img/);
+    assert.doesNotMatch(source, /http\./);
+    assert.doesNotMatch(source, /app\.set_webui/);
+  });
+
+  it("ships Plane as a minimal sprite game migration", () => {
+    const info = readRequired(planeInfoPath);
+    const source = readRequired(planeSourcePath);
+
+    assert.match(info, /name = Plane/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,timer,input,file/);
+    assert.match(source, /PLANE_APP/);
+    assert.match(source, /APP_DIR\s*=\s*"\/sd\/apps\/plane"/);
+    assert.match(source, /ASSET_DIR\s*=\s*"assets"/);
+    assert.match(source, /lv_img_create/);
+    assert.match(source, /lv_img_set_src/);
+    assert.match(source, /key\.on/);
+    assert.match(source, /key\.off/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /plane_ready/);
+    assert.match(source, /frames/);
+    assert.match(source, /shots/);
+    assert.match(source, /player_x/);
+    assert.match(source, /tmr\.create/);
+    assert.match(source, /app\.exiting\(\)/);
+    assert.doesNotMatch(source, /app\.on\(["']imu["']/);
+    assert.doesNotMatch(source, /lv_canvas_draw_img/);
+    assert.doesNotMatch(source, /http\./);
+    assert.doesNotMatch(source, /app\.set_webui/);
+  });
+
+  it("ships LV Benchmark as a minimal runtime benchmark migration", () => {
+    const info = readRequired(lvBenchmarkInfoPath);
+    const source = readRequired(lvBenchmarkSourcePath);
+
+    assert.match(info, /name = LV Benchmark/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,timer,file/);
+    assert.match(source, /LV_BENCHMARK_APP/);
+    assert.match(source, /APP_DIR\s*=\s*"\/sd\/apps\/lv-benchmark"/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /benchmark_ready/);
+    assert.match(source, /frames/);
+    assert.match(source, /scene_count/);
+    assert.match(source, /rects/);
+    assert.match(source, /labels/);
+    assert.match(source, /arcs/);
+    assert.match(source, /lv_obj_create/);
+    assert.match(source, /lv_label_create/);
+    assert.match(source, /lv_arc_create/);
+    assert.match(source, /lv_arc_set_value/);
+    assert.match(source, /lv_img_create/);
+    assert.match(source, /lv_img_set_angle/);
+    assert.match(source, /tmr\.create/);
+    assert.match(source, /app\.exiting\(\)/);
+    assert.doesNotMatch(source, /lv_line_create/);
+    assert.doesNotMatch(source, /lv_table_create/);
+    assert.doesNotMatch(source, /lv_obj_set_flex_flow/);
+    assert.doesNotMatch(source, /lv_lvgl_monitor_/);
+  });
+
+  it("ships Mini Claw as a WebUI agent service migration", () => {
+    const info = readRequired(miniClawInfoPath);
+    const source = readRequired(miniClawSourcePath);
+
+    assert.match(info, /name\s*=\s*Mini Claw/);
+    assert.match(info, /kind\s*=\s*service/);
+    assert.match(info, /allow_webui\s*=\s*true/);
+    assert.match(source, /MINI_CLAW_APP/);
+    assert.match(source, /app\.route_base\(\)/);
+    assert.match(source, /app\.set_webui\(true\)/);
+    assert.match(source, /app\.route\(["']\/["']/);
+    assert.match(source, /app\.route\(["']\/api["']/);
+    assert.match(source, /route_api/);
+    assert.match(source, /route_index/);
+    assert.match(source, /sys\.setbrightness/);
+    assert.match(source, /http\.post/);
+    assert.match(source, /http\.get/);
+    assert.match(source, /tmr\.create\(\)/);
+    assert.match(source, /:alarm\(APP\.config\.wechat_poll_ms\s+or\s+3500,\s*tmr\.ALARM_AUTO,/);
+    assert.doesNotMatch(source, /:alarm\(APP\.config\.wechat_poll_ms\s+or\s+3500,\s*1,/);
+    assert.doesNotMatch(source, /\bhttpd\./);
   });
 
   it("ships 2048 as an upstream key-driven game migration", () => {
@@ -1812,17 +3107,59 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(info, /name\s*=\s*smoke_nes/);
     assert.match(info, /entry\s*=\s*main\.lua/);
-    assert.match(info, /capabilities\s*=\s*lvgl,timer,module,native/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,module,native,file/);
     assert.match(source, /local\s+nes\s*=\s*require\(["']nes["']\)/);
     assert.match(source, /nes\.state\(\)/);
     assert.match(source, /nes\.start\(/);
     assert.match(source, /nes\.read_audio/);
     assert.match(source, /nes\.input\.set_mask/);
-    assert.match(source, /\/sdcard\/nes\/smoke\.nes/);
+    assert.match(source, /\/sdcard\/apps\/smoke_nes\/roms\/smoke\.nes/);
+    assert.match(source, /fps\s*=\s*60/);
+    assert.match(source, /task_stack\s*=\s*12288/);
+    assert.match(source, /task_priority\s*=\s*3/);
+    assert.match(source, /task_core\s*=\s*-1/);
+    assert.match(source, /transfer_rows\s*=\s*16/);
+    assert.match(source, /audio\s*=\s*\{/);
+    assert.match(source, /enabled\s*=\s*true/);
+    assert.match(source, /lua_fallback\s*=\s*false/);
+    assert.match(source, /sample_rate\s*=\s*22050/);
+    assert.match(source, /channels\s*=\s*1/);
+    assert.match(source, /bits_per_sample\s*=\s*16/);
+    assert.match(source, /queue_bytes\s*=\s*32768/);
+    assert.doesNotMatch(source, /target_fps\s*=\s*60/);
+    assert.doesNotMatch(source, /task_stack_bytes\s*=\s*6144/);
+    assert.doesNotMatch(source, /audio_task_stack_bytes\s*=\s*8192/);
+    assert.doesNotMatch(source, /audio_enabled\s*=\s*true/);
+    assert.doesNotMatch(source, /audio_lua_fallback\s*=\s*false/);
+    assert.match(source, /metrics_timer/);
+    assert.match(source, /tmr\.ALARM_AUTO/);
+    assert.match(source, /alarm\(1000,\s*tmr\.ALARM_AUTO/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /rom_present/);
+    assert.match(source, /started/);
+    assert.match(source, /rendered_frames/);
+    assert.match(source, /host_gamepad_active/);
+    assert.match(source, /host_gamepad_mask/);
+    assert.match(source, /running_state and running_state\.host_gamepad_mask/);
     assert.match(source, /core_frames/);
     assert.match(source, /audio_bytes/);
+    assert.match(source, /audio_written_bytes/);
+    assert.match(source, /local\s+pcm_bytes\s*=\s*pcm\s+and\s+#pcm\s+or\s+0/);
+    assert.match(source, /local\s+audio_bytes\s*=\s*pcm_bytes\s*>\s*0\s*and\s*pcm_bytes\s*or\s*audio_written_bytes\s*or\s*audio_queued_bytes\s*or\s*0/);
+    assert.doesNotMatch(source, /local\s+audio_bytes\s*=\s*pcm\s+and\s+#pcm\s+or\s*audio_written_bytes/);
+    assert.match(source, /audio_apu_task_present/);
+    assert.match(source, /audio_apu_task_started/);
+    assert.match(source, /audio_apu_task_ret/);
+    assert.match(source, /audio_apu_ticks/);
+    assert.match(source, /audio_sink_calls/);
+    assert.match(source, /audio_queued_bytes/);
     assert.match(source, /core_last_error/);
     assert.match(source, /open rom failed/);
+    assert.match(source, /retry_start_timer/);
+    assert.match(source, /tmr\.ALARM_SINGLE/);
+    assert.match(source, /try_start\(1\)/);
+    assert.match(readRequired(join(repoRoot, "tools/nes-smoke/index.mjs")), /--require-host-gamepad-mask/);
+    assert.match(readRequired(join(repoRoot, "tools/nes-smoke/index.mjs")), /\/input\/gamepad/);
     assert.match(nativeManifest, /magic\s*=\s*VBNM/);
     assert.match(nativeManifest, /abi\s*=\s*vibeboard-native-module-abi@1/);
     assert.match(nativeManifest, /symbol\s*=\s*vb_native_module_init/);
@@ -1835,7 +3172,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(info, /name\s*=\s*smoke_app_manager/);
     assert.match(info, /entry\s*=\s*main\.lua/);
-    assert.match(info, /capabilities\s*=\s*lvgl,timer,input/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,input,file/);
     assert.match(source, /app\.list\(\)/);
     assert.match(source, /app\.rescan\(\)/);
     assert.match(source, /app\.current\(\)/);
@@ -1845,6 +3182,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /type\(app\.set_home_exit\)\s*==\s*["']function["']/);
     assert.match(source, /app\.set_home_exit\(false\)/);
     assert.match(source, /app\.set_home_exit\(true\)/);
+    assert.match(source, /type\(app\.route_base\)\s*==\s*["']function["']/);
+    assert.match(source, /type\(app\.set_webui\)\s*==\s*["']function["']/);
+    assert.match(source, /type\(app\.route\)\s*==\s*["']function["']/);
+    assert.match(source, /app\.set_webui\(true\)/);
+    assert.match(source, /app\.route\(["']\/api\/ping["']/);
+    assert.match(source, /webui_requests/);
     assert.match(source, /app\.launch\(["']smoke_key["']\)/);
     assert.match(source, /software_home_injected/);
     assert.match(source, /key\.push\(key\.HOME,\s*key\.SHORT\)/);

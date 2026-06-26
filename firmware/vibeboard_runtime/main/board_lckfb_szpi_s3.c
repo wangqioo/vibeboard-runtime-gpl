@@ -29,6 +29,9 @@ static esp_lcd_touch_handle_t touch;
 static sdmmc_card_t *sd_card;
 static TaskHandle_t input_task;
 static volatile bool input_stop_requested;
+static bool s_display_takeover_active;
+static bool s_backlight_ready;
+static int s_backlight_percent;
 static vb_board_input_callback_t input_callback;
 static void *input_user_data;
 
@@ -102,14 +105,16 @@ static esp_err_t backlight_init(void)
     };
 
     ESP_RETURN_ON_ERROR(ledc_timer_config(&timer), TAG, "backlight timer failed");
-    return ledc_channel_config(&channel);
+    ESP_RETURN_ON_ERROR(ledc_channel_config(&channel), TAG, "backlight channel failed");
+    s_backlight_ready = true;
+    s_backlight_percent = 0;
+    return ESP_OK;
 }
 
 static esp_err_t backlight_on(void)
 {
     ESP_LOGI(TAG, "Setting LCD backlight: 100%%");
-    ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1023), TAG, "backlight duty failed");
-    return ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+    return vb_board_set_backlight_percent(100);
 }
 
 static esp_err_t display_init(void)
@@ -200,6 +205,35 @@ static void lvgl_flush_wait_callback(lv_disp_drv_t *drv)
     vTaskDelay(pdMS_TO_TICKS(1));
 }
 
+esp_err_t vb_board_display_takeover(void)
+{
+    if (lcd_panel == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (s_display_takeover_active) {
+        return ESP_OK;
+    }
+
+    esp_err_t err = lvgl_port_stop();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        return err;
+    }
+    s_display_takeover_active = true;
+    return ESP_OK;
+}
+
+void vb_board_display_release_takeover(void)
+{
+    if (!s_display_takeover_active) {
+        return;
+    }
+    s_display_takeover_active = false;
+    esp_err_t err = lvgl_port_resume();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(TAG, "lvgl resume after display takeover failed: %s", esp_err_to_name(err));
+    }
+}
+
 esp_err_t vb_board_draw_rgb565(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const void *rgb565)
 {
     if (lcd_panel == NULL || rgb565 == NULL || width == 0 || height == 0) {
@@ -209,12 +243,51 @@ esp_err_t vb_board_draw_rgb565(uint16_t x, uint16_t y, uint16_t width, uint16_t 
         return ESP_ERR_INVALID_SIZE;
     }
 
-    return esp_lcd_panel_draw_bitmap(lcd_panel, x, y, x + width, y + height, rgb565);
+    if (s_display_takeover_active) {
+        return esp_lcd_panel_draw_bitmap(lcd_panel, x, y, x + width, y + height, rgb565);
+    }
+
+    if (!lvgl_port_lock(pdMS_TO_TICKS(100))) {
+        return ESP_ERR_TIMEOUT;
+    }
+    esp_err_t err = esp_lcd_panel_draw_bitmap(lcd_panel, x, y, x + width, y + height, rgb565);
+    lvgl_port_unlock();
+    return err;
+}
+
+esp_err_t vb_board_set_backlight_percent(int level)
+{
+    if (!s_backlight_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (level < 0 || level > 100) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint32_t duty = (uint32_t)((level * 1023 + 50) / 100);
+    ESP_RETURN_ON_ERROR(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty), TAG, "backlight duty failed");
+    ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0), TAG, "backlight update failed");
+    s_backlight_percent = level;
+    return ESP_OK;
+}
+
+esp_err_t vb_board_get_backlight_percent(int *level)
+{
+    if (level == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_backlight_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    *level = s_backlight_percent;
+    return ESP_OK;
 }
 
 static esp_err_t lvgl_init(vb_board_status_t *status)
 {
-    const lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    lvgl_cfg.task_stack = 8192;
     ESP_RETURN_ON_ERROR(lvgl_port_init(&lvgl_cfg), TAG, "lvgl port init failed");
 
     const lvgl_port_display_cfg_t disp_cfg = {
@@ -265,7 +338,7 @@ esp_err_t vb_board_mount_sd(vb_board_status_t *status)
 
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = false,
-        .max_files = 8,
+        .max_files = VB_SD_MAX_OPEN_FILES,
         .allocation_unit_size = 16 * 1024,
     };
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();

@@ -12,12 +12,14 @@ import {
 } from "./interrupted-smoke.mjs";
 import { parseLaunchCliArgs } from "./launch.mjs";
 import { parseRuntimeConfigCliArgs } from "./runtime-config.mjs";
+import { parseRuntimeConfigSmokeCliArgs } from "./runtime-config-smoke.mjs";
 import { parseUploadCliArgs } from "./cli.mjs";
 import {
   createNcRequest,
   deleteApp,
   launchApp,
   listUploadFiles,
+  runRuntimeConfigSmoke,
   sendRequest,
   setRuntimeConfig,
   stopApp,
@@ -36,6 +38,13 @@ function makePackage() {
 
 function sha256(text) {
   return createHash("sha256").update(text).digest("hex");
+}
+
+function appInfoReadback(url, text = "name = demo\nentry = main.lua\ndescription = Demo\n") {
+  if (url.endsWith("/apps/file?app=demo&path=app.info")) {
+    return { ok: true, status: 200, text };
+  }
+  return null;
 }
 
 function byteLength(text) {
@@ -81,9 +90,10 @@ describe("uploadApp", () => {
         boardUrl: "http://192.168.1.32:8080/",
         stageId: "demo-stage",
         fetchImpl: async (url, options) => {
-          calls.push({ url, method: options.method, body: options.body.toString("utf8") });
+          calls.push({ url, method: options.method, body: options.body ? options.body.toString("utf8") : "" });
           if (url.endsWith("/install/commit?app=demo&stage=demo-stage")) return { ok: true, status: 200, text: async () => '{"ok":true,"committed":"demo"}' };
           if (url.endsWith("/apps")) return { ok: true, status: 200, text: async () => '{"apps":[{"id":"demo"}]}' };
+          if (url.endsWith("/apps/file?app=demo&path=app.info")) return { ok: true, status: 200, text: async () => "name = demo\nentry = main.lua\ndescription = Demo\n" };
           return { ok: true, status: 200, text: async () => "ok" };
         },
       });
@@ -138,9 +148,10 @@ describe("uploadApp", () => {
         boardUrl: "http://192.168.1.32:8080/",
         staged: false,
         fetchImpl: async (url, options) => {
-          calls.push({ url, method: options.method, body: options.body.toString("utf8") });
+          calls.push({ url, method: options.method, body: options.body ? options.body.toString("utf8") : "" });
           if (url.endsWith("/rescan")) return { ok: true, status: 200, text: async () => '{"ok":true,"app_count":1}' };
           if (url.endsWith("/apps")) return { ok: true, status: 200, text: async () => '{"apps":[{"id":"demo"}]}' };
+          if (url.endsWith("/apps/file?app=demo&path=app.info")) return { ok: true, status: 200, text: async () => "name = demo\nentry = main.lua\ndescription = Demo\n" };
           return { ok: true, status: 200, text: async () => "ok" };
         },
       });
@@ -169,6 +180,8 @@ describe("uploadApp", () => {
           requests.push({ url, method: options.method, body: body ? body.toString("utf8") : "" });
           if (url.endsWith("/rescan")) return { ok: true, status: 200, text: '{"ok":true,"app_count":1}' };
           if (url.endsWith("/apps")) return { ok: true, status: 200, text: '{"apps":[{"id":"demo"}]}' };
+          const readback = appInfoReadback(url);
+          if (readback) return readback;
           return { ok: true, status: 200, text: "ok\n" };
         },
       });
@@ -196,7 +209,7 @@ describe("uploadApp", () => {
         staged: false,
         retryDelayMs: 0,
         requestImpl: async (url) => {
-          if (url.endsWith("path=app.info")) {
+          if (url.includes("/install?") && url.endsWith("path=app.info")) {
             appInfoAttempts++;
             if (appInfoAttempts === 1) {
               throw new Error("connect EHOSTUNREACH 192.168.1.32:8080");
@@ -204,6 +217,8 @@ describe("uploadApp", () => {
           }
           if (url.endsWith("/rescan")) return { ok: true, status: 200, text: '{"ok":true,"app_count":1}' };
           if (url.endsWith("/apps")) return { ok: true, status: 200, text: '{"apps":[{"id":"demo"}]}' };
+          const readback = appInfoReadback(url);
+          if (readback) return readback;
           return { ok: true, status: 200, text: "ok\n" };
         },
       });
@@ -231,6 +246,34 @@ describe("uploadApp", () => {
           },
         }),
         /Uploaded app demo was not found after rescan/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails when the board lists the app from cache but app.info is not readable", async () => {
+    const { root, appDir } = makePackage();
+    try {
+      await assert.rejects(
+        uploadApp({
+          appDir,
+          appId: "demo",
+          boardUrl: "http://192.168.1.32:8080",
+          requestImpl: async (url) => {
+            if (url.endsWith("/install/commit?app=demo&stage=demo-stage")) {
+              return { ok: true, status: 200, text: '{"ok":true,"committed":"demo"}' };
+            }
+            if (url.endsWith("/apps")) return { ok: true, status: 200, text: '{"apps":[{"id":"demo"}]}' };
+            if (url.endsWith("/apps/file?app=demo&path=app.info")) {
+              return { ok: false, status: 404, text: "file not found" };
+            }
+            return { ok: true, status: 200, text: "ok\n" };
+          },
+          stageId: "demo-stage",
+          retryAttempts: 1,
+        }),
+        /Uploaded app demo was listed but app\.info was not readable/,
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -472,6 +515,53 @@ describe("parseRuntimeConfigCliArgs", () => {
   });
 });
 
+describe("parseRuntimeConfigSmokeCliArgs", () => {
+  it("parses runtime config smoke arguments", () => {
+    assert.deepEqual(
+      parseRuntimeConfigSmokeCliArgs(["--transport", "native", "http://192.168.1.32:8080", "i2s", '{"bclk_pin":1,"ws_pin":2,"din_pin":3}']),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        name: "i2s",
+        source: '{"bclk_pin":1,"ws_pin":2,"din_pin":3}',
+        transport: "native",
+        reboot: false,
+        rebootPolls: 30,
+        rebootDelayMs: 1000,
+        expectAppCount: null,
+        expectIp: "",
+      },
+    );
+  });
+
+  it("parses reboot options for runtime config smoke", () => {
+    assert.deepEqual(
+      parseRuntimeConfigSmokeCliArgs([
+        "--reboot",
+        "--reboot-polls",
+        "12",
+        "--reboot-delay-ms=250",
+        "--expect-app-count",
+        "32",
+        "--expect-ip=192.168.1.32",
+        "http://192.168.1.32:8080",
+        "wifi",
+        "{}",
+      ]),
+      {
+        boardUrl: "http://192.168.1.32:8080",
+        name: "wifi",
+        source: "{}",
+        transport: "native",
+        reboot: true,
+        rebootPolls: 12,
+        rebootDelayMs: 250,
+        expectAppCount: 32,
+        expectIp: "192.168.1.32",
+      },
+    );
+  });
+});
+
 describe("createNcRequest", () => {
   it("sends raw HTTP through an nc-compatible runner", async () => {
     const commands = [];
@@ -609,6 +699,156 @@ describe("setRuntimeConfig", () => {
         },
       }),
       /Unsupported runtime config: other/,
+    );
+  });
+});
+
+describe("runRuntimeConfigSmoke", () => {
+  it("writes a runtime config and verifies the board still reports runtime status", async () => {
+    const calls = [];
+    const result = await runRuntimeConfigSmoke({
+      boardUrl: "http://192.168.1.32:8080/",
+      name: "i2s",
+      body: JSON.stringify({ bclk_pin: 1, ws_pin: 2, din_pin: 3 }),
+      requestImpl: async (url, requestBody, options = {}) => {
+        calls.push({ url, method: options.method, body: requestBody.toString("utf8") });
+        if (url.endsWith("/runtime/config?name=i2s")) {
+          return { ok: true, status: 200, text: '{"ok":true,"config":"i2s"}' };
+        }
+        if (url.endsWith("/status")) {
+          return {
+            ok: true,
+            status: 200,
+            text: '{"sd":true,"install":"ok","state":"idle","runtime_version":"0.1.0"}',
+          };
+        }
+        throw new Error(`unexpected URL ${url}`);
+      },
+    });
+
+    assert.equal(result.config.config, "i2s");
+    assert.equal(result.status.runtime_version, "0.1.0");
+    assert.deepEqual(calls.map((call) => [call.method, call.url]), [
+      ["POST", "http://192.168.1.32:8080/runtime/config?name=i2s"],
+      ["GET", "http://192.168.1.32:8080/status"],
+    ]);
+  });
+
+  it("can reboot after writing a runtime config and wait for runtime status to return", async () => {
+    const calls = [];
+    let statusPolls = 0;
+    const result = await runRuntimeConfigSmoke({
+      boardUrl: "http://192.168.1.32:8080/",
+      name: "wifi",
+      body: JSON.stringify({ ssid: "test-ssid", password: "test-pass" }),
+      reboot: true,
+      rebootPolls: 4,
+      rebootDelayMs: 0,
+      requestImpl: async (url, requestBody, options = {}) => {
+        calls.push({ url, method: options.method, body: requestBody.toString("utf8") });
+        if (url.endsWith("/runtime/config?name=wifi")) {
+          return { ok: true, status: 200, text: '{"ok":true,"config":"wifi"}' };
+        }
+        if (url.endsWith("/reboot")) {
+          return { ok: true, status: 200, text: '{"ok":true,"rebooting":true}' };
+        }
+        if (url.endsWith("/status")) {
+          statusPolls++;
+          if (statusPolls < 3) {
+            throw new Error("connect ECONNREFUSED");
+          }
+          return {
+            ok: true,
+            status: 200,
+            text: '{"sd":true,"install":"ok","state":"idle","runtime_version":"0.1.0"}',
+          };
+        }
+        throw new Error(`unexpected URL ${url}`);
+      },
+    });
+
+    assert.equal(result.config.config, "wifi");
+    assert.equal(result.reboot.rebooting, true);
+    assert.equal(result.status.runtime_version, "0.1.0");
+    assert.equal(result.statusPolls, 3);
+    assert.deepEqual(calls.map((call) => [call.method, call.url]), [
+      ["POST", "http://192.168.1.32:8080/runtime/config?name=wifi"],
+      ["POST", "http://192.168.1.32:8080/reboot"],
+      ["GET", "http://192.168.1.32:8080/status"],
+      ["GET", "http://192.168.1.32:8080/status"],
+      ["GET", "http://192.168.1.32:8080/status"],
+    ]);
+  });
+
+  it("can require rebooted runtime status to match app count and board IP expectations", async () => {
+    const result = await runRuntimeConfigSmoke({
+      boardUrl: "http://192.168.1.32:8080/",
+      name: "wifi",
+      body: JSON.stringify({ ssid: "test-ssid", password: "test-pass" }),
+      reboot: true,
+      rebootPolls: 2,
+      rebootDelayMs: 0,
+      expectAppCount: 32,
+      expectIp: "192.168.1.32",
+      requestImpl: async (url) => {
+        if (url.endsWith("/runtime/config?name=wifi")) {
+          return { ok: true, status: 200, text: '{"ok":true,"config":"wifi"}' };
+        }
+        if (url.endsWith("/reboot")) {
+          return { ok: true, status: 200, text: '{"ok":true,"rebooting":true}' };
+        }
+        if (url.endsWith("/status")) {
+          return {
+            ok: true,
+            status: 200,
+            text: '{"sd":true,"app_count":32,"ip":"192.168.1.32","install":"ok","state":"idle","runtime_version":"0.1.0"}',
+          };
+        }
+        throw new Error(`unexpected URL ${url}`);
+      },
+    });
+
+    assert.equal(result.status.app_count, 32);
+    assert.equal(result.status.ip, "192.168.1.32");
+  });
+
+  it("fails when rebooted runtime status does not match expected app count or IP", async () => {
+    await assert.rejects(
+      runRuntimeConfigSmoke({
+        boardUrl: "http://192.168.1.32:8080",
+        name: "wifi",
+        body: "{}",
+        expectAppCount: 32,
+        expectIp: "192.168.1.32",
+        requestImpl: async (url) => {
+          if (url.includes("/runtime/config")) {
+            return { ok: true, status: 200, text: '{"ok":true,"config":"wifi"}' };
+          }
+          return {
+            ok: true,
+            status: 200,
+            text: '{"sd":true,"app_count":31,"ip":"192.168.1.99","install":"ok","state":"idle","runtime_version":"0.1.0"}',
+          };
+        },
+      }),
+      /expected app_count 32, got 31/,
+    );
+  });
+
+  it("fails when the status response does not look like VibeBoard Runtime", async () => {
+    await assert.rejects(
+      runRuntimeConfigSmoke({
+        boardUrl: "http://192.168.1.32:8080",
+        name: "cubicserver",
+        body: "{}",
+        requestImpl: async (url) => {
+          if (url.includes("/runtime/config")) {
+            return { ok: true, status: 200, text: '{"ok":true,"config":"cubicserver"}' };
+          }
+          return { ok: true, status: 200, text: '{"state":"idle"}' };
+        },
+      }),
+      /status does not look like VibeBoard Runtime/,
     );
   });
 });

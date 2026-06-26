@@ -140,6 +140,10 @@ public:
         {
             m_options.audio_queue_bytes = 32768;
         }
+        if (m_options.audio_task_stack_bytes == 0)
+        {
+            m_options.audio_task_stack_bytes = 8192;
+        }
         if (m_options.task_stack_bytes == 0)
         {
             m_options.task_stack_bytes = 16 * 1024;
@@ -362,6 +366,14 @@ public:
         out->autorun = m_autorun ? 1 : 0;
         out->audio_requested = m_audio.requested() ? 1 : 0;
         out->audio_active = m_audio.active() ? 1 : 0;
+        out->audio_apu_task_present = m_apu_task ? 1 : 0;
+        out->audio_apu_task_started = __atomic_load_n(&m_apu_task_started, __ATOMIC_ACQUIRE) ? 1 : 0;
+        out->audio_apu_task_exited = __atomic_load_n(&m_apu_task_exited, __ATOMIC_ACQUIRE) ? 1 : 0;
+        out->audio_apu_task_ret = __atomic_load_n(&m_apu_task_ret, __ATOMIC_ACQUIRE);
+        out->audio_apu_ticks = __atomic_load_n(&m_audio_apu_ticks, __ATOMIC_ACQUIRE);
+        out->audio_sink_calls = __atomic_load_n(&m_audio_sink_calls, __ATOMIC_ACQUIRE);
+        out->audio_sink_frames = __atomic_load_n(&m_audio_sink_frames, __ATOMIC_ACQUIRE);
+        out->audio_written_bytes = m_audio.writtenBytes();
         out->audio_queued_bytes = (uint32_t)m_audio.queuedBytes();
         out->audio_dropped_bytes = m_audio.droppedBytes();
         copy_text(out->audio_backend, sizeof(out->audio_backend), m_audio.backendName());
@@ -404,26 +416,40 @@ private:
 
     void apuTaskLoop()
     {
-        while (!m_apu_task)
+        __atomic_store_n(&m_apu_task_started, true, __ATOMIC_RELEASE);
+        uint64_t next_batch_due = nes_port_micros();
+        const uint32_t sample_rate = m_options.audio_sample_rate > 0 ? m_options.audio_sample_rate : 22050u;
+        const uint32_t batch_us = (uint32_t)((256ULL * 1000000ULL) / sample_rate);
+        while (!__atomic_load_n(&m_apu_task_stop, __ATOMIC_ACQUIRE) && !m_stop_requested)
         {
-            nes_port_delay(1);
-        }
-
-        while (!m_apu_task_stop && !m_stop_requested)
-        {
+            const uint64_t now = nes_port_micros();
+            if (now < next_batch_due)
+            {
+                const uint32_t sleep_us = (uint32_t)(next_batch_due - now);
+                nes_port_delay(sleep_us / 1000u);
+                continue;
+            }
+            if (now > next_batch_due + ((uint64_t)batch_us * 4u))
+            {
+                next_batch_due = now;
+            }
             Bus *bus = m_bus;
             if (!bus || (m_paused && m_step_frames == 0))
             {
                 nes_port_delay(1);
+                next_batch_due = nes_port_micros() + batch_us;
                 continue;
             }
-            for (uint16_t i = 0; i < 256 && !m_apu_task_stop && !m_stop_requested; ++i)
+            for (uint16_t i = 0; i < 256 && !__atomic_load_n(&m_apu_task_stop, __ATOMIC_ACQUIRE) && !m_stop_requested; ++i)
             {
                 bus->cpu.apu.clock();
             }
+            __atomic_add_fetch(&m_audio_apu_ticks, 256u, __ATOMIC_RELEASE);
+            next_batch_due += batch_us;
+            nes_port_yield();
         }
 
-        m_apu_task_exited = true;
+        __atomic_store_n(&m_apu_task_exited, true, __ATOMIC_RELEASE);
         parkCurrentTask();
     }
 
@@ -505,6 +531,7 @@ private:
             {
                 m_bus->controller = (uint8_t)m_last_nes_mask;
                 m_bus->clock();
+                nes_port_yield();
                 setStage(StageFrameClockDone, "[nes.so] frame clock done");
                 String render_err;
                 if (m_bus->consumeRenderFailure(&render_err))
@@ -583,6 +610,23 @@ private:
         setStage(StageInitBegin, "[nes.so] init begin");
         releaseCoreObjects();
 
+        setStage(StageCartridgeBegin, "[nes.so] cartridge begin");
+        m_cartridge = new Cartridge(m_rom_path);
+        if (!m_cartridge || !m_cartridge->ready())
+        {
+            const char *msg = m_cartridge ? m_cartridge->lastError().c_str() : "alloc cartridge failed";
+            setError(msg && msg[0] ? msg : "load rom failed", nullptr, 0);
+            releaseCoreObjects();
+            return false;
+        }
+        m_mapper_id = m_cartridge->mapperId();
+        setStage(StageCartridgeReady, "[nes.so] cartridge ready");
+        if (m_prepare_level == 2)
+        {
+            m_loaded = true;
+            return true;
+        }
+
         m_video.init();
         nes::VideoSpec spec = {};
         spec.width = m_options.width;
@@ -591,6 +635,8 @@ private:
         spec.transfer_rows = m_options.transfer_rows;
 
         String err;
+        beginAudioOutput();
+
         setStage(StageVideoBegin, "[nes.so] video begin");
         if (!m_video.begin(spec,
                            (int16_t)m_options.x,
@@ -609,23 +655,6 @@ private:
             return true;
         }
 
-        setStage(StageCartridgeBegin, "[nes.so] cartridge begin");
-        m_cartridge = new Cartridge(m_rom_path);
-        if (!m_cartridge || !m_cartridge->ready())
-        {
-            const char *msg = m_cartridge ? m_cartridge->lastError().c_str() : "alloc cartridge failed";
-            setError(msg && msg[0] ? msg : "load rom failed", nullptr, 0);
-            releaseCoreObjects();
-            return false;
-        }
-        m_mapper_id = m_cartridge->mapperId();
-        setStage(StageCartridgeReady, "[nes.so] cartridge ready");
-        if (m_prepare_level == 2)
-        {
-            m_loaded = true;
-            return true;
-        }
-
         setStage(StageBusBegin, "[nes.so] bus begin");
         m_bus = new Bus();
         if (!m_bus)
@@ -638,28 +667,6 @@ private:
         m_bus->setVideoOut(&m_video);
         m_bus->insertCartridge(m_cartridge);
         m_bus->cpu.apu.setAudioSink(audioSinkCallback, this);
-        if (m_options.audio_enabled)
-        {
-            nes::audio::AudioSpec audio_spec = {};
-            audio_spec.enabled = true;
-            audio_spec.sample_rate = m_options.audio_sample_rate;
-            audio_spec.bits_per_sample = m_options.audio_bits_per_sample;
-            audio_spec.channels = m_options.audio_channels;
-            audio_spec.queue_bytes = m_options.audio_queue_bytes;
-            audio_spec.lua_fallback = m_options.audio_lua_fallback != 0;
-
-            String audio_err;
-            if (!m_audio.begin(audio_spec, &audio_err))
-            {
-                copy_text(m_audio_error,
-                          sizeof(m_audio_error),
-                          audio_err.length() > 0 ? audio_err.c_str() : "nes audio begin failed");
-            }
-            else
-            {
-                m_audio_error[0] = '\0';
-            }
-        }
         if (m_prepare_level == 3)
         {
             m_loaded = true;
@@ -684,6 +691,34 @@ private:
         m_loaded = true;
         setStage(StageBusReady, "[nes.so] bus ready");
         return true;
+    }
+
+    void beginAudioOutput()
+    {
+        if (!m_options.audio_enabled)
+        {
+            return;
+        }
+
+        nes::audio::AudioSpec audio_spec = {};
+        audio_spec.enabled = true;
+        audio_spec.sample_rate = m_options.audio_sample_rate;
+        audio_spec.bits_per_sample = m_options.audio_bits_per_sample;
+        audio_spec.channels = m_options.audio_channels;
+        audio_spec.queue_bytes = m_options.audio_queue_bytes;
+        audio_spec.lua_fallback = m_options.audio_lua_fallback != 0;
+
+        String audio_err;
+        if (!m_audio.begin(audio_spec, &audio_err))
+        {
+            copy_text(m_audio_error,
+                      sizeof(m_audio_error),
+                      audio_err.length() > 0 ? audio_err.c_str() : "nes audio begin failed");
+        }
+        else
+        {
+            m_audio_error[0] = '\0';
+        }
     }
 
     void releaseCoreObjects()
@@ -713,23 +748,29 @@ private:
         }
 
         void *task = nullptr;
+        __atomic_store_n(&m_audio_apu_ticks, 0u, __ATOMIC_RELEASE);
+        __atomic_store_n(&m_audio_sink_calls, 0u, __ATOMIC_RELEASE);
+        __atomic_store_n(&m_audio_sink_frames, 0u, __ATOMIC_RELEASE);
+        __atomic_store_n(&m_apu_task_stop, false, __ATOMIC_RELEASE);
+        __atomic_store_n(&m_apu_task_exited, false, __ATOMIC_RELEASE);
+        __atomic_store_n(&m_apu_task_started, false, __ATOMIC_RELEASE);
+        __atomic_store_n(&m_apu_task_ret, MODULE_ERR_UNSUPPORTED, __ATOMIC_RELEASE);
         auto entry = reinterpret_cast<void (*)(void *)>(nes_port_exec_ptr(reinterpret_cast<const void *>(apuTaskEntry)));
         const int32_t audio_core = (m_options.task_core == 0) ? 1 : 0;
         const uint32_t audio_priority = (m_options.task_priority > 1) ? (m_options.task_priority - 1) : 1;
         const int32_t ret = m_host->task.create("nes_apu",
                                                 entry,
                                                 this,
-                                                4096,
+                                                m_options.audio_task_stack_bytes,
                                                 audio_priority,
                                                 audio_core,
                                                 &task);
+        __atomic_store_n(&m_apu_task_ret, ret, __ATOMIC_RELEASE);
         if (ret != MODULE_OK || !task)
         {
             return false;
         }
 
-        m_apu_task_stop = false;
-        m_apu_task_exited = false;
         m_apu_task = task;
         return true;
     }
@@ -738,14 +779,14 @@ private:
     {
         if (!m_apu_task)
         {
-            m_apu_task_stop = false;
-            m_apu_task_exited = false;
+            __atomic_store_n(&m_apu_task_stop, false, __ATOMIC_RELEASE);
+            __atomic_store_n(&m_apu_task_exited, false, __ATOMIC_RELEASE);
             return;
         }
 
-        m_apu_task_stop = true;
+        __atomic_store_n(&m_apu_task_stop, true, __ATOMIC_RELEASE);
         const uint32_t start_ms = nes_port_millis();
-        while (!m_apu_task_exited && (nes_port_millis() - start_ms) < timeout_ms)
+        while (!__atomic_load_n(&m_apu_task_exited, __ATOMIC_ACQUIRE) && (nes_port_millis() - start_ms) < timeout_ms)
         {
             nes_port_delay(1);
         }
@@ -754,12 +795,15 @@ private:
             m_host->task.remove(m_apu_task);
         }
         m_apu_task = nullptr;
-        m_apu_task_stop = false;
-        m_apu_task_exited = false;
+        __atomic_store_n(&m_apu_task_stop, false, __ATOMIC_RELEASE);
+        __atomic_store_n(&m_apu_task_exited, false, __ATOMIC_RELEASE);
+        __atomic_store_n(&m_apu_task_started, false, __ATOMIC_RELEASE);
     }
 
     void handleAudioSamples(const int16_t *samples, size_t frames)
     {
+        __atomic_add_fetch(&m_audio_sink_calls, 1u, __ATOMIC_RELEASE);
+        __atomic_add_fetch(&m_audio_sink_frames, (uint32_t)frames, __ATOMIC_RELEASE);
         if (!m_audio.write(samples, frames) && m_audio_error[0] == '\0')
         {
             copy_text(m_audio_error, sizeof(m_audio_error), "nes audio write failed");
@@ -815,6 +859,9 @@ private:
     Cartridge *m_cartridge = nullptr;
     nes::video::NesVideoOut m_video;
     nes::audio::NesAudioOut m_audio;
+    uint32_t m_audio_apu_ticks = 0;
+    uint32_t m_audio_sink_calls = 0;
+    uint32_t m_audio_sink_frames = 0;
     void *m_task = nullptr;
     void *m_apu_task = nullptr;
 
@@ -823,8 +870,10 @@ private:
     volatile bool m_paused = false;
     volatile bool m_autorun = false;
     volatile bool m_task_exited = false;
-    volatile bool m_apu_task_stop = false;
-    volatile bool m_apu_task_exited = false;
+    bool m_apu_task_stop = false;
+    bool m_apu_task_exited = false;
+    bool m_apu_task_started = false;
+    int32_t m_apu_task_ret = MODULE_ERR_UNSUPPORTED;
     volatile bool m_prepare_requested = false;
     volatile uint32_t m_prepare_result = 0;
     volatile uint32_t m_prepare_level = 0;

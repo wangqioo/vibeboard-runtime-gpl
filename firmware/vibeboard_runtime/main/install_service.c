@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -13,41 +14,127 @@
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_event.h"
+#include "esp_system.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "launcher_ui.h"
+#include "lua_gamepad.h"
+#include "lua_key.h"
 #include "module_abi.h"
+#include "runtime_version.h"
 #include "mbedtls/sha256.h"
 
 static const char *TAG = "install_service";
 #define VB_INSTALL_HTTPD_STACK_SIZE 8192
 #define VB_APP_STAGE_PATH "/sdcard/.vibeboard-staging"
-#define VB_RUNTIME_VERSION "0.1.0"
-#define VB_RUNTIME_LUA_API_VERSION "0.1.0"
-#define VB_RUNTIME_LVGL_API_VERSION "0.1.0"
-#define VB_RUNTIME_PACKAGE_SCHEMA "vibeboard-runtime-app-package@2"
 #define VB_RUNTIME_NATIVE_ABI_VERSION VB_NATIVE_MODULE_ABI_VERSION
 #define VB_RUNTIME_CUBICSERVER_CONFIG_PATH "/sdcard/runtime/cubicserver.json"
 #define VB_RUNTIME_WIFI_CONFIG_PATH "/sdcard/runtime/wifi.json"
 #define VB_RUNTIME_I2S_CONFIG_PATH "/sdcard/runtime/i2s.json"
 #define VB_RUNTIME_CONFIG_MAX_BYTES 512
 #define VB_MANIFEST_MAX_BYTES 16384
+#define VB_WEBUI_BODY_MAX_BYTES (24 * 1024)
 #define VB_SHA256_BYTES 32
 #define VB_SHA256_HEX_LEN 64
 #define VB_HASH_BUFFER_SIZE 512
-
+#define VB_LAUNCH_DEFERRED_STACK_SIZE 4096
+#define VB_LAUNCH_DEFERRED_DELAY_MS 50
+#define VB_REBOOT_DEFERRED_STACK_SIZE 2048
+#define VB_REBOOT_DEFERRED_DELAY_MS 250
 static httpd_handle_t s_server;
 static bool s_netif_ready;
 static vb_install_service_context_t *s_context;
 
+typedef struct {
+    vb_app_registry_result_t registry;
+    int selected_index;
+} vb_launch_deferred_job_t;
+
 static void send_json(httpd_req_t *req, const char *json);
 
-static void note_launcher_async_launch(void *user_data)
+static void reboot_deferred_task(void *arg)
 {
-    (void)user_data;
-    vb_launcher_ui_note_async_launch();
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(VB_REBOOT_DEFERRED_DELAY_MS));
+    esp_restart();
+}
+
+static esp_err_t queue_reboot_after_response(void)
+{
+    BaseType_t created = xTaskCreatePinnedToCore(reboot_deferred_task,
+                                                 "vb_reboot_http",
+                                                 VB_REBOOT_DEFERRED_STACK_SIZE,
+                                                 NULL,
+                                                 tskIDLE_PRIORITY + 2,
+                                                 NULL,
+                                                 tskNO_AFFINITY);
+    return created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+static void launch_deferred_task(void *arg)
+{
+    vb_launch_deferred_job_t *job = (vb_launch_deferred_job_t *)arg;
+    if (job == NULL) {
+        vTaskDelete(NULL);
+        return;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(VB_LAUNCH_DEFERRED_DELAY_MS));
+    esp_err_t err = vb_app_runner_launch_async_from_registry(&job->registry, job->selected_index);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "deferred launch failed: %s", esp_err_to_name(err));
+        vb_app_runner_note_launch_failure(err, esp_err_to_name(err));
+    }
+
+    heap_caps_free(job);
+    vTaskDelete(NULL);
+}
+
+static esp_err_t queue_launch_after_response(const vb_app_registry_result_t *registry, int selected_index)
+{
+    if (registry == NULL || selected_index < 0 || selected_index >= registry->stored_app_count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    vb_launch_deferred_job_t *job = heap_caps_calloc(1, sizeof(*job), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (job == NULL) {
+        job = heap_caps_calloc(1, sizeof(*job), MALLOC_CAP_8BIT);
+    }
+    if (job == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    job->registry = *registry;
+    job->selected_index = selected_index;
+    BaseType_t created = xTaskCreatePinnedToCoreWithCaps(launch_deferred_task,
+                                                         "vb_launch_http",
+                                                         VB_LAUNCH_DEFERRED_STACK_SIZE,
+                                                         job,
+                                                         tskIDLE_PRIORITY + 2,
+                                                         NULL,
+                                                         tskNO_AFFINITY,
+                                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (created != pdPASS) {
+        heap_caps_free(job);
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+static bool match_uri_without_query(const char *reference_uri, const char *uri, size_t uri_len)
+{
+    size_t path_len = uri_len;
+    for (size_t i = 0; i < uri_len; i++) {
+        if (uri[i] == '?') {
+            path_len = i;
+            break;
+        }
+    }
+    return httpd_uri_match_wildcard(reference_uri, uri, path_len);
 }
 
 static bool reject_unsafe_path(const char *path)
@@ -366,6 +453,16 @@ static esp_err_t build_stage_path(char *dest, size_t dest_size, const char *stag
     return build_storage_path(dest, dest_size, VB_APP_STAGE_PATH, stage, path);
 }
 
+static esp_err_t build_commit_backup_path(char *dest, size_t dest_size, const char *stage)
+{
+    char name[96];
+    int written = snprintf(name, sizeof(name), "%s.rollback", stage);
+    if (written < 0 || written >= (int)sizeof(name)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    return build_stage_path(dest, dest_size, name, NULL);
+}
+
 static esp_err_t remove_tree(const char *path)
 {
     struct stat st;
@@ -411,6 +508,114 @@ static esp_err_t get_query_value(httpd_req_t *req, const char *key, char *value,
         return err;
     }
     return httpd_query_key_value(query, key, value, value_size);
+}
+
+static bool parse_key_code(const char *value, int *code)
+{
+    if (strcmp(value, "LEFT") == 0 || strcmp(value, "left") == 0) {
+        *code = VB_LUA_KEY_LEFT;
+    } else if (strcmp(value, "RIGHT") == 0 || strcmp(value, "right") == 0) {
+        *code = VB_LUA_KEY_RIGHT;
+    } else if (strcmp(value, "UP") == 0 || strcmp(value, "up") == 0) {
+        *code = VB_LUA_KEY_UP;
+    } else if (strcmp(value, "DOWN") == 0 || strcmp(value, "down") == 0) {
+        *code = VB_LUA_KEY_DOWN;
+    } else if (strcmp(value, "HOME") == 0 || strcmp(value, "home") == 0) {
+        *code = VB_LUA_KEY_HOME;
+    } else if (strcmp(value, "EXIT") == 0 || strcmp(value, "exit") == 0) {
+        *code = VB_LUA_KEY_EXIT;
+    } else if (strcmp(value, "START") == 0 || strcmp(value, "start") == 0) {
+        *code = VB_LUA_KEY_START;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+static bool parse_key_event(const char *value, int *event)
+{
+    if (strcmp(value, "SHORT") == 0 || strcmp(value, "short") == 0 ||
+        strcmp(value, "START") == 0 || strcmp(value, "start") == 0) {
+        *event = VB_LUA_KEY_SHORT;
+    } else if (strcmp(value, "LONG_START") == 0 || strcmp(value, "long_start") == 0) {
+        *event = VB_LUA_KEY_LONG_START;
+    } else if (strcmp(value, "LONG_REPEAT") == 0 || strcmp(value, "long_repeat") == 0) {
+        *event = VB_LUA_KEY_LONG_REPEAT;
+    } else if (strcmp(value, "LONG_END") == 0 || strcmp(value, "long_end") == 0) {
+        *event = VB_LUA_KEY_LONG_END;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+static bool parse_bool_value(const char *value, bool *out)
+{
+    if (strcmp(value, "1") == 0 || strcmp(value, "true") == 0 || strcmp(value, "TRUE") == 0 ||
+        strcmp(value, "yes") == 0 || strcmp(value, "on") == 0) {
+        *out = true;
+        return true;
+    }
+    if (strcmp(value, "0") == 0 || strcmp(value, "false") == 0 || strcmp(value, "FALSE") == 0 ||
+        strcmp(value, "no") == 0 || strcmp(value, "off") == 0) {
+        *out = false;
+        return true;
+    }
+    return false;
+}
+
+static bool parse_bool_query(httpd_req_t *req, const char *key, bool fallback, bool *out)
+{
+    char value[16] = {0};
+    esp_err_t err = get_query_value(req, key, value, sizeof(value));
+    if (err == ESP_ERR_NOT_FOUND) {
+        *out = fallback;
+        return true;
+    }
+    if (err != ESP_OK) {
+        return false;
+    }
+    return parse_bool_value(value, out);
+}
+
+static bool parse_int_query(httpd_req_t *req, const char *key, int fallback, int *out)
+{
+    char value[24] = {0};
+    esp_err_t err = get_query_value(req, key, value, sizeof(value));
+    if (err == ESP_ERR_NOT_FOUND) {
+        *out = fallback;
+        return true;
+    }
+    if (err != ESP_OK || value[0] == '\0') {
+        return false;
+    }
+    char *end = NULL;
+    long parsed = strtol(value, &end, 10);
+    if (end == value || *end != '\0') {
+        return false;
+    }
+    *out = (int)parsed;
+    return true;
+}
+
+static bool parse_double_query(httpd_req_t *req, const char *key, double fallback, double *out)
+{
+    char value[24] = {0};
+    esp_err_t err = get_query_value(req, key, value, sizeof(value));
+    if (err == ESP_ERR_NOT_FOUND) {
+        *out = fallback;
+        return true;
+    }
+    if (err != ESP_OK || value[0] == '\0') {
+        return false;
+    }
+    char *end = NULL;
+    double parsed = strtod(value, &end);
+    if (end == value || *end != '\0') {
+        return false;
+    }
+    *out = parsed;
+    return true;
 }
 
 static esp_err_t ensure_netif_ready(void)
@@ -525,10 +730,47 @@ static esp_err_t install_commit_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "manifest validation failed");
         return ESP_FAIL;
     }
-    if (remove_tree(app_path) != ESP_OK || ensure_parent_dirs(app_path) != ESP_OK || rename(stage_path, app_path) != 0) {
+
+    char backup_path[VB_APP_PATH_MAX];
+    if (build_commit_backup_path(backup_path, sizeof(backup_path), stage) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+
+    bool has_previous_app = false;
+    struct stat app_st;
+    if (stat(app_path, &app_st) == 0) {
+        has_previous_app = true;
+    } else if (errno != ENOENT) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "commit failed");
         return ESP_FAIL;
     }
+
+    if (remove_tree(backup_path) != ESP_OK || ensure_parent_dirs(app_path) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "commit failed");
+        return ESP_FAIL;
+    }
+
+    if (has_previous_app && rename(app_path, backup_path) != 0) {
+        ESP_LOGE(TAG, "backup failed %s -> %s errno=%d", app_path, backup_path, errno);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "commit failed");
+        return ESP_FAIL;
+    }
+
+    if (rename(stage_path, app_path) != 0) {
+        int rename_errno = errno;
+        if (has_previous_app && rename(backup_path, app_path) != 0) {
+            ESP_LOGE(TAG, "commit restore failed %s -> %s errno=%d", backup_path, app_path, errno);
+        }
+        ESP_LOGE(TAG, "commit failed %s -> %s errno=%d", stage_path, app_path, rename_errno);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "commit failed");
+        return ESP_FAIL;
+    }
+
+    if (has_previous_app && remove_tree(backup_path) != ESP_OK) {
+        ESP_LOGW(TAG, "commit cleanup failed %s", backup_path);
+    }
+
     if (s_context != NULL && s_context->registry != NULL && s_context->sd_ok) {
         vb_app_registry_scan(s_context->registry);
     }
@@ -639,24 +881,9 @@ static void send_json(httpd_req_t *req, const char *json)
     httpd_resp_sendstr(req, json);
 }
 
-static const vb_app_registry_entry_t *find_app_by_id(const vb_app_registry_result_t *registry, const char *id)
-{
-    if (registry == NULL || id == NULL) {
-        return NULL;
-    }
-
-    for (int i = 0; i < registry->stored_app_count; i++) {
-        const vb_app_registry_entry_t *app = &registry->apps[i];
-        if (strcmp(app->id, id) == 0) {
-            return app;
-        }
-    }
-    return NULL;
-}
-
 static esp_err_t status_handler(httpd_req_t *req)
 {
-    char body[768];
+    char body[1024];
     const vb_app_registry_result_t *registry = s_context ? s_context->registry : NULL;
     int app_count = 0;
     char first_app[VB_APP_NAME_MAX];
@@ -733,6 +960,54 @@ static esp_err_t apps_handler(httpd_req_t *req)
     return httpd_resp_sendstr_chunk(req, NULL);
 }
 
+static esp_err_t app_file_handler(httpd_req_t *req)
+{
+    char app[64] = {0};
+    char path[128] = {0};
+    if (get_query_value(req, "app", app, sizeof(app)) != ESP_OK ||
+        get_query_value(req, "path", path, sizeof(path)) != ESP_OK ||
+        reject_unsafe_path(app) ||
+        reject_unsafe_path(path)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing app/path");
+        return ESP_FAIL;
+    }
+
+    char full_path[VB_APP_PATH_MAX];
+    if (build_app_path(full_path, sizeof(full_path), app, path) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+
+    FILE *file = fopen(full_path, "rb");
+    if (file == NULL) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "file not found");
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, "application/octet-stream");
+    char buffer[512];
+    while (true) {
+        size_t read = fread(buffer, 1, sizeof(buffer), file);
+        if (read > 0) {
+            esp_err_t err = httpd_resp_send_chunk(req, buffer, read);
+            if (err != ESP_OK) {
+                fclose(file);
+                return err;
+            }
+        }
+        if (read < sizeof(buffer)) {
+            if (ferror(file)) {
+                fclose(file);
+                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "read failed");
+                return ESP_FAIL;
+            }
+            break;
+        }
+    }
+    fclose(file);
+    return httpd_resp_send_chunk(req, NULL, 0);
+}
+
 static esp_err_t rescan_handler(httpd_req_t *req)
 {
     if (s_context == NULL || s_context->registry == NULL || !s_context->sd_ok) {
@@ -768,17 +1043,22 @@ static esp_err_t launch_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    esp_err_t err = vb_app_registry_scan(s_context->registry);
-    if (err != ESP_OK) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+    esp_err_t scan_err = vb_app_registry_scan(s_context->registry);
+    if (scan_err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(scan_err));
         return ESP_FAIL;
     }
 
     vb_app_registry_entry_t selected_app = {0};
+    int selected_index = -1;
     vb_app_registry_lock();
-    const vb_app_registry_entry_t *app = find_app_by_id(s_context->registry, app_id);
-    if (app != NULL) {
-        selected_app = *app;
+    for (int i = 0; i < s_context->registry->stored_app_count; i++) {
+        const vb_app_registry_entry_t *app = &s_context->registry->apps[i];
+        if (strcmp(app->id, app_id) == 0) {
+            selected_app = *app;
+            selected_index = i;
+            break;
+        }
     }
     vb_app_registry_unlock();
     if (selected_app.id[0] == '\0') {
@@ -797,7 +1077,7 @@ static esp_err_t launch_handler(httpd_req_t *req)
             return ESP_FAIL;
         }
         ESP_LOGI(TAG, "switch app %s -> %s", current_id, selected_app.id);
-        err = vb_app_runner_stop();
+        esp_err_t err = vb_app_runner_stop();
         if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
             return ESP_FAIL;
@@ -809,11 +1089,7 @@ static esp_err_t launch_handler(httpd_req_t *req)
         }
     }
 
-    const vb_app_runner_launch_options_t launch_options = {
-        .before_start = note_launcher_async_launch,
-        .user_data = NULL,
-    };
-    err = vb_app_runner_launch_async_with_options(&selected_app, &launch_options);
+    esp_err_t err = queue_launch_after_response(s_context->registry, selected_index);
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
         return ESP_FAIL;
@@ -844,6 +1120,189 @@ static esp_err_t stop_handler(httpd_req_t *req)
     }
 
     send_json(req, "{\"ok\":true,\"stopped\":true}\n");
+    return ESP_OK;
+}
+
+static esp_err_t input_key_handler(httpd_req_t *req)
+{
+    char code_value[16] = {0};
+    char event_value[16] = {0};
+    int code = 0;
+    int event = 0;
+    if (get_query_value(req, "code", code_value, sizeof(code_value)) != ESP_OK ||
+        get_query_value(req, "event", event_value, sizeof(event_value)) != ESP_OK ||
+        !parse_key_code(code_value, &code) ||
+        !parse_key_event(event_value, &event)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid key code or event");
+        return ESP_FAIL;
+    }
+
+    esp_err_t err = vb_app_runner_enqueue_key(code, event);
+    if (err == ESP_ERR_INVALID_STATE) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no active app");
+        return ESP_FAIL;
+    }
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+
+    char body[96];
+    snprintf(body,
+             sizeof(body),
+             "{\"ok\":true,\"injected\":{\"code\":\"%s\",\"event\":\"%s\"}}\n",
+             code_value,
+             event_value);
+    send_json(req, body);
+    return ESP_OK;
+}
+
+static esp_err_t input_gamepad_handler(httpd_req_t *req)
+{
+    vb_lua_gamepad_pending_state_t state = {
+        .started = true,
+        .connected = true,
+        .connecting = false,
+        .buttons_mask = 0,
+        .lx = 0,
+        .ly = 0,
+        .dpad_up = false,
+        .dpad_down = false,
+        .dpad_left = false,
+        .dpad_right = false,
+    };
+
+    if (!parse_bool_query(req, "started", state.started, &state.started) ||
+        !parse_bool_query(req, "connected", state.connected, &state.connected) ||
+        !parse_bool_query(req, "connecting", state.connecting, &state.connecting) ||
+        !parse_bool_query(req, "dpad_up", state.dpad_up, &state.dpad_up) ||
+        !parse_bool_query(req, "dpad_down", state.dpad_down, &state.dpad_down) ||
+        !parse_bool_query(req, "dpad_left", state.dpad_left, &state.dpad_left) ||
+        !parse_bool_query(req, "dpad_right", state.dpad_right, &state.dpad_right) ||
+        !parse_int_query(req, "buttons", state.buttons_mask, &state.buttons_mask) ||
+        !parse_double_query(req, "lx", state.lx, &state.lx) ||
+        !parse_double_query(req, "ly", state.ly, &state.ly)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid gamepad state");
+        return ESP_FAIL;
+    }
+
+    char address[sizeof(state.address)] = {0};
+    if (get_query_value(req, "address", address, sizeof(address)) == ESP_OK) {
+        strlcpy(state.address, address, sizeof(state.address));
+    }
+
+    esp_err_t err = vb_app_runner_enqueue_gamepad(&state);
+    if (err == ESP_ERR_INVALID_STATE) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "no active app");
+        return ESP_FAIL;
+    }
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+
+    char body[160];
+    snprintf(body,
+             sizeof(body),
+             "{\"ok\":true,\"injected\":{\"connected\":%s,\"buttons\":%d,\"address\":\"%s\"}}\n",
+             state.connected ? "true" : "false",
+             state.buttons_mask,
+             state.address);
+    send_json(req, body);
+    return ESP_OK;
+}
+
+static esp_err_t webui_handler(httpd_req_t *req)
+{
+    const char *uri = req->uri;
+    const char *query = strchr(uri, '?');
+    size_t path_len = query ? (size_t)(query - uri) : strlen(uri);
+    const char *prefix = "/app";
+    size_t prefix_len = strlen(prefix);
+    if (path_len < prefix_len || strncmp(uri, prefix, prefix_len) != 0) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "route not found");
+        return ESP_FAIL;
+    }
+
+    char path[128] = {0};
+    size_t app_path_len = path_len - prefix_len;
+    if (app_path_len == 0) {
+        strlcpy(path, "/", sizeof(path));
+    } else if (app_path_len < sizeof(path)) {
+        memcpy(path, uri + prefix_len, app_path_len);
+        path[app_path_len] = '\0';
+    } else {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+
+    char query_value[192] = {0};
+    if (query != NULL && query[1] != '\0') {
+        strlcpy(query_value, query + 1, sizeof(query_value));
+    }
+
+    char *request_body = NULL;
+    char empty_body[] = "";
+    if (req->method == HTTP_POST) {
+        if (req->content_len > VB_WEBUI_BODY_MAX_BYTES) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "body too large");
+            return ESP_FAIL;
+        }
+        if (req->content_len > 0) {
+            request_body = heap_caps_malloc(req->content_len + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (request_body == NULL) {
+                request_body = heap_caps_malloc(req->content_len + 1, MALLOC_CAP_8BIT);
+            }
+            if (request_body == NULL) {
+                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "out of memory");
+                return ESP_FAIL;
+            }
+
+            size_t received = 0;
+            while (received < req->content_len) {
+                int chunk = httpd_req_recv(req, request_body + received, req->content_len - received);
+                if (chunk == HTTPD_SOCK_ERR_TIMEOUT) {
+                    continue;
+                }
+                if (chunk <= 0) {
+                    free(request_body);
+                    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "recv failed");
+                    return ESP_FAIL;
+                }
+                received += (size_t)chunk;
+            }
+            request_body[req->content_len] = '\0';
+        }
+    }
+
+    int status = 200;
+    char type[64] = "text/plain; charset=utf-8";
+    char body[512] = {0};
+    const char *method = req->method == HTTP_POST ? "POST" : "GET";
+    esp_err_t err = vb_app_runner_dispatch_webui(path,
+                                                 query_value,
+                                                 method,
+                                                 request_body ? request_body : empty_body,
+                                                 &status,
+                                                 type,
+                                                 sizeof(type),
+                                                 body,
+                                                 sizeof(body));
+    free(request_body);
+    if (err == ESP_ERR_INVALID_STATE || err == ESP_ERR_NOT_FOUND) {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "route not found");
+        return ESP_FAIL;
+    }
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(req, type);
+    if (status >= 400) {
+        httpd_resp_set_status(req, status >= 500 ? "500 Internal Server Error" : "400 Bad Request");
+    }
+    httpd_resp_sendstr(req, body[0] ? body : "\n");
     return ESP_OK;
 }
 
@@ -878,6 +1337,17 @@ static esp_err_t app_delete_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t reboot_handler(httpd_req_t *req)
+{
+    esp_err_t err = queue_reboot_after_response();
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
+        return ESP_FAIL;
+    }
+    send_json(req, "{\"ok\":true,\"rebooting\":true}\n");
+    return ESP_OK;
+}
+
 static esp_err_t register_handler(const char *uri, httpd_method_t method, esp_err_t (*handler)(httpd_req_t *req))
 {
     const httpd_uri_t http_uri = {
@@ -908,9 +1378,8 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
     config.stack_size = VB_INSTALL_HTTPD_STACK_SIZE;
-    config.task_caps = (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    config.max_uri_handlers = 12;
-    config.uri_match_fn = httpd_uri_match_wildcard;
+    config.max_uri_handlers = 16;
+    config.uri_match_fn = match_uri_without_query;
 
     err = httpd_start(&s_server, &config);
     if (err != ESP_OK) {
@@ -943,6 +1412,10 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     if (err != ESP_OK) {
         return err;
     }
+    err = register_handler("/apps/file", HTTP_GET, app_file_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
     err = register_handler("/rescan", HTTP_POST, rescan_handler);
     if (err != ESP_OK) {
         return err;
@@ -952,6 +1425,26 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
         return err;
     }
     err = register_handler("/stop", HTTP_POST, stop_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/reboot", HTTP_POST, reboot_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/input/key", HTTP_POST, input_key_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/input/gamepad", HTTP_POST, input_gamepad_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/app/*", HTTP_GET, webui_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/app/*", HTTP_POST, webui_handler);
     if (err != ESP_OK) {
         return err;
     }

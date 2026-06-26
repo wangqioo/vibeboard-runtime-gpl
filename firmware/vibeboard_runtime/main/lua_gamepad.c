@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "lauxlib.h"
 
 #define VB_GAMEPAD_EVT_CONNECTING 1
@@ -45,9 +47,9 @@ typedef struct {
     char address[32];
     char last_address[32];
     int refs[VB_GAMEPAD_EVT_MAX + 1];
-} vb_lua_gamepad_state_t;
+} vb_gamepad_runtime_state_t;
 
-static vb_lua_gamepad_state_t s_gamepad;
+static vb_gamepad_runtime_state_t s_gamepad;
 
 static void clear_refs(lua_State *L)
 {
@@ -243,24 +245,24 @@ static void table_string(lua_State *L, const char *name, char *dest, size_t dest
     lua_pop(L, 1);
 }
 
-static int gamepad_push_state(lua_State *L)
+static void apply_pending_state(lua_State *L, const vb_lua_gamepad_pending_state_t *pending)
 {
-    luaL_checktype(L, 1, LUA_TTABLE);
     bool was_connected = s_gamepad.connected;
     bool was_connecting = s_gamepad.connecting;
 
-    s_gamepad.started = table_bool(L, "started", true);
-    s_gamepad.connected = table_bool(L, "connected", s_gamepad.connected);
-    s_gamepad.connecting = table_bool(L, "connecting", false);
-    s_gamepad.buttons_mask = table_integer(L, "buttons_mask", s_gamepad.buttons_mask);
-    s_gamepad.lx = table_number(L, "lx", s_gamepad.lx);
-    s_gamepad.ly = table_number(L, "ly", s_gamepad.ly);
-    s_gamepad.dpad_up = table_bool(L, "dpad_up", s_gamepad.dpad_up);
-    s_gamepad.dpad_down = table_bool(L, "dpad_down", s_gamepad.dpad_down);
-    s_gamepad.dpad_left = table_bool(L, "dpad_left", s_gamepad.dpad_left);
-    s_gamepad.dpad_right = table_bool(L, "dpad_right", s_gamepad.dpad_right);
-    table_string(L, "address", s_gamepad.address, sizeof(s_gamepad.address));
-    table_string(L, "last_address", s_gamepad.last_address, sizeof(s_gamepad.last_address));
+    s_gamepad.started = pending->started;
+    s_gamepad.connected = pending->connected;
+    s_gamepad.connecting = pending->connecting;
+    s_gamepad.buttons_mask = pending->buttons_mask;
+    s_gamepad.lx = pending->lx;
+    s_gamepad.ly = pending->ly;
+    s_gamepad.dpad_up = pending->dpad_up;
+    s_gamepad.dpad_down = pending->dpad_down;
+    s_gamepad.dpad_left = pending->dpad_left;
+    s_gamepad.dpad_right = pending->dpad_right;
+    if (pending->address[0] != '\0') {
+        strlcpy(s_gamepad.address, pending->address, sizeof(s_gamepad.address));
+    }
     if (s_gamepad.address[0] != '\0') {
         strlcpy(s_gamepad.last_address, s_gamepad.address, sizeof(s_gamepad.last_address));
     }
@@ -274,16 +276,142 @@ static int gamepad_push_state(lua_State *L)
         dispatch_event(L, VB_GAMEPAD_EVT_DISCONNECTED);
     }
     dispatch_event(L, VB_GAMEPAD_EVT_UPDATE);
+}
+
+static int gamepad_push_state(lua_State *L)
+{
+    luaL_checktype(L, 1, LUA_TTABLE);
+
+    vb_lua_gamepad_pending_state_t pending = {
+        .started = table_bool(L, "started", true),
+        .connected = table_bool(L, "connected", s_gamepad.connected),
+        .connecting = table_bool(L, "connecting", false),
+        .buttons_mask = table_integer(L, "buttons_mask", s_gamepad.buttons_mask),
+        .lx = table_number(L, "lx", s_gamepad.lx),
+        .ly = table_number(L, "ly", s_gamepad.ly),
+        .dpad_up = table_bool(L, "dpad_up", s_gamepad.dpad_up),
+        .dpad_down = table_bool(L, "dpad_down", s_gamepad.dpad_down),
+        .dpad_left = table_bool(L, "dpad_left", s_gamepad.dpad_left),
+        .dpad_right = table_bool(L, "dpad_right", s_gamepad.dpad_right),
+    };
+    table_string(L, "address", pending.address, sizeof(pending.address));
+    apply_pending_state(L, &pending);
     lua_pushboolean(L, 1);
     return 1;
 }
 
-void vb_lua_gamepad_register(lua_State *L)
+void vb_lua_gamepad_init(vb_lua_gamepad_state_t *state)
+{
+    if (state == NULL) {
+        return;
+    }
+    memset(state, 0, sizeof(*state));
+    state->queue = xQueueCreate(VB_LUA_GAMEPAD_QUEUE_DEPTH, sizeof(vb_lua_gamepad_pending_state_t));
+}
+
+esp_err_t vb_lua_gamepad_enqueue(vb_lua_gamepad_state_t *state, const vb_lua_gamepad_pending_state_t *pending)
+{
+    if (state == NULL || state->queue == NULL || pending == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    QueueHandle_t queue = (QueueHandle_t)state->queue;
+    vb_lua_gamepad_pending_state_t queued = *pending;
+    return xQueueSend(queue, &queued, 0) == pdTRUE ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+bool vb_lua_gamepad_snapshot(vb_lua_gamepad_snapshot_t *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->started = s_gamepad.started;
+    out->connected = s_gamepad.connected;
+    out->connecting = s_gamepad.connecting;
+    out->buttons_mask = s_gamepad.buttons_mask;
+    out->lx = s_gamepad.lx;
+    out->ly = s_gamepad.ly;
+    out->dpad_up = s_gamepad.dpad_up;
+    out->dpad_down = s_gamepad.dpad_down;
+    out->dpad_left = s_gamepad.dpad_left;
+    out->dpad_right = s_gamepad.dpad_right;
+    strlcpy(out->address, s_gamepad.address, sizeof(out->address));
+    strlcpy(out->last_address, s_gamepad.last_address, sizeof(out->last_address));
+    return true;
+}
+
+static void push_state_table(lua_State *L, const vb_lua_gamepad_pending_state_t *pending)
+{
+    lua_newtable(L);
+    lua_pushboolean(L, pending->started);
+    lua_setfield(L, -2, "started");
+    lua_pushboolean(L, pending->connected);
+    lua_setfield(L, -2, "connected");
+    lua_pushboolean(L, pending->connecting);
+    lua_setfield(L, -2, "connecting");
+    lua_pushinteger(L, pending->buttons_mask);
+    lua_setfield(L, -2, "buttons_mask");
+    lua_pushnumber(L, pending->lx);
+    lua_setfield(L, -2, "lx");
+    lua_pushnumber(L, pending->ly);
+    lua_setfield(L, -2, "ly");
+    lua_pushboolean(L, pending->dpad_up);
+    lua_setfield(L, -2, "dpad_up");
+    lua_pushboolean(L, pending->dpad_down);
+    lua_setfield(L, -2, "dpad_down");
+    lua_pushboolean(L, pending->dpad_left);
+    lua_setfield(L, -2, "dpad_left");
+    lua_pushboolean(L, pending->dpad_right);
+    lua_setfield(L, -2, "dpad_right");
+    if (pending->address[0] != '\0') {
+        lua_pushstring(L, pending->address);
+        lua_setfield(L, -2, "address");
+    }
+}
+
+int vb_lua_gamepad_process_pending(lua_State *L, vb_lua_gamepad_state_t *state)
+{
+    if (L == NULL || state == NULL || state->queue == NULL) {
+        return 0;
+    }
+
+    QueueHandle_t queue = (QueueHandle_t)state->queue;
+    vb_lua_gamepad_pending_state_t pending;
+    while (xQueueReceive(queue, &pending, 0) == pdTRUE) {
+        int top = lua_gettop(L);
+        push_state_table(L, &pending);
+        apply_pending_state(L, &pending);
+        lua_settop(L, top);
+    }
+    return 0;
+}
+
+void vb_lua_gamepad_cleanup(lua_State *L, vb_lua_gamepad_state_t *state)
+{
+    (void)L;
+    if (state == NULL) {
+        return;
+    }
+    if (state->queue != NULL) {
+        vQueueDelete((QueueHandle_t)state->queue);
+        state->queue = NULL;
+    }
+}
+
+void vb_lua_gamepad_register(lua_State *L, vb_lua_gamepad_state_t *state)
 {
     for (int i = 0; i <= VB_GAMEPAD_EVT_MAX; i++) {
         s_gamepad.refs[i] = LUA_NOREF;
     }
     reset_runtime_state();
+    if (state != NULL) {
+        if (state->queue == NULL) {
+            vb_lua_gamepad_init(state);
+        } else {
+            xQueueReset((QueueHandle_t)state->queue);
+        }
+    }
 
     static const luaL_Reg functions[] = {
         {"state", gamepad_state},

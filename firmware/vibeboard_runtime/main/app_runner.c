@@ -1,6 +1,5 @@
 #include "app_runner.h"
 
-#include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +8,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "board_lckfb_szpi_s3.h"
 #include "lua_app.h"
@@ -20,6 +20,7 @@
 #include "lua_lvgl.h"
 #include "lua_native_module.h"
 #include "lua_sjson.h"
+#include "lua_sys.h"
 #include "lua_time.h"
 #include "lua_tmr.h"
 #include "lua_touch.h"
@@ -29,9 +30,8 @@
 #include "lualib.h"
 
 static const char *TAG = "app_runner";
-#define VB_LUA_TASK_STACK_SIZE (32 * 1024)
+#define VB_LUA_TASK_STACK_SIZE (48 * 1024)
 #define VB_LUA_TASK_PRIORITY 5
-#define VB_LUA_SCRIPT_READ_CHUNK 512
 
 typedef struct {
     volatile vb_app_runner_lifecycle_state_t lifecycle_state;
@@ -43,27 +43,40 @@ typedef struct {
 } vb_app_runner_state_t;
 
 typedef struct {
+    lua_State *L;
     vb_lua_app_state_t app;
     vb_lua_key_state_t key;
     vb_lua_touch_state_t touch;
+    vb_lua_gamepad_state_t gamepad;
     vb_lua_tmr_state_t tmr;
 } vb_lua_runtime_t;
+
+typedef struct {
+    char *data;
+    size_t size;
+} vb_lua_script_t;
 
 static vb_app_runner_state_t s_runner_state;
 static portMUX_TYPE s_runner_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static vb_lua_runtime_t *s_active_runtime;
-
-typedef struct {
-    FILE *file;
-    char *buffer;
-    char error[96];
-} vb_lua_script_reader_t;
+static SemaphoreHandle_t s_script_reader_mutex;
+static StaticSemaphore_t s_script_reader_mutex_buffer;
 
 static bool runner_state_is_active(vb_app_runner_lifecycle_state_t state)
 {
     return state == VB_APP_RUNNER_STATE_STARTING ||
            state == VB_APP_RUNNER_STATE_RUNNING ||
            state == VB_APP_RUNNER_STATE_STOPPING;
+}
+
+static bool ensure_script_reader_mutex(void)
+{
+    if (s_script_reader_mutex != NULL) {
+        return true;
+    }
+
+    s_script_reader_mutex = xSemaphoreCreateMutexStatic(&s_script_reader_mutex_buffer);
+    return s_script_reader_mutex != NULL;
 }
 
 static void set_running_if_starting(void)
@@ -139,6 +152,52 @@ esp_err_t vb_app_runner_enqueue_key(int code, int event)
     return vb_lua_key_enqueue(&runtime->key, code, event, 0);
 }
 
+esp_err_t vb_app_runner_enqueue_gamepad(const vb_lua_gamepad_pending_state_t *state)
+{
+    vb_lua_runtime_t *runtime = s_active_runtime;
+    if (runtime == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return vb_lua_gamepad_enqueue(&runtime->gamepad, state);
+}
+
+esp_err_t vb_app_runner_dispatch_webui(const char *path,
+                                       const char *query,
+                                       const char *method,
+                                       const char *request_body,
+                                       int *status,
+                                       char *type,
+                                       size_t type_size,
+                                       char *body,
+                                       size_t body_size)
+{
+    vb_lua_runtime_t *runtime = s_active_runtime;
+    if (runtime == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    lua_State *L = runtime->L;
+    if (L == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    vb_lua_app_webui_response_t response;
+    if (!vb_lua_app_dispatch_webui(L, &runtime->app, path, query, method, request_body, &response)) {
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (status != NULL) {
+        *status = response.status;
+    }
+    if (type != NULL && type_size > 0) {
+        strlcpy(type, response.type, type_size);
+    }
+    if (body != NULL && body_size > 0) {
+        strlcpy(body, response.body, body_size);
+    }
+    return ESP_OK;
+}
+
 const char *vb_app_runner_state_name(vb_app_runner_lifecycle_state_t state)
 {
     switch (state) {
@@ -197,7 +256,11 @@ static int vb_lua_input_poll(lua_State *L)
     if (key_result != 0) {
         return key_result;
     }
-    return vb_lua_touch_process_pending(L, &runtime->touch);
+    int touch_result = vb_lua_touch_process_pending(L, &runtime->touch);
+    if (touch_result != 0) {
+        return touch_result;
+    }
+    return vb_lua_gamepad_process_pending(L, &runtime->gamepad);
 }
 
 static esp_err_t install_input_poll_timer(lua_State *L)
@@ -255,56 +318,89 @@ static void cleanup_lua_runtime(lua_State *L, vb_lua_runtime_t *runtime)
     vb_lua_app_cleanup(L, &runtime->app);
     vb_lua_key_cleanup(L, &runtime->key);
     vb_lua_touch_cleanup(L, &runtime->touch);
+    vb_lua_gamepad_cleanup(L, &runtime->gamepad);
     vb_lua_tmr_cleanup(L, &runtime->tmr);
+    vb_lua_native_module_cleanup(L);
 }
 
-static const char *lua_script_reader(lua_State *L, void *data, size_t *size)
+static void free_lua_script(vb_lua_script_t *script)
 {
-    (void)L;
-    vb_lua_script_reader_t *reader = (vb_lua_script_reader_t *)data;
-    if (reader == NULL || reader->file == NULL || reader->buffer == NULL || size == NULL) {
-        return NULL;
+    if (script == NULL) {
+        return;
     }
-
-    size_t read = fread(reader->buffer, 1, VB_LUA_SCRIPT_READ_CHUNK, reader->file);
-    if (read > 0) {
-        *size = read;
-        return reader->buffer;
-    }
-
-    if (ferror(reader->file)) {
-        snprintf(reader->error, sizeof(reader->error), "script read failed: errno=%d", errno);
-    }
-    return NULL;
+    heap_caps_free(script->data);
+    script->data = NULL;
+    script->size = 0;
 }
 
-static int load_lua_file(lua_State *L, const char *path)
+static esp_err_t preload_lua_file(const char *path, vb_lua_script_t *script, char *error, size_t error_size)
 {
-    vb_lua_script_reader_t reader = {0};
-    reader.buffer = (char *)heap_caps_malloc(VB_LUA_SCRIPT_READ_CHUNK, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
-    if (reader.buffer == NULL) {
-        lua_pushstring(L, "script read buffer alloc failed");
-        return LUA_ERRMEM;
+    if (!ensure_script_reader_mutex()) {
+        strlcpy(error, "script read mutex alloc failed", error_size);
+        return ESP_ERR_NO_MEM;
     }
 
-    reader.file = fopen(path, "rb");
-    if (reader.file == NULL) {
-        int open_errno = errno;
-        heap_caps_free(reader.buffer);
-        lua_pushfstring(L, "cannot open %s: errno=%d", path, open_errno);
-        return LUA_ERRFILE;
+    xSemaphoreTake(s_script_reader_mutex, portMAX_DELAY);
+
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        snprintf(error, error_size, "cannot open %s", path ? path : "(null)");
+        xSemaphoreGive(s_script_reader_mutex);
+        return ESP_ERR_NOT_FOUND;
     }
 
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        xSemaphoreGive(s_script_reader_mutex);
+        snprintf(error, error_size, "cannot seek %s", path);
+        return ESP_FAIL;
+    }
+
+    long size = ftell(file);
+    if (size <= 0) {
+        fclose(file);
+        xSemaphoreGive(s_script_reader_mutex);
+        snprintf(error, error_size, "empty script: %s", path);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        xSemaphoreGive(s_script_reader_mutex);
+        snprintf(error, error_size, "cannot rewind %s", path);
+        return ESP_FAIL;
+    }
+
+    char *data = (char *)heap_caps_malloc((size_t)size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (data == NULL) {
+        fclose(file);
+        xSemaphoreGive(s_script_reader_mutex);
+        strlcpy(error, "script buffer alloc failed", error_size);
+        return ESP_ERR_NO_MEM;
+    }
+
+    size_t read = fread(data, 1, (size_t)size, file);
+    fclose(file);
+    xSemaphoreGive(s_script_reader_mutex);
+    if (read != (size_t)size) {
+        heap_caps_free(data);
+        snprintf(error, error_size, "cannot read %s", path);
+        return ESP_FAIL;
+    }
+
+    script->data = data;
+    script->size = (size_t)size;
+    return ESP_OK;
+}
+
+static int load_lua_script(lua_State *L, const char *path, const vb_lua_script_t *script)
+{
+    if (script == NULL || script->data == NULL || script->size == 0) {
+        lua_pushfstring(L, "empty script: %s", path ? path : "(null)");
+        return LUA_ERRSYNTAX;
+    }
     char chunk_name[VB_APP_PATH_MAX + 2];
     snprintf(chunk_name, sizeof(chunk_name), "@%s", path);
-    int load_err = lua_load(L, lua_script_reader, &reader, chunk_name, NULL);
-    fclose(reader.file);
-    heap_caps_free(reader.buffer);
-
-    if (reader.error[0] != '\0') {
-        lua_pushstring(L, reader.error);
-        return LUA_ERRFILE;
-    }
+    int load_err = luaL_loadbufferx(L, script->data, script->size, chunk_name, NULL);
     if (load_err != LUA_OK) {
         return load_err;
     }
@@ -321,15 +417,42 @@ static void set_result(vb_app_runner_result_t *result, bool ran, esp_err_t error
     strlcpy(result->message, message ? message : "", sizeof(result->message));
 }
 
+static void *lua_psram_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
+{
+    (void)ud;
+    if (nsize == 0) {
+        heap_caps_free(ptr);
+        return NULL;
+    }
+    if (ptr == NULL) {
+        return heap_caps_malloc(nsize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+
+    void *new_ptr = heap_caps_realloc(ptr, nsize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (new_ptr != NULL) {
+        return new_ptr;
+    }
+
+    new_ptr = heap_caps_malloc(nsize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (new_ptr == NULL) {
+        return NULL;
+    }
+    memcpy(new_ptr, ptr, osize < nsize ? osize : nsize);
+    heap_caps_free(ptr);
+    return new_ptr;
+}
+
 typedef struct {
     const vb_app_registry_result_t *app;
+    vb_lua_script_t script;
     vb_app_runner_result_t *result;
     esp_err_t status;
     TaskHandle_t caller;
 } vb_lua_task_context_t;
 
 typedef struct {
-    vb_app_registry_result_t app;
+    vb_app_registry_result_t registry;
+    vb_lua_script_t script;
     vb_app_runner_result_t result;
 } vb_lua_async_context_t;
 
@@ -346,11 +469,12 @@ static void entry_to_registry(const vb_app_registry_entry_t *entry, vb_app_regis
 }
 
 static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
+                              const vb_lua_script_t *script,
                               vb_app_runner_result_t *result,
                               vb_app_registry_entry_t *pending_launch)
 {
     ESP_LOGI(TAG, "Lua app start: %s", app->first_app_name);
-    lua_State *L = luaL_newstate();
+    lua_State *L = lua_newstate(lua_psram_alloc, NULL, 0);
     if (L == NULL) {
         set_result(result, false, ESP_ERR_NO_MEM, "lua alloc failed");
         return ESP_ERR_NO_MEM;
@@ -358,11 +482,14 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
 
     luaL_openlibs(L);
     vb_lua_runtime_t runtime = {0};
+    runtime.L = L;
     vb_lua_app_init(&runtime.app);
     vb_lua_key_init(&runtime.key);
     vb_lua_touch_init(&runtime.touch);
+    vb_lua_gamepad_init(&runtime.gamepad);
     vb_lua_tmr_init(&runtime.tmr);
     vb_lua_app_set_stop_flag(&runtime.app, &s_runner_state.stop_requested);
+    vb_lua_app_set_registry(&runtime.app, app);
     vb_lua_tmr_set_stop_flag(&runtime.tmr, &s_runner_state.stop_requested);
 
     lua_pushcfunction(L, vb_lua_print);
@@ -371,7 +498,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_tmr_register(L, &runtime.tmr);
     vb_lua_key_register(L, &runtime.key);
     vb_lua_touch_register(L, &runtime.touch);
-    vb_lua_gamepad_register(L);
+    vb_lua_gamepad_register(L, &runtime.gamepad);
     lua_pushlightuserdata(L, &runtime);
     lua_setfield(L, LUA_REGISTRYINDEX, "vb_runner_runtime");
     s_active_runtime = &runtime;
@@ -390,13 +517,14 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_wifi_register(L);
     vb_lua_http_register(L);
     vb_lua_sjson_register(L);
+    vb_lua_sys_register(L);
     vb_lua_time_register(L);
     vb_lua_i2s_register(L);
     vb_lua_native_module_register(L, app);
     vb_lua_lvgl_set_app_dir(app->first_app_dir);
     vb_lua_lvgl_register(L);
 
-    int lua_err = load_lua_file(L, app->first_app_path);
+    int lua_err = load_lua_script(L, app->first_app_path, script);
     if (lua_err != LUA_OK) {
         const char *err = lua_tostring(L, -1);
         ESP_LOGE(TAG, "Lua app failed: %s", err ? err : "unknown error");
@@ -405,6 +533,8 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
         lua_close(L);
         return ESP_FAIL;
     }
+
+    set_running_if_starting();
 
     char loop_error[128] = {0};
     esp_err_t loop_err = vb_lua_tmr_run_loop(L, &runtime.tmr, loop_error, sizeof(loop_error));
@@ -432,8 +562,7 @@ static void lua_task(void *arg)
 {
     vb_lua_task_context_t *context = (vb_lua_task_context_t *)arg;
     vb_app_registry_entry_t pending_launch = {0};
-    set_running_if_starting();
-    context->status = run_lua_file(context->app, context->result, &pending_launch);
+    context->status = run_lua_file(context->app, &context->script, context->result, &pending_launch);
     const char *message = context->result->message[0] ? context->result->message : esp_err_to_name(context->status);
     finish_runner_from_task(context->status, message);
     if (pending_launch.id[0] != '\0') {
@@ -451,8 +580,7 @@ static void lua_async_task(void *arg)
 {
     vb_lua_async_context_t *context = (vb_lua_async_context_t *)arg;
     vb_app_registry_entry_t pending_launch = {0};
-    set_running_if_starting();
-    esp_err_t status = run_lua_file(&context->app, &context->result, &pending_launch);
+    esp_err_t status = run_lua_file(&context->registry, &context->script, &context->result, &pending_launch);
     const char *message = context->result.message[0] ? context->result.message : esp_err_to_name(status);
     finish_runner_from_task(status, message);
     if (pending_launch.id[0] != '\0') {
@@ -464,9 +592,10 @@ static void lua_async_task(void *arg)
     }
     ESP_LOGI(TAG,
              "Lua async finished: %s status=%s message=%s",
-             context->app.first_app_name,
+             context->registry.first_app_name,
              esp_err_to_name(status),
              context->result.message);
+    free_lua_script(&context->script);
     free(context);
     vTaskDelete(NULL);
 }
@@ -494,6 +623,13 @@ esp_err_t vb_app_runner_run(const vb_app_registry_result_t *app, vb_app_runner_r
         .status = ESP_FAIL,
         .caller = xTaskGetCurrentTaskHandle(),
     };
+    char preload_error[128] = {0};
+    err = preload_lua_file(app->first_app_path, &context.script, preload_error, sizeof(preload_error));
+    if (err != ESP_OK) {
+        fail_reserved_start(err);
+        set_result(result, false, err, preload_error[0] ? preload_error : esp_err_to_name(err));
+        return err;
+    }
 
     BaseType_t created = xTaskCreatePinnedToCoreWithCaps(lua_task,
                                                          "vb_lua",
@@ -504,12 +640,14 @@ esp_err_t vb_app_runner_run(const vb_app_registry_result_t *app, vb_app_runner_r
                                                          tskNO_AFFINITY,
                                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (created != pdPASS) {
+        free_lua_script(&context.script);
         fail_reserved_start(ESP_ERR_NO_MEM);
         set_result(result, false, ESP_ERR_NO_MEM, "lua task failed");
         return ESP_ERR_NO_MEM;
     }
 
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    free_lua_script(&context.script);
     return context.status;
 }
 
@@ -529,6 +667,60 @@ esp_err_t vb_app_runner_launch_async(const vb_app_registry_entry_t *entry)
     return vb_app_runner_launch_async_with_options(entry, NULL);
 }
 
+esp_err_t vb_app_runner_launch_async_from_registry(const vb_app_registry_result_t *registry, int selected_index)
+{
+    if (registry == NULL || selected_index < 0 || selected_index >= registry->stored_app_count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const vb_app_registry_entry_t *entry = &registry->apps[selected_index];
+    if (entry->path[0] == '\0') {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t err = reserve_runner_start(entry->id, entry->name[0] ? entry->name : entry->id);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    vb_lua_async_context_t *context = (vb_lua_async_context_t *)calloc(1, sizeof(*context));
+    if (context == NULL) {
+        fail_reserved_start(ESP_ERR_NO_MEM);
+        return ESP_ERR_NO_MEM;
+    }
+    context->registry = *registry;
+    strlcpy(context->registry.first_app_name, entry->name[0] ? entry->name : entry->id, sizeof(context->registry.first_app_name));
+    strlcpy(context->registry.first_app_entry, entry->entry, sizeof(context->registry.first_app_entry));
+    strlcpy(context->registry.first_app_dir, entry->dir, sizeof(context->registry.first_app_dir));
+    strlcpy(context->registry.first_app_path, entry->path, sizeof(context->registry.first_app_path));
+
+    char preload_error[128] = {0};
+    err = preload_lua_file(context->registry.first_app_path, &context->script, preload_error, sizeof(preload_error));
+    if (err != ESP_OK) {
+        fail_reserved_start(err);
+        free(context);
+        return err;
+    }
+
+    BaseType_t created = xTaskCreatePinnedToCoreWithCaps(lua_async_task,
+                                                         "vb_lua_launch",
+                                                         VB_LUA_TASK_STACK_SIZE,
+                                                         context,
+                                                         VB_LUA_TASK_PRIORITY,
+                                                         NULL,
+                                                         tskNO_AFFINITY,
+                                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (created != pdPASS) {
+        free_lua_script(&context->script);
+        fail_reserved_start(ESP_ERR_NO_MEM);
+        free(context);
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "Lua async launch: %s", context->registry.first_app_name);
+    return ESP_OK;
+}
+
 esp_err_t vb_app_runner_launch_async_with_options(const vb_app_registry_entry_t *entry,
                                                   const vb_app_runner_launch_options_t *options)
 {
@@ -546,7 +738,15 @@ esp_err_t vb_app_runner_launch_async_with_options(const vb_app_registry_entry_t 
         fail_reserved_start(ESP_ERR_NO_MEM);
         return ESP_ERR_NO_MEM;
     }
-    entry_to_registry(entry, &context->app);
+    entry_to_registry(entry, &context->registry);
+
+    char preload_error[128] = {0};
+    err = preload_lua_file(context->registry.first_app_path, &context->script, preload_error, sizeof(preload_error));
+    if (err != ESP_OK) {
+        fail_reserved_start(err);
+        free(context);
+        return err;
+    }
 
     if (options != NULL && options->before_start != NULL) {
         options->before_start(options->user_data);
@@ -561,12 +761,13 @@ esp_err_t vb_app_runner_launch_async_with_options(const vb_app_registry_entry_t 
                                                          tskNO_AFFINITY,
                                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (created != pdPASS) {
+        free_lua_script(&context->script);
         fail_reserved_start(ESP_ERR_NO_MEM);
         free(context);
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "Lua async launch: %s", context->app.first_app_name);
+    ESP_LOGI(TAG, "Lua async launch: %s", context->registry.first_app_name);
     return ESP_OK;
 }
 
@@ -644,4 +845,18 @@ const char *vb_app_runner_last_message(void)
     strlcpy(last_message, s_runner_state.last_message, sizeof(last_message));
     taskEXIT_CRITICAL(&s_runner_state_mux);
     return last_message;
+}
+
+void vb_app_runner_note_launch_failure(esp_err_t status, const char *message)
+{
+    taskENTER_CRITICAL(&s_runner_state_mux);
+    s_runner_state.lifecycle_state = VB_APP_RUNNER_STATE_FAILED;
+    s_runner_state.stop_requested = false;
+    s_runner_state.current_id[0] = '\0';
+    s_runner_state.current_name[0] = '\0';
+    s_runner_state.last_status = status;
+    strlcpy(s_runner_state.last_message,
+            message ? message : esp_err_to_name(status),
+            sizeof(s_runner_state.last_message));
+    taskEXIT_CRITICAL(&s_runner_state_mux);
 }

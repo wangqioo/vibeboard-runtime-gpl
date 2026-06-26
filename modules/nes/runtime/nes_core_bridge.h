@@ -28,6 +28,7 @@ typedef struct nes_core_options_t {
     uint8_t reserved_audio[3];
     uint32_t audio_sample_rate;
     uint32_t audio_queue_bytes;
+    uint32_t audio_task_stack_bytes;
 } nes_core_options_t;
 
 typedef struct nes_core_status_t {
@@ -56,6 +57,14 @@ typedef struct nes_core_status_t {
     uint8_t autorun;
     uint8_t audio_requested;
     uint8_t audio_active;
+    uint8_t audio_apu_task_present;
+    uint8_t audio_apu_task_started;
+    uint8_t audio_apu_task_exited;
+    int32_t audio_apu_task_ret;
+    uint32_t audio_apu_ticks;
+    uint32_t audio_sink_calls;
+    uint32_t audio_sink_frames;
+    uint32_t audio_written_bytes;
     uint32_t audio_queued_bytes;
     uint32_t audio_dropped_bytes;
     char audio_backend[12];

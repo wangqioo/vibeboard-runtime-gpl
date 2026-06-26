@@ -15,7 +15,7 @@ extern "C" {
 #define VB_APP_VERSION_MAX 32
 #define VB_APP_KIND_MAX 16
 #define VB_APP_CAPABILITIES_MAX 128
-#define VB_APP_REGISTRY_MAX_APPS 32
+#define VB_APP_REGISTRY_MAX_APPS 48
 
 typedef struct {
     char id[VB_APP_NAME_MAX];

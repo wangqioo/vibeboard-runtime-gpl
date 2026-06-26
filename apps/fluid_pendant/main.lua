@@ -2062,13 +2062,15 @@ end
 APP.shutdown = APP.stop
 
 if app_on_fn then
-  app_on_fn("imu", function(name, roll, pitch, gx, gy, gz, ts_ms)
+  local ok = pcall_fn(app_on_fn, "imu", function(name, roll, pitch, gx, gy, gz, ts_ms)
     if rawget(_G, "FLUID_PENDANT_APP") ~= APP then
       return
     end
     set_accel_from_tilt(roll, pitch)
   end)
-  imu_registered = true
+  if ok then
+    imu_registered = true
+  end
 end
 
 if APP.init_viper_engine() then

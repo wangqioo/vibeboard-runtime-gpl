@@ -1,0 +1,5 @@
+name = Videos
+entry = main.lua
+description = Minimal GIF playlist migration for VibeBoard Runtime
+version = 0.1.0
+capabilities = lvgl,timer,input,file

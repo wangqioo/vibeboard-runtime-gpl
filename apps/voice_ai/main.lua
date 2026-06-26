@@ -7,10 +7,11 @@ VOICE_AI_APP = {
   SCREEN_W = 320,
   SCREEN_H = 240,
   APP_DIR = "/sd/apps/voice_ai",
-  DEFAULT_BRIDGE_URL = "http://192.168.0.80:8790",
+  DEFAULT_BRIDGE_URL = "http://192.168.1.26:8790",
   I2S_ID = 0,
   READ_BYTES = 4096,
   RECORD_POLL_MS = 80,
+  MAX_RECORD_BYTES = 262144,
   USE_GIF = true,
 }
 
@@ -38,20 +39,28 @@ local C = {
 APP.running = true
 APP.ui = {}
 APP.timers = {}
+APP.boot_timer = nil
 APP.font_handles = {}
 APP.ai_ui = nil
 APP.main_screen = nil
 APP.config = {
   bridge_url = APP.DEFAULT_BRIDGE_URL,
   sample_rate = 16000,
-  sample_bits = 32,
+  sample_bits = 16,
   max_record_ms = 10000,
   reply_limit = 100,
   use_gif = APP.USE_GIF,
 }
 APP.state = {
   mode = "idle",
+  font_loaded = false,
+  font_handle = 0,
+  font_src = "",
+  font_error = "",
   shown_gif_state = nil,
+  shown_gif_src = "",
+  gif_visible = false,
+  ai_ui_active = false,
   record_started_ms = 0,
   record_bytes = 0,
   rx_events = 0,
@@ -63,6 +72,14 @@ APP.state = {
   pending_ui_code = "",
   pending_id = "",
   result_polls = 0,
+  submit_count = 0,
+  last_http_code = 0,
+  last_audio_bytes = 0,
+  last_i2s_error = "",
+  home_events = 0,
+  last_key_event = 0,
+  init_stage = "boot",
+  metrics_error = "",
 }
 
 local UI = APP.ui
@@ -94,6 +111,52 @@ local function text_or(value, fallback)
   return text
 end
 
+local function json_escape(value)
+  return tostring(value or ""):gsub("\\", "\\\\"):gsub("\"", "\\\""):gsub("\n", "\\n")
+end
+
+local function write_metrics()
+  if not file or not file.write then return end
+  local metrics = "{"
+    .. "\"mode\":\"" .. json_escape(S.mode) .. "\","
+    .. "\"init_stage\":\"" .. json_escape(S.init_stage) .. "\","
+    .. "\"record_bytes\":" .. tostring(S.record_bytes or 0) .. ","
+    .. "\"rx_events\":" .. tostring(S.rx_events or 0) .. ","
+    .. "\"submit_count\":" .. tostring(S.submit_count or 0) .. ","
+    .. "\"home_events\":" .. tostring(S.home_events or 0) .. ","
+    .. "\"last_key_event\":" .. tostring(S.last_key_event or 0) .. ","
+    .. "\"last_audio_bytes\":" .. tostring(S.last_audio_bytes or 0) .. ","
+    .. "\"last_i2s_error\":\"" .. json_escape(S.last_i2s_error) .. "\","
+    .. "\"last_http_code\":" .. tostring(S.last_http_code or 0) .. ","
+    .. "\"bridge_url\":\"" .. json_escape(APP.config.bridge_url) .. "\","
+    .. "\"font_loaded\":" .. tostring(S.font_loaded == true) .. ","
+    .. "\"font_handle\":" .. tostring(S.font_handle or 0) .. ","
+    .. "\"font_src\":\"" .. json_escape(S.font_src) .. "\","
+    .. "\"font_error\":\"" .. json_escape(S.font_error) .. "\","
+    .. "\"use_gif\":" .. tostring(APP.config.use_gif == true) .. ","
+    .. "\"gif_visible\":" .. tostring(S.gif_visible == true) .. ","
+    .. "\"gif_state\":\"" .. json_escape(S.shown_gif_state or "") .. "\","
+    .. "\"gif_src\":\"" .. json_escape(S.shown_gif_src or "") .. "\","
+    .. "\"ai_ui_active\":" .. tostring(S.ai_ui_active == true) .. ","
+    .. "\"pending_id\":\"" .. json_escape(S.pending_id) .. "\","
+    .. "\"last_error\":\"" .. json_escape(S.last_error) .. "\","
+    .. "\"metrics_error\":\"" .. json_escape(S.metrics_error) .. "\""
+    .. "}"
+  local ok, err = file.write("metrics.json", metrics)
+  if not ok then
+    S.metrics_error = tostring(err or "write failed")
+  else
+    S.metrics_error = ""
+  end
+end
+
+local function set_init_stage(stage, persist)
+  S.init_stage = stage
+  if persist then
+    write_metrics()
+  end
+end
+
 local function clamp(n, low, high)
   n = tonumber(n) or 0
   if n < low then return low end
@@ -121,23 +184,26 @@ local function safe_json_decode(raw)
   return doc, nil
 end
 
-local function load_config()
-  if not file or not file.getcontents then return end
-  local raw = file.getcontents(APP.APP_DIR .. "/config.json")
-  if not raw or raw == "" then return end
-  local cfg = safe_json_decode(raw)
-  if type(cfg) ~= "table" then return end
+local function config_string(raw, key)
+  local pattern = '"' .. key .. '"%s*:%s*"([^"]*)"'
+  return raw:match(pattern)
+end
 
-  if type(cfg.bridge_url) == "string" and cfg.bridge_url ~= "" then
-    APP.config.bridge_url = cfg.bridge_url
-  end
-  APP.config.sample_rate = clamp(cfg.sample_rate or APP.config.sample_rate, 8000, 48000)
-  APP.config.sample_bits = clamp(cfg.sample_bits or APP.config.sample_bits, 16, 32)
-  APP.config.max_record_ms = clamp(cfg.max_record_ms or APP.config.max_record_ms, 1000, 30000)
-  APP.config.reply_limit = clamp(cfg.reply_limit or APP.config.reply_limit, 20, 100)
-  if type(cfg.use_gif) == "boolean" then
-    APP.config.use_gif = cfg.use_gif
-  end
+local function config_number(raw, key)
+  local pattern = '"' .. key .. '"%s*:%s*([%-%d%.]+)'
+  return tonumber(raw:match(pattern))
+end
+
+local function config_bool(raw, key)
+  local pattern = '"' .. key .. '"%s*:%s*(true)'
+  if raw:match(pattern) then return true end
+  pattern = '"' .. key .. '"%s*:%s*(false)'
+  if raw:match(pattern) then return false end
+  return nil
+end
+
+local function load_config()
+  return true, "default"
 end
 
 local function style_obj(id, bg, opa, border)
@@ -244,12 +310,22 @@ local function serial_line(name, text)
 end
 
 local function load_font_ref(path, fallback)
-  if not lv_font_load then return fallback end
+  S.font_src = path or ""
+  S.font_loaded = false
+  S.font_handle = 0
+  S.font_error = ""
+  if not lv_font_load then
+    S.font_error = "lv_font_load missing"
+    return fallback
+  end
   local ok, handle = pcall(function() return lv_font_load(path) end)
   if ok and type(handle) == "number" and handle > 0 then
     APP.font_handles[#APP.font_handles + 1] = handle
+    S.font_loaded = true
+    S.font_handle = handle
     return handle
   end
+  S.font_error = ok and ("invalid handle " .. tostring(handle)) or tostring(handle)
   return fallback
 end
 
@@ -260,6 +336,8 @@ local function release_fonts()
     end
   end
   APP.font_handles = {}
+  S.font_loaded = false
+  S.font_handle = 0
 end
 
 local function next_utf8_char(text, index)
@@ -360,6 +438,8 @@ local function update_gif()
       call(lv_gif_set_src, UI.gif, nil)
       S.shown_gif_state = nil
     end
+    S.shown_gif_src = ""
+    S.gif_visible = false
     set_opa(UI.gif, 0)
     return
   end
@@ -367,12 +447,16 @@ local function update_gif()
   local state = gif_state()
   local src = gif_path_for_state(state)
   if not src then
+    S.shown_gif_src = ""
+    S.gif_visible = false
     set_opa(UI.gif, 0)
     return
   end
   set_opa(UI.gif, 255)
+  S.gif_visible = true
   if S.shown_gif_state ~= state then
     S.shown_gif_state = state
+    S.shown_gif_src = src
     call(lv_gif_set_src, UI.gif, src)
   end
 end
@@ -455,16 +539,13 @@ end
 local function cleanup_ai_ui(load_main)
   local current = APP.ai_ui
   APP.ai_ui = nil
+  S.ai_ui_active = false
 
   if current then
     current.active = false
     for _, timer in ipairs(current.timers or {}) do
       stop_timer(timer)
     end
-  end
-
-  if load_main and APP.main_screen and lv_scr_load then
-    pcall(function() lv_scr_load(APP.main_screen) end)
   end
 
   if current then
@@ -536,8 +617,6 @@ end
 
 local AI_BLOCKED_LV = {
   lv_scr_act = true,
-  lv_scr_load = true,
-  lv_scr_load_anim = true,
   lv_begin = true,
   lv_end = true,
   lv_get_root = true,
@@ -690,8 +769,10 @@ local function show_ai_ui(code)
       red = C.red,
     },
     new_screen = function()
-      local screen = lv_obj_create(nil)
+      local screen = lv_obj_create(APP.main_screen)
       state.created_screen = screen
+      call(lv_obj_set_pos, screen, 0, 0)
+      call(lv_obj_set_size, screen, APP.SCREEN_W, APP.SCREEN_H)
       ai_style_obj(screen, C.bg)
       return screen
     end,
@@ -743,9 +824,8 @@ local function show_ai_ui(code)
   state.screen = result.screen
   state.cleanup = result.cleanup
   APP.ai_ui = state
-  if lv_scr_load then
-    pcall(function() lv_scr_load(result.screen) end)
-  end
+  S.ai_ui_active = true
+  write_metrics()
   return true
 end
 
@@ -753,6 +833,8 @@ local schedule_reply
 local start_result_poll
 
 local function handle_bridge_response(code, body)
+  S.last_http_code = tonumber(code) or 0
+  write_metrics()
   serial_dump("bridge_json", body or "")
   if code ~= 200 then
     local doc = nil
@@ -806,22 +888,28 @@ local function submit_audio(raw)
   if not raw or #raw == 0 then
     S.last_error = "没有录到声音"
     set_mode("error")
+    write_metrics()
     return
   end
   if not http or not http.post then
     S.last_error = "HTTP 不可用"
     set_mode("error")
+    write_metrics()
     return
   end
 
+  S.submit_count = (S.submit_count or 0) + 1
+  S.last_audio_bytes = #raw
+  S.last_http_code = 0
   S.pending_reply = ""
   S.pending_ui_code = ""
   S.pending_id = ""
   S.result_polls = 0
   set_mode("sending")
+  write_metrics()
   local headers = {
     ["Content-Type"] = "application/octet-stream",
-    ["X-Audio-Format"] = "pcm_s32le",
+    ["X-Audio-Format"] = "pcm_s16le",
     ["X-Sample-Rate"] = tostring(APP.config.sample_rate),
     ["X-Bits"] = tostring(APP.config.sample_bits),
     ["X-Channels"] = "1",
@@ -833,9 +921,23 @@ local function submit_audio(raw)
 end
 
 local stop_record_poll
+local read_recording_chunk
+local stop_recording_and_send
+local function max_record_bytes()
+  local configured = math.floor(APP.config.sample_rate * (APP.config.sample_bits / 8) * APP.config.max_record_ms / 1000)
+  local hard_limit = tonumber(APP.MAX_RECORD_BYTES) or configured
+  if configured < hard_limit then return configured end
+  return hard_limit
+end
 
-local function stop_recording_and_send()
+stop_recording_and_send = function()
   if S.mode ~= "recording" then return end
+  for _ = 1, 8 do
+    read_recording_chunk(80)
+    if S.record_bytes > 0 then
+      break
+    end
+  end
   stop_record_poll()
   stop_i2s()
   local chunks = S.chunks or {}
@@ -844,22 +946,45 @@ local function stop_recording_and_send()
   if not raw or #raw == 0 then
     S.last_error = "未录到声音"
     set_mode("error")
+    write_metrics()
     return
   end
   submit_audio(raw)
 end
 
-local function read_recording_chunk(wait_ms)
+read_recording_chunk = function(wait_ms)
   if not APP.running or S.mode ~= "recording" then return end
   if not i2s or not i2s.read then return end
-  local pcm = i2s.read(APP.I2S_ID, APP.READ_BYTES, wait_ms or 0)
+  local byte_limit = max_record_bytes()
+  if S.record_bytes >= byte_limit then
+    stop_recording_and_send()
+    return
+  end
+  local ok, pcm_or_err = pcall(function()
+    return i2s.read(APP.I2S_ID, APP.READ_BYTES, wait_ms or 0)
+  end)
+  if not ok then
+    S.last_i2s_error = tostring(pcm_or_err or "i2s read failed")
+    write_metrics()
+    return
+  end
+  local pcm = pcm_or_err
   if pcm and #pcm > 0 then
+    local remaining = byte_limit - S.record_bytes
+    if remaining <= 0 then
+      stop_recording_and_send()
+      return
+    end
+    if #pcm > remaining then
+      pcm = pcm:sub(1, remaining)
+    end
+    S.last_i2s_error = ""
     S.chunks[#S.chunks + 1] = pcm
     S.record_bytes = S.record_bytes + #pcm
+    write_metrics()
   end
   local elapsed = now_ms() - S.record_started_ms
-  local max_bytes = math.floor(APP.config.sample_rate * (APP.config.sample_bits / 8) * APP.config.max_record_ms / 1000)
-  if elapsed >= APP.config.max_record_ms or S.record_bytes >= max_bytes then
+  if elapsed >= APP.config.max_record_ms or S.record_bytes >= byte_limit then
     stop_recording_and_send()
   end
 end
@@ -1040,7 +1165,11 @@ local function start_recording()
   S.pending_ui_code = ""
   S.pending_id = ""
   S.result_polls = 0
+  S.submit_count = 0
+  S.last_http_code = 0
+  S.last_audio_bytes = 0
   set_mode("recording")
+  write_metrics()
 
   local ok, err = pcall(function()
     i2s.start(APP.I2S_ID, {
@@ -1057,6 +1186,7 @@ local function start_recording()
     clear_recording()
     S.last_error = tostring(err or "录音失败")
     set_mode("error")
+    write_metrics()
     stop_record_poll()
   else
     start_record_poll()
@@ -1084,6 +1214,9 @@ local function bind_keys()
   end
   if not key or not key.on then return end
   key.on(key.HOME, function(evt_type)
+    S.home_events = (S.home_events or 0) + 1
+    S.last_key_event = tonumber(evt_type) or 0
+    write_metrics()
     if evt_type == key.SHORT then
       on_short_press()
     elseif evt_type == key.LONG_START or evt_type == key.EXIT then
@@ -1093,45 +1226,48 @@ local function bind_keys()
 end
 
 local function build_ui()
+  set_init_stage("build_ui:start")
   for key_name in pairs(UI) do
     UI[key_name] = nil
   end
 
-  local root = nil
-  if lv_obj_create then
-    root = lv_obj_create(nil)
-  end
-  if not root or root == 0 then
-    root = lv_scr_act()
-    if lv_obj_clean and lv_scr_act then
-      pcall(function()
-        lv_obj_clean(root)
-      end)
-    end
+  set_init_stage("build_ui:screen")
+  local root = lv_scr_act()
+  if lv_obj_clean and root then
+    pcall(function()
+      lv_obj_clean(root)
+    end)
   end
   APP.main_screen = root
 
   call(lv_obj_set_style_bg_color, root, C.bg, MAIN_STYLE)
   call(lv_obj_set_style_bg_opa, root, 255, MAIN_STYLE)
 
-  if lv_gif_create then
-    UI.gif = lv_gif_create(root)
-    call(lv_obj_set_pos, UI.gif, 0, 58)
-    call(lv_obj_set_size, UI.gif, 120, 120)
+  set_init_stage("build_ui:gif")
+  if APP.config.use_gif and lv_gif_create then
+    pcall(function()
+      UI.gif = lv_gif_create(root)
+      call(lv_obj_set_pos, UI.gif, 0, 58)
+      call(lv_obj_set_size, UI.gif, 120, 120)
+    end)
   end
 
-  UI.line = lv_obj_create(root)
-  call(lv_obj_set_pos, UI.line, 122, 20)
-  call(lv_obj_set_size, UI.line, 1, 198)
-  style_obj(UI.line, C.line, 255, nil)
+  set_init_stage("build_ui:line")
+  pcall(function()
+    UI.line = lv_obj_create(root)
+    call(lv_obj_set_pos, UI.line, 122, 20)
+    call(lv_obj_set_size, UI.line, 1, 198)
+    style_obj(UI.line, C.line, 255, nil)
+  end)
 
-  UI.status = label(root, 134, 32, 174, 20, "按下说话", APP.font_cn, C.cyan, ALIGN_LEFT)
-  UI.reply = label(root, 134, 68, 174, 118, "短按开始", APP.font_cn, C.text, ALIGN_LEFT, LABEL_LONG_WRAP)
-  UI.hint = label(root, 134, 207, 174, 16, "短按录音  长按退出", APP.font_cn, C.dim, ALIGN_LEFT)
+  set_init_stage("build_ui:labels")
+  pcall(function()
+    UI.status = label(root, 134, 32, 174, 20, "按下说话", APP.font_cn, C.cyan, ALIGN_LEFT)
+    UI.reply = label(root, 134, 68, 174, 118, "短按开始", APP.font_cn, C.text, ALIGN_LEFT, LABEL_LONG_WRAP)
+    UI.hint = label(root, 134, 207, 174, 16, "短按录音  长按退出", APP.font_cn, C.dim, ALIGN_LEFT)
+  end)
 
-  if root ~= 0 and lv_scr_load then
-    pcall(function() lv_scr_load(root) end)
-  end
+  set_init_stage("build_ui:done")
 end
 
 local function start_timers()
@@ -1144,8 +1280,34 @@ local function start_timers()
   end
 end
 
+local function finish_boot()
+  set_init_stage("build_ui")
+  build_ui()
+  set_init_stage("start_timers")
+  start_timers()
+  set_init_stage("update_ui")
+  update_ui()
+  set_init_stage("ready")
+  write_metrics()
+end
+
+local function schedule_boot()
+  if not tmr or not tmr.create then
+    finish_boot()
+    return
+  end
+  APP.boot_timer = tmr.create()
+  APP.boot_timer:alarm(50, tmr.ALARM_SINGLE or 0, function()
+    APP.boot_timer = nil
+    if APP.running then
+      finish_boot()
+    end
+  end)
+end
+
 function APP.stop()
   APP.running = false
+  APP.boot_timer = stop_timer(APP.boot_timer)
   cleanup_ai_ui(true)
   stop_record_poll()
   stop_i2s()
@@ -1163,11 +1325,18 @@ function APP.stop()
     pcall(lv_gif_set_src, UI.gif, nil)
   end
   release_fonts()
+  S.ai_ui_active = false
+  write_metrics()
 end
 
-load_config()
-APP.font_cn = load_font_ref(APP.APP_DIR .. "/font/msyh_cn_13.bin", FONT_12)
-build_ui()
+set_init_stage("load_config")
+local config_ok, config_err = pcall(load_config)
+if not config_ok then
+  S.last_error = "config: " .. tostring(config_err or "load failed")
+end
+set_init_stage("load_font")
+APP.font_cn = load_font_ref("/sd/apps/weather/font/weather_ui_12.bin", FONT_12)
+set_init_stage("bind_keys")
 bind_keys()
-start_timers()
-update_ui()
+set_init_stage("scheduled_boot", true)
+schedule_boot()

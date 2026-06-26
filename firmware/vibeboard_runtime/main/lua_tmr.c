@@ -24,6 +24,7 @@ static const char *TAG = "lua_tmr";
 
 typedef struct {
     int index;
+    uint32_t generation;
 } vb_lua_timer_handle_t;
 
 static vb_lua_tmr_state_t *get_state(lua_State *L)
@@ -46,10 +47,25 @@ static vb_lua_timer_t *timer_from_handle(lua_State *L, vb_lua_timer_handle_t *ha
         luaL_error(L, "invalid timer");
     }
     vb_lua_timer_t *timer = &state->timers[handle->index];
-    if (!timer->allocated) {
+    if (!timer->allocated || timer->generation != handle->generation) {
         luaL_error(L, "timer unregistered");
     }
     return timer;
+}
+
+static void release_timer_slot(lua_State *L, vb_lua_tmr_state_t *state, vb_lua_timer_t *timer)
+{
+    if (timer == NULL) {
+        return;
+    }
+    if (timer->callback_ref != LUA_NOREF) {
+        luaL_unref(L, LUA_REGISTRYINDEX, timer->callback_ref);
+    }
+    memset(timer, 0, sizeof(*timer));
+    timer->callback_ref = LUA_NOREF;
+    if (state != NULL) {
+        state->generation++;
+    }
 }
 
 static int tmr_now(lua_State *L)
@@ -84,9 +100,11 @@ static int tmr_create(lua_State *L)
             memset(timer, 0, sizeof(*timer));
             timer->allocated = true;
             timer->callback_ref = LUA_NOREF;
+            timer->generation = ++state->generation;
 
             vb_lua_timer_handle_t *handle = (vb_lua_timer_handle_t *)lua_newuserdata(L, sizeof(*handle));
             handle->index = i;
+            handle->generation = timer->generation;
             luaL_getmetatable(L, VB_LUA_TIMER_META);
             lua_setmetatable(L, -2);
             return 1;
@@ -153,13 +171,11 @@ static int timer_unregister(lua_State *L)
 {
     vb_lua_timer_handle_t *handle = check_timer(L, 1);
     vb_lua_timer_t *timer = timer_from_handle(L, handle);
+    vb_lua_tmr_state_t *state = get_state(L);
 
-    if (timer->callback_ref != LUA_NOREF) {
-        luaL_unref(L, LUA_REGISTRYINDEX, timer->callback_ref);
-    }
-    memset(timer, 0, sizeof(*timer));
-    timer->callback_ref = LUA_NOREF;
+    release_timer_slot(L, state, timer);
     handle->index = -1;
+    handle->generation = 0;
     return 0;
 }
 
@@ -289,10 +305,15 @@ esp_err_t vb_lua_tmr_run_loop(lua_State *L, vb_lua_tmr_state_t *state, char *err
 
         bool has_active_timer = false;
         TickType_t now = xTaskGetTickCount();
+        const uint32_t run_generation = state->generation;
 
         for (int i = 0; i < VB_LUA_TMR_MAX; i++) {
             vb_lua_timer_t *timer = &state->timers[i];
             if (!timer->allocated || !timer->active || timer->callback_ref == LUA_NOREF) {
+                continue;
+            }
+            if (timer->generation > run_generation) {
+                has_active_timer = true;
                 continue;
             }
 
@@ -301,7 +322,10 @@ esp_err_t vb_lua_tmr_run_loop(lua_State *L, vb_lua_tmr_state_t *state, char *err
                 continue;
             }
 
-            lua_rawgeti(L, LUA_REGISTRYINDEX, timer->callback_ref);
+            int callback_ref = timer->callback_ref;
+            uint32_t timer_generation = timer->generation;
+
+            lua_rawgeti(L, LUA_REGISTRYINDEX, callback_ref);
             if (lua_pcall(L, 0, 0, 0) != LUA_OK) {
                 const char *err = lua_tostring(L, -1);
                 ESP_LOGE(TAG, "Lua timer failed: %s", err ? err : "unknown error");
@@ -311,9 +335,12 @@ esp_err_t vb_lua_tmr_run_loop(lua_State *L, vb_lua_tmr_state_t *state, char *err
                 return ESP_FAIL;
             }
 
+            if (!timer->allocated || timer->generation != timer_generation || timer->callback_ref != callback_ref) {
+                continue;
+            }
             timer->last_run = now;
             if (timer->mode == TMR_ALARM_SINGLE) {
-                timer->active = false;
+                release_timer_slot(L, state, timer);
             } else if (timer->mode == TMR_ALARM_SEMI) {
                 timer->active = false;
             }

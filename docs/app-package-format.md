@@ -117,6 +117,12 @@ file.write(path, data)
 file.list(path)
 file.listdir(path)
 file.open(path, mode)
+file.stat(path)
+file.mkdir(path)
+file.remove(path)
+file.rename(old, new)
+file.rmdir(path)
+file.putcontents(path, contents)
 ```
 
 ## LVGL Asset Paths

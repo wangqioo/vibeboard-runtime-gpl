@@ -14,6 +14,10 @@
     WEATHER_FETCH_MS = 60000,
     FORECAST_FETCH_MS = 10 * 60000,
     TIME_SYNC_RETRY_MS = 30000,
+    WEATHER_HTTP_TIMEOUT_MS = 2500,
+    INITIAL_FETCH_DELAY_MS = 2000,
+    UI_BOOT_DELAY_MS = 50,
+    BACKGROUND_LOAD_DELAY_MS = 1500,
 
     TZ_OFFSET_SEC = 8 * 3600,
     TIMEZONE = "CST-8",
@@ -21,6 +25,8 @@
     CITY_NAME = "Ningbo",
 
     ASSET_DIR = "/sd/apps/weather/assets",
+    CUBICSERVER_CONFIG_PATH = "/sd/runtime/cubicserver.json",
+    METRICS_PATH = "metrics.json",
     }
 
     local APP = WEATHER_APP
@@ -104,6 +110,17 @@
     glass_snapshot = nil,
     forecast_glass_snapshot = nil,
     startup_visible = false,
+    ui_ready = false,
+    assets_ready = false,
+    visual_assets_ready = false,
+    visual_asset_attempts = 0,
+    visual_asset_error = "",
+    background_ready = false,
+    background_attempts = 0,
+    background_error = "",
+    background_pending = false,
+    fonts_ready = false,
+    boot_stage = 0,
     displayed_icon_code = nil,
     forecast = {
         valid = false,
@@ -150,6 +167,41 @@
     return false
     end
 
+    local function json_bool(value)
+    return value and "true" or "false"
+    end
+
+    local function json_string(value)
+    local text = tostring(value or "")
+    text = text:gsub("\\", "\\\\"):gsub("\"", "\\\""):gsub("\n", "\\n")
+    return "\"" .. text .. "\""
+    end
+
+    local function write_metrics()
+    if not file or not file.write then
+        return
+    end
+
+    local body = "{"
+        .. "\"ui_ready\":" .. json_bool(APP.state.ui_ready) .. ","
+        .. "\"fonts_ready\":" .. json_bool(APP.state.fonts_ready) .. ","
+        .. "\"assets_ready\":" .. json_bool(APP.state.assets_ready) .. ","
+        .. "\"visual_assets_ready\":" .. json_bool(APP.state.visual_assets_ready) .. ","
+        .. "\"visual_asset_attempts\":" .. tostring(APP.state.visual_asset_attempts or 0) .. ","
+        .. "\"visual_asset_error\":" .. json_string(APP.state.visual_asset_error or "") .. ","
+        .. "\"background_ready\":" .. json_bool(APP.state.background_ready) .. ","
+        .. "\"background_attempts\":" .. tostring(APP.state.background_attempts or 0) .. ","
+        .. "\"background_error\":" .. json_string(APP.state.background_error or "") .. ","
+        .. "\"boot_stage\":" .. tostring(APP.state.boot_stage or 0) .. ","
+        .. "\"startup_visible\":" .. json_bool(APP.state.startup_visible) .. ","
+        .. "\"valid\":" .. json_bool(APP.state.valid) .. ","
+        .. "\"last_error\":" .. json_string(APP.state.last_error or "") .. ","
+        .. "\"forecast_error\":" .. json_string(APP.state.forecast.last_error or "") .. "}"
+    pcall_fn(function()
+        file.write(APP.METRICS_PATH, body)
+    end)
+    end
+
     local function sd_to_lv(path)
     if type(path) == "string" and path:sub(1, 4) == "/sd/" then
         return "S:/" .. path:sub(5)
@@ -159,6 +211,10 @@
 
     local function asset_path(group, name)
     return sd_to_lv(APP.ASSET_DIR .. "/" .. group .. "/" .. name .. ".png")
+    end
+
+    local function background_asset_path(kind)
+    return sd_to_lv(APP.ASSET_DIR .. "/bg/" .. tostring(kind or "partly") .. ".bmp")
     end
 
     local function qweather_icon_code(kind)
@@ -749,7 +805,10 @@
 
     local value = create_label(group, "--", FONT_16, C.text, 0, 7, item_w, ALIGN_CENTER)
     local icon_src = small_icon and asset_path("icons", icon_name .. "_sm") or asset_path("icons", icon_name)
-    local icon = create_img(group, icon_src, icon_x, small_icon and 35 or 30, icon_zoom)
+    local icon = nil
+    if APP.state.assets_ready then
+        icon = create_img(group, icon_src, icon_x, small_icon and 35 or 30, icon_zoom)
+    end
 
     return {
         group = group,
@@ -767,7 +826,10 @@
     call(lv_obj_set_size, group, item_w, 170)
 
     local day = create_label(group, label or "--", FONT_12, C.text_soft, 0, 12, item_w, ALIGN_CENTER)
-    local icon = create_img(group, qweather_icon_path_for("partly", "103"), 27, 38, 180)
+    local icon = nil
+    if APP.state.assets_ready then
+        icon = create_img(group, qweather_icon_path_for("partly", "103"), 27, 38, 180)
+    end
     local text = create_label(group, "--", FONT_12, C.text, 8, 91, item_w - 16, ALIGN_CENTER)
     local temp = create_label(group, "--/--" .. CELSIUS, FONT_16, C.text, 0, 114, item_w, ALIGN_CENTER)
     local rain = create_label(group, "--mm", FONT_12, C.text_soft, 0, 141, item_w, ALIGN_CENTER)
@@ -821,7 +883,9 @@
     call(lv_obj_set_style_border_width, page, 0, MAIN_STYLE)
     call(rawget(_G, "lv_obj_set_style_pad_all"), page, 0, MAIN_STYLE)
 
-    create_img(page, qweather_icon_path_for("partly", "103"), 136, 58, 192)
+    if APP.state.assets_ready then
+        create_img(page, qweather_icon_path_for("partly", "103"), 136, 58, 192)
+    end
     create_label(page, APP.CITY_NAME, FONT_16, C.text, 0, 120, APP.SCREEN_W, ALIGN_CENTER)
     create_label(page, "Weather", FONT_12, C.text_soft, 0, 145, APP.SCREEN_W, ALIGN_CENTER)
     create_glass_line(page, 118, 170, 84, 1, 42)
@@ -865,9 +929,11 @@
 
     local function update_assets(kind)
     APP.state.kind = kind
-    set_img_src(APP.ui.bg_img, asset_path("bg", kind))
     APP.state.displayed_icon_code = nil
     set_img_src(APP.ui.weather_icon, qweather_icon_path(kind))
+    if APP.state.background_ready and APP.ui.bg_canvas and lv_canvas_load_bmp then
+        call(lv_canvas_load_bmp, APP.ui.bg_canvas, background_asset_path(kind))
+    end
     APP.state.displayed_icon_code = qweather_icon_code(kind)
     refresh_glass_panel()
     if APP.state.page == "forecast" then
@@ -881,6 +947,76 @@
         set_img_src(APP.ui.weather_icon, qweather_icon_path(kind))
         APP.state.displayed_icon_code = code
     end
+    end
+
+    local function lazy_load_visual_assets()
+    if not APP.running or APP.state.visual_assets_ready or not lv_img_create then
+        return
+    end
+
+    APP.state.visual_asset_attempts = (APP.state.visual_asset_attempts or 0) + 1
+    APP.state.visual_asset_error = "loading"
+    write_metrics()
+
+    local ok, err = pcall_fn(function()
+        local kind = weather_kind()
+        if APP.ui.weather_icon == nil and APP.ui.now_page then
+        APP.ui.weather_icon = create_img(APP.ui.now_page, qweather_icon_path(kind), 206, 20, 320)
+        APP.state.displayed_icon_code = qweather_icon_code(kind)
+        end
+        if APP.ui.precip and APP.ui.precip.icon == nil then
+        APP.ui.precip.icon = create_img(APP.ui.precip.group, asset_path("icons", "precip_sm"), 35, 35, 256)
+        end
+        if APP.ui.humidity and APP.ui.humidity.icon == nil then
+        APP.ui.humidity.icon = create_img(APP.ui.humidity.group, asset_path("icons", "humidity_sm"), 35, 35, 256)
+        end
+        if APP.ui.wind and APP.ui.wind.icon == nil then
+        APP.ui.wind.icon = create_img(APP.ui.wind.group, asset_path("icons", "wind_sm"), 35, 35, 256)
+        end
+    end)
+
+    if ok then
+        APP.state.visual_assets_ready = true
+        APP.state.visual_asset_error = ""
+    else
+        APP.state.visual_assets_ready = false
+        APP.state.visual_asset_error = tostring(err)
+    end
+    write_metrics()
+    end
+
+    local function lazy_load_background()
+    if not APP.running or APP.state.background_ready or not APP.ui.root then
+        return
+    end
+
+    APP.state.background_attempts = (APP.state.background_attempts or 0) + 1
+    APP.state.background_error = "loading"
+    write_metrics()
+
+    local ok, err = pcall_fn(function()
+        if APP.ui.bg_canvas and lv_canvas_load_bmp then
+        lv_canvas_load_bmp(APP.ui.bg_canvas, background_asset_path(weather_kind()))
+        end
+    end)
+
+    if ok then
+        APP.state.background_ready = true
+        APP.state.background_error = ""
+    else
+        APP.state.background_ready = false
+        APP.state.background_error = tostring(err)
+    end
+    write_metrics()
+    end
+
+    local function schedule_background_load()
+    if not APP.running or APP.state.background_ready then
+        return
+    end
+
+    APP.state.background_error = "queued"
+    write_metrics()
     end
 
     local function init_ui()
@@ -920,9 +1056,12 @@
         call(lv_obj_clear_flag, root, rawget(_G, "LV_OBJ_FLAG_SCROLLABLE"))
     end
 
-    init_fonts()
-
-    APP.ui.bg_img = create_img(root, asset_path("bg", "partly"), 0, 0)
+    APP.ui.bg_canvas = nil
+    if lv_canvas_create then
+        APP.ui.bg_canvas = lv_canvas_create(root, APP.SCREEN_W, APP.SCREEN_H)
+        call(lv_obj_set_pos, APP.ui.bg_canvas, 0, 0)
+        call(lv_obj_set_size, APP.ui.bg_canvas, APP.SCREEN_W, APP.SCREEN_H)
+    end
 
     local now_page = lv_obj_create(root)
     APP.ui.now_page = now_page
@@ -935,8 +1074,11 @@
     APP.ui.cond_label = create_label(now_page, "Waiting", FONT_12, C.text, 16, 90, 132, ALIGN_LEFT)
     APP.ui.date_label = create_label(now_page, "--/--", FONT_12, C.text_soft, 16, 113, 132, ALIGN_LEFT)
 
-    APP.ui.weather_icon = create_img(now_page, qweather_icon_path("partly"), 206, 20, 320)
-    APP.state.displayed_icon_code = qweather_icon_code("partly")
+    APP.ui.weather_icon = nil
+    if APP.state.assets_ready then
+        APP.ui.weather_icon = create_img(now_page, qweather_icon_path("partly"), 206, 20, 320)
+        APP.state.displayed_icon_code = qweather_icon_code("partly")
+    end
     APP.ui.temp_label = create_label(now_page, "--" .. CELSIUS, FONT_34, C.text, 184, 100, 124, ALIGN_CENTER)
 
     local strip = lv_obj_create(now_page)
@@ -962,6 +1104,22 @@
     if not APP.ui.startup_screen then
         call(rawget(_G, "lv_obj_move_foreground"), APP.ui.startup_page)
     end
+    end
+
+    local function init_startup_shell()
+    local root = lv_scr_act()
+    clear_root()
+    APP.ui.root = root
+    call(lv_obj_set_style_bg_color, root, C.black, MAIN_STYLE)
+    call(lv_obj_set_style_bg_opa, root, 255, MAIN_STYLE)
+    if lv_obj_clear_flag and rawget(_G, "LV_OBJ_FLAG_SCROLLABLE") then
+        call(lv_obj_clear_flag, root, rawget(_G, "LV_OBJ_FLAG_SCROLLABLE"))
+    end
+
+    APP.ui.shell_label = create_label(root, APP.CITY_NAME, FONT_16, C.text, 0, 86, APP.SCREEN_W, ALIGN_CENTER)
+    APP.ui.shell_status = create_label(root, "Weather", FONT_12, C.text_soft, 0, 116, APP.SCREEN_W, ALIGN_CENTER)
+    APP.state.startup_visible = true
+    write_metrics()
     end
 
     local function render_clock()
@@ -1251,6 +1409,14 @@ end
         return
     end
 
+    if file and file.exists and not file.exists(APP.CUBICSERVER_CONFIG_PATH) then
+        APP.state.valid = false
+        APP.state.last_error = "Cubic config missing"
+        APP.state.request_inflight = false
+        render_weather()
+        return
+    end
+
     if APP.state.request_inflight then
         return
     end
@@ -1265,7 +1431,7 @@ end
 
     log("request", url)
 
-    http.cubicserver.get(url, "", function(status_code, body, headers)
+    http.cubicserver.get(url, { timeout_ms = APP.WEATHER_HTTP_TIMEOUT_MS }, function(status_code, body, headers)
         APP.state.request_inflight = false
 
         if not APP.running then
@@ -1364,11 +1530,95 @@ end
     APP.input.mode = "none"
     end
 
-    local function start_timers()
-    if not tmr or not tmr.create then
-        hide_startup_page()
+    local function stage_full_ui()
+    if not APP.running then
         return
     end
+    if not lv_img_create then
+        set_label_text(APP.ui.shell_status, "Image API missing")
+        return
+    end
+
+    init_ui()
+    APP.state.ui_ready = true
+    render_clock()
+    render_weather()
+    render_forecast()
+    write_metrics()
+    end
+
+    local function stage_fonts()
+    if not APP.running or APP.state.fonts_ready then
+        return
+    end
+
+    init_fonts()
+    APP.state.fonts_ready = true
+    render_clock()
+    render_weather()
+    render_forecast()
+    write_metrics()
+    end
+
+    local function stage_assets()
+    if not APP.running or APP.state.assets_ready then
+        return
+    end
+
+    APP.state.last_error = "assets ready"
+    write_metrics()
+
+    APP.state.assets_ready = true
+    APP.state.ui_ready = true
+    APP.state.last_error = nil
+    lazy_load_visual_assets()
+    render_clock()
+    render_weather()
+    render_forecast()
+    hide_startup_page()
+    write_metrics()
+    end
+
+    local function stage_boot_step()
+    if not APP.running or maybe_stop_for_exit() then
+        return false
+    end
+
+    APP.state.boot_stage = (APP.state.boot_stage or 0) + 1
+    if APP.state.boot_stage == 1 then
+        stage_full_ui()
+        return true
+    end
+    if APP.state.boot_stage == 2 then
+        stage_fonts()
+        return true
+    end
+    if APP.state.boot_stage == 3 then
+        stage_assets()
+        return false
+    end
+    return false
+    end
+
+    local function start_timers()
+    if not tmr or not tmr.create then
+        stage_full_ui()
+        return
+    end
+
+    APP.timers.stage_boot = tmr.create()
+    APP.timers.stage_boot:alarm(APP.UI_BOOT_DELAY_MS, tmr.ALARM_AUTO, function()
+        if not stage_boot_step() then
+        if APP.timers.stage_boot then
+            pcall_fn(function() APP.timers.stage_boot:stop() end)
+            pcall_fn(function() APP.timers.stage_boot:unregister() end)
+            APP.timers.stage_boot = nil
+        end
+        APP.state.background_pending = true
+        APP.state.background_error = "pending"
+        write_metrics()
+        end
+    end)
 
     APP.timers.startup = tmr.create()
     APP.timers.startup:alarm(STARTUP_HOLD_MS, tmr.ALARM_SINGLE or 0, function()
@@ -1376,9 +1626,22 @@ end
         APP.timers.startup = nil
     end)
 
+    APP.timers.initial_fetch = tmr.create()
+    APP.timers.initial_fetch:alarm(APP.INITIAL_FETCH_DELAY_MS, tmr.ALARM_SINGLE or 0, function()
+        APP.timers.initial_fetch = nil
+        if not APP.running or maybe_stop_for_exit() then return end
+        request_weather()
+        request_forecast()
+    end)
+
     APP.timers.clock = tmr.create()
     APP.timers.clock:alarm(1000, tmr.ALARM_AUTO, function()
         if not APP.running or maybe_stop_for_exit() then return end
+        if APP.state.background_pending then
+        APP.state.background_pending = false
+        schedule_background_load()
+        lazy_load_background()
+        end
         render_clock()
     end)
 
@@ -1406,7 +1669,7 @@ end
     APP.state.forecast.request_inflight = false
     unbind_input()
     stop_timers()
-    if stop_reason ~= "reload" then
+    if stop_reason ~= "reload" and not APP.state.assets_ready then
         release_startup_page()
     end
     release_glass_snapshot()
@@ -1417,23 +1680,20 @@ end
         _G.WEATHER_APP = nil
     end
 
-    if stop_reason ~= "reload" then
+    if stop_reason ~= "reload" and not APP.state.assets_ready then
         clear_root()
     end
-    release_fonts()
+    if not APP.state.fonts_ready then
+        release_fonts()
+    end
     end
 
-    if not lv_scr_act or not lv_obj_clean or not lv_obj_create or not lv_label_create or not lv_img_create then
+    if not lv_scr_act or not lv_obj_clean or not lv_obj_create or not lv_label_create then
     warn("ui api missing")
     return
     end
 
     init_time_module()
-    init_ui()
-    render_clock()
-    render_weather()
-    render_forecast()
-    request_weather()
-    request_forecast()
+    init_startup_shell()
     bind_input()
     start_timers()

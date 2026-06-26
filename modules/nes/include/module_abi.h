@@ -275,6 +275,7 @@ typedef struct module_i2s_api_t {
 typedef struct module_gamepad_api_t {
     uint32_t size;
     int32_t (*poll_event)(module_gamepad_event_t *out_event, uint32_t timeout_ms);
+    uint32_t (*state_mask)(uint8_t player);
     int32_t (*set_focus)(const char *owner, int32_t enabled);
 } module_gamepad_api_t;
 

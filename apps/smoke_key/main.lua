@@ -43,6 +43,13 @@ local event_names = {
 }
 
 local count = 0
+local event_counts = {}
+local last_line = "none"
+local repeat_checked = false
+local repeat_stop_pending = false
+local injected_count = 0
+local runtime_app = app
+
 local function key_name(code)
   return names[code] or tostring(code)
 end
@@ -51,28 +58,95 @@ local function event_name(evt_type)
   return event_names[evt_type] or tostring(evt_type)
 end
 
+local function json_escape(value)
+  return tostring(value):gsub("\\", "\\\\"):gsub('"', '\\"')
+end
+
+local function write_metrics()
+  local keys = {
+    "LEFT:SHORT",
+    "RIGHT:SHORT",
+    "UP:LONG_START",
+    "UP:LONG_REPEAT",
+    "UP:LONG_END",
+    "HOME:SHORT",
+    "HOME:LONG_START",
+    "HOME:LONG_REPEAT",
+    "HOME:LONG_END",
+    "EXIT:SHORT",
+  }
+  local parts = {
+    '{"ok":true',
+    ',"count":' .. tostring(count),
+    ',"injected_count":' .. tostring(injected_count),
+    ',"repeat_checked":' .. tostring(repeat_checked),
+    ',"repeat_stop_pending":' .. tostring(repeat_stop_pending),
+    ',"last":"' .. json_escape(last_line) .. '"',
+    ',"events":{',
+  }
+  local first = true
+  for _, name in ipairs(keys) do
+    local value = event_counts[name]
+    if value and value > 0 then
+      if not first then
+        table.insert(parts, ",")
+      end
+      first = false
+      table.insert(parts, '"' .. name .. '":' .. tostring(value))
+    end
+  end
+  table.insert(parts, "}}")
+  file.write("metrics.json", table.concat(parts))
+end
+
 key.on(function(evt_code, evt_type, ts_ms)
   count = count + 1
   local line = key_name(evt_code) .. " type=" .. event_name(evt_type) .. " t=" .. tostring(ts_ms)
+  local metric = key_name(evt_code) .. ":" .. event_name(evt_type)
+  event_counts[metric] = (event_counts[metric] or 0) + 1
+  last_line = line
   lv_label_set_text(event_label, "last: " .. line)
   lv_label_set_text(count_label, "count: " .. tostring(count))
+  write_metrics()
   print("smoke key event " .. line)
 end)
 
 local inject_left = true
-local inject_repeat = false
 local timer = tmr.create()
-timer:alarm(1500, tmr.ALARM_AUTO, function()
-  if inject_repeat and key.repeat_stop then
-    key.repeat_stop(key.UP)
-    inject_repeat = false
-  elseif not inject_left and key.repeat_start then
-    key.repeat_start(key.UP, 250, 120)
-    inject_repeat = true
+write_metrics()
+timer:alarm(2500, tmr.ALARM_AUTO, function()
+  if runtime_app and runtime_app.exiting and runtime_app.exiting() then
+    timer:stop()
+    return
+  end
+  if repeat_stop_pending then
+    repeat_stop_pending = false
+    local ok, err = pcall(key.repeat_stop, key.UP)
+    if not ok then
+      lv_label_set_text(event_label, "repeat stop degraded: " .. tostring(err))
+      key.push(key.UP, key.LONG_END)
+    end
+  elseif not repeat_checked and key.repeat_start and key.repeat_stop then
+    repeat_checked = true
+    local ok, err = pcall(key.repeat_start, key.UP, 250, 500)
+    if ok then
+      repeat_stop_pending = true
+    else
+      lv_label_set_text(event_label, "repeat degraded: " .. tostring(err))
+      key.push(key.UP, key.LONG_START)
+      key.push(key.UP, key.LONG_REPEAT)
+      key.push(key.UP, key.LONG_END)
+    end
+  elseif injected_count >= 4 then
+    timer:stop()
+    lv_label_set_text(hint, "Auto smoke complete; swipe keys still work")
+    write_metrics()
   elseif inject_left then
     key.push(key.LEFT, key.SHORT)
+    injected_count = injected_count + 1
   else
     key.push(key.RIGHT, key.SHORT)
+    injected_count = injected_count + 1
   end
   inject_left = not inject_left
 end)

@@ -24,6 +24,33 @@ local stop_events = 0
 local launch_events = 0
 local exit_events = 0
 local last_app_event = "none"
+local webui_route_base = ""
+local webui_enabled = false
+local webui_registered = false
+local webui_requests = 0
+local last_webui_path = ""
+
+local function json_escape(value)
+  value = tostring(value or "")
+  value = string.gsub(value, "\\", "\\\\")
+  value = string.gsub(value, '"', '\\"')
+  value = string.gsub(value, "\n", "\\n")
+  return value
+end
+
+local function write_metrics()
+  if not file or not file.write then
+    return
+  end
+  local body = "{"
+    .. '"webui_enabled":' .. tostring(webui_enabled)
+    .. ',"webui_registered":' .. tostring(webui_registered)
+    .. ',"webui_requests":' .. tostring(webui_requests)
+    .. ',"last_webui_path":"' .. json_escape(last_webui_path) .. '"'
+    .. ',"route_base":"' .. json_escape(webui_route_base) .. '"'
+    .. "}"
+  pcall(function() file.write("metrics.json", body) end)
+end
 
 if home_exit_available then
   local ok, err = pcall(function()
@@ -32,6 +59,34 @@ if home_exit_available then
   home_exit_disabled = ok
   print("[smoke_app_manager] app.set_home_exit(false)", tostring(ok), tostring(err or ""))
 end
+
+if type(app.route_base) == "function" then
+  webui_route_base = app.route_base()
+end
+
+if type(app.set_webui) == "function" then
+  local ok = pcall(function()
+    app.set_webui(true)
+  end)
+  webui_enabled = ok
+end
+
+if type(app.route) == "function" then
+  local ok = pcall(function()
+    app.route("/api/ping", function(req)
+      webui_requests = webui_requests + 1
+      last_webui_path = tostring(req and req.path or "")
+      write_metrics()
+      return {
+        status = 200,
+        type = "application/json",
+        body = '{"ok":true,"route":"ping","app":"smoke_app_manager"}\n'
+      }
+    end)
+  end)
+  webui_registered = ok
+end
+write_metrics()
 
 local function render()
   local lines = {}
@@ -42,6 +97,9 @@ local function render()
   local exit_available = type(app.exit) == "function"
   local launch_available = type(app.launch) == "function"
   local set_home_exit_available = type(app.set_home_exit) == "function"
+  local route_base_available = type(app.route_base) == "function"
+  local set_webui_available = type(app.set_webui) == "function"
+  local route_available = type(app.route) == "function"
 
   lines[#lines + 1] = "count: " .. tostring(type(apps) == "table" and #apps or 0)
   lines[#lines + 1] = "rescan: " .. tostring(type(rescanned) == "table" and #rescanned or 0)
@@ -51,6 +109,9 @@ local function render()
   lines[#lines + 1] = "exit fn: " .. tostring(exit_available)
   lines[#lines + 1] = "launch fn: " .. tostring(launch_available)
   lines[#lines + 1] = "home exit fn: " .. tostring(set_home_exit_available)
+  lines[#lines + 1] = "webui fns: " .. tostring(route_base_available and set_webui_available and route_available)
+  lines[#lines + 1] = "webui: " .. tostring(webui_enabled) .. " " .. tostring(webui_registered)
+  lines[#lines + 1] = "webui requests: " .. tostring(webui_requests)
   lines[#lines + 1] = "home exit off: " .. tostring(home_exit_disabled)
   lines[#lines + 1] = "events: stop=" .. tostring(stop_events) .. " launch=" .. tostring(launch_events) .. " exit=" .. tostring(exit_events)
   lines[#lines + 1] = "last event: " .. tostring(last_app_event)
@@ -65,6 +126,7 @@ local function render()
 
   lv_label_set_text(status, table.concat(lines, "\n"))
   print("[smoke_app_manager]", table.concat(lines, " | "))
+  write_metrics()
 end
 
 app.on("stop", function(reason)
@@ -107,7 +169,7 @@ end
 render()
 tmr.create():alarm(1000, tmr.ALARM_AUTO, render)
 
-tmr.create():alarm(1500, tmr.ALARM_SINGLE, function()
+tmr.create():alarm(4000, tmr.ALARM_SINGLE, function()
   if software_home_injected or launch_requested then
     return
   end

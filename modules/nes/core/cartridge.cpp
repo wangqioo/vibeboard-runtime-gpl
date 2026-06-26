@@ -107,7 +107,11 @@ Cartridge::Cartridge(const char *filename)
     bindMapperVTable();
     bindMapperFeatureFlags();
 
-    if (preload_result != RomPreloadResult::Success && !computeRomCrcFromFile())
+    if (preload_result == RomPreloadResult::Success)
+    {
+        rom.close();
+    }
+    else if (!computeRomCrcFromFile())
     {
         rom.close();
         return;
@@ -557,4 +561,3 @@ uint32_t Cartridge::crc32(const void* buf, size_t size, uint32_t seed)
         crc = crc32_table[(crc ^ *p++) & 0xFF] ^ (crc >> 8);
     return crc;
 }
-

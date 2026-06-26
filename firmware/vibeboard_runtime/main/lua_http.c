@@ -12,7 +12,6 @@
 
 #define VB_HTTP_MAX_BODY (32 * 1024)
 #define VB_HTTP_DEFAULT_TIMEOUT_MS 10000
-#define VB_HTTP_CUBICSERVER_BASE_URL "http://cubicserver.local"
 #define VB_HTTP_CUBICSERVER_CONFIG_PATH "/sdcard/runtime/cubicserver.json"
 #define VB_HTTP_URL_MAX 512
 #define VB_HTTP_CUBICSERVER_CONFIG_MAX 512
@@ -60,9 +59,40 @@ static int get_timeout(lua_State *L, int index)
         return VB_HTTP_DEFAULT_TIMEOUT_MS;
     }
     lua_getfield(L, index, "timeout_ms");
-    int timeout = (int)luaL_optinteger(L, -1, VB_HTTP_DEFAULT_TIMEOUT_MS);
+    int timeout = (int)luaL_optinteger(L, -1, 0);
     lua_pop(L, 1);
+    if (timeout <= 0) {
+        lua_getfield(L, index, "timeout");
+        timeout = (int)luaL_optinteger(L, -1, VB_HTTP_DEFAULT_TIMEOUT_MS);
+        lua_pop(L, 1);
+    }
     return timeout;
+}
+
+static void apply_headers(lua_State *L, esp_http_client_handle_t client, int options_index)
+{
+    if (!lua_istable(L, options_index)) {
+        return;
+    }
+
+    lua_getfield(L, options_index, "headers");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        return;
+    }
+
+    lua_pushnil(L);
+    while (lua_next(L, -2) != 0) {
+        if (lua_type(L, -2) == LUA_TSTRING && lua_type(L, -1) == LUA_TSTRING) {
+            const char *key = lua_tostring(L, -2);
+            const char *value = lua_tostring(L, -1);
+            if (key != NULL && value != NULL) {
+                esp_http_client_set_header(client, key, value);
+            }
+        }
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
 }
 
 static int push_response(lua_State *L, esp_err_t err, esp_http_client_handle_t client, vb_http_response_t *response)
@@ -79,6 +109,19 @@ static int push_response(lua_State *L, esp_err_t err, esp_http_client_handle_t c
     lua_pushlstring(L, response->body != NULL ? response->body : "", (size_t)response->body_len);
     lua_setfield(L, -2, "body");
     return 1;
+}
+
+static void call_callback(lua_State *L, int callback_index, esp_err_t err, esp_http_client_handle_t client, vb_http_response_t *response)
+{
+    lua_pushvalue(L, callback_index);
+    if (err == ESP_OK) {
+        lua_pushinteger(L, esp_http_client_get_status_code(client));
+        lua_pushlstring(L, response->body != NULL ? response->body : "", (size_t)response->body_len);
+    } else {
+        lua_pushinteger(L, 0);
+        lua_pushnil(L);
+    }
+    lua_call(L, 2, 0);
 }
 
 static esp_err_t perform_get_url(const char *url, int timeout_ms, vb_http_response_t *response, int *status_code)
@@ -110,9 +153,26 @@ static int perform_request(lua_State *L, esp_http_client_method_t method)
     const char *body = NULL;
     size_t body_len = 0;
     int options_index = 2;
+    int callback_index = 0;
     if (method == HTTP_METHOD_POST) {
-        body = luaL_checklstring(L, 2, &body_len);
-        options_index = 3;
+        if (lua_istable(L, 2)) {
+            options_index = 2;
+            body = luaL_checklstring(L, 3, &body_len);
+            if (lua_isfunction(L, 4)) {
+                callback_index = 4;
+            }
+        } else {
+            body = luaL_checklstring(L, 2, &body_len);
+            options_index = 3;
+            if (lua_isfunction(L, 4)) {
+                callback_index = 4;
+            }
+        }
+    } else if (lua_isfunction(L, 2)) {
+        callback_index = 2;
+    } else if (lua_istable(L, 2) && lua_isfunction(L, 3)) {
+        options_index = 2;
+        callback_index = 3;
     }
 
     vb_http_response_t response = {0};
@@ -126,17 +186,34 @@ static int perform_request(lua_State *L, esp_http_client_method_t method)
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (client == NULL) {
+        if (callback_index > 0) {
+            lua_pushvalue(L, callback_index);
+            lua_pushinteger(L, 0);
+            lua_pushnil(L);
+            lua_call(L, 2, 0);
+            return 0;
+        }
         lua_pushnil(L);
         lua_pushliteral(L, "http client init failed");
         return 2;
     }
 
+    apply_headers(L, client, options_index);
     if (method == HTTP_METHOD_POST) {
-        esp_http_client_set_header(client, "Content-Type", "application/json");
+        if (!lua_istable(L, options_index)) {
+            esp_http_client_set_header(client, "Content-Type", "application/json");
+        }
         esp_http_client_set_post_field(client, body, (int)body_len);
     }
 
     esp_err_t err = esp_http_client_perform(client);
+    if (callback_index > 0) {
+        call_callback(L, callback_index, err, client, &response);
+        esp_http_client_cleanup(client);
+        free(response.body);
+        return 0;
+    }
+
     int results = push_response(L, err, client, &response);
     esp_http_client_cleanup(client);
     free(response.body);
@@ -192,7 +269,7 @@ static int build_cubicserver_url(lua_State *L, const char *url, char *buffer, si
 
     char base_url[VB_HTTP_URL_MAX];
     if (!load_cubicserver_base_url(base_url, sizeof(base_url))) {
-        snprintf(base_url, sizeof(base_url), "%s", VB_HTTP_CUBICSERVER_BASE_URL);
+        return luaL_error(L, "cubicserver base_url missing");
     }
 
     int written = snprintf(buffer, buffer_size, "%s%s", base_url, url);
@@ -205,16 +282,23 @@ static int build_cubicserver_url(lua_State *L, const char *url, char *buffer, si
 static int http_cubicserver_get(lua_State *L)
 {
     const char *url = luaL_checkstring(L, 1);
-    luaL_checktype(L, 3, LUA_TFUNCTION);
+    int options_index = 2;
+    int callback_index = 3;
+    if (lua_isfunction(L, 2)) {
+        callback_index = 2;
+        options_index = 0;
+    } else {
+        luaL_checktype(L, 3, LUA_TFUNCTION);
+    }
 
     char full_url[VB_HTTP_URL_MAX];
     build_cubicserver_url(L, url, full_url, sizeof(full_url));
 
     vb_http_response_t response = {0};
     int status_code = 0;
-    esp_err_t err = perform_get_url(full_url, VB_HTTP_DEFAULT_TIMEOUT_MS, &response, &status_code);
+    esp_err_t err = perform_get_url(full_url, get_timeout(L, options_index), &response, &status_code);
 
-    lua_pushvalue(L, 3);
+    lua_pushvalue(L, callback_index);
     if (err == ESP_OK) {
         lua_pushinteger(L, status_code);
         lua_pushlstring(L, response.body != NULL ? response.body : "", (size_t)response.body_len);

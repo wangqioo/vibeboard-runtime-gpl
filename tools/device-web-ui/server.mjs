@@ -1,5 +1,9 @@
 import { createServer } from "node:http";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { sendRequest } from "../app-uploader/index.mjs";
+import { uploadApp } from "../app-uploader/index.mjs";
 
 const DEFAULT_BOARD_URL = "http://192.168.1.32:8080";
 const DEFAULT_PORT = 8790;
@@ -24,10 +28,58 @@ function textResponse(response, statusCode, body, contentType = "text/plain; cha
   response.end(body);
 }
 
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
 function assertSafeAppId(appId) {
   if (!appId || appId.startsWith("/") || appId.split("/").includes("..")) {
     throw new Error(`Unsafe app id: ${appId || ""}`);
   }
+}
+
+function assertSafeRelativePath(path) {
+  if (!path || path.startsWith("/") || path.split("/").includes("..")) {
+    throw new Error(`Unsafe relative path: ${path || ""}`);
+  }
+}
+
+async function collectBody(request, maxBytes = MAX_UPLOAD_BYTES) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of request) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      throw new Error(`Request body exceeds ${maxBytes} bytes`);
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+function recordLog(logEntries, entry) {
+  logEntries.unshift({
+    at: new Date().toISOString(),
+    ...entry,
+  });
+  if (logEntries.length > 20) {
+    logEntries.length = 20;
+  }
+}
+
+async function materializeUploadTree(appId, files) {
+  const root = await mkdtemp(join(tmpdir(), "vibeboard-device-web-upload-"));
+  const appDir = join(root, appId);
+  await mkdir(appDir, { recursive: true });
+  for (const file of files) {
+    assertSafeRelativePath(file.path);
+    const target = join(appDir, file.path);
+    await mkdir(dirname(target), { recursive: true });
+    const base64 = typeof file.base64 === "string" ? file.base64 : "";
+    if (!base64) {
+      throw new Error(`Missing base64 content for ${file.path}`);
+    }
+    await writeFile(target, Buffer.from(base64, "base64"));
+  }
+  return { root, appDir };
 }
 
 function boardEndpoint({ path, searchParams, method }) {
@@ -56,9 +108,65 @@ export async function handleApiRequest({
   response,
   boardUrl,
   requestImpl = sendRequest,
+  uploadAppImpl = uploadApp,
+  recordLogEntry = () => {},
+  logEntries = null,
 }) {
   const url = new URL(request.url, "http://localhost");
   if (!url.pathname.startsWith("/api/")) return false;
+
+  if (url.pathname === "/api/logs" && request.method === "GET") {
+    jsonResponse(response, 200, { ok: true, entries: Array.isArray(logEntries) ? logEntries : [] });
+    return true;
+  }
+
+  if (url.pathname === "/api/upload" && request.method === "POST") {
+    try {
+      const raw = await collectBody(request);
+      const payload = JSON.parse(raw.toString("utf8") || "{}");
+      const appId = String(payload.appId || payload.app_id || "").trim();
+      const files = Array.isArray(payload.files) ? payload.files : [];
+      if (!appId) {
+        throw new Error("appId is required");
+      }
+      assertSafeAppId(appId);
+      if (files.length === 0) {
+        throw new Error("files are required");
+      }
+      const { root, appDir } = await materializeUploadTree(appId, files);
+      try {
+        const result = await uploadAppImpl({
+          appDir,
+          appId,
+          boardUrl,
+          requestImpl,
+        });
+        recordLogEntry({
+          kind: "upload",
+          appId,
+          message: `uploaded ${appId} (${files.length} files)`,
+        });
+        jsonResponse(response, 200, {
+          ok: true,
+          appId,
+          files: files.length,
+          confirmed: result.confirmed,
+          staged: result.staged,
+          stageId: result.stageId,
+        });
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    } catch (error) {
+      recordLogEntry({
+        kind: "upload",
+        appId: "",
+        error: error.message,
+      });
+      jsonResponse(response, 500, { ok: false, error: error.message });
+    }
+    return true;
+  }
 
   let endpoint;
   try {
@@ -76,6 +184,12 @@ export async function handleApiRequest({
   try {
     const base = boardUrl.replace(/\/+$/, "");
     const boardResponse = await requestImpl(`${base}${endpoint.path}`, Buffer.alloc(0), { method: endpoint.method });
+    recordLogEntry({
+      kind: "proxy",
+      path: url.pathname,
+      method: request.method,
+      message: `${request.method} ${url.pathname} -> ${boardResponse.status}`,
+    });
     response.writeHead(boardResponse.status, {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
@@ -121,6 +235,14 @@ export function renderIndexHtml({ boardUrl }) {
     .badge { font-size: 11px; border: 1px solid #c9c5bc; border-radius: 999px; padding: 2px 7px; white-space: nowrap; color: #4c4943; background: #fff; }
     .actions { display: flex; flex-wrap: wrap; gap: 6px; }
     .error { color: #9b1c1c; }
+    .upload-form { display: grid; gap: 8px; }
+    .upload-row { display: grid; grid-template-columns: 1fr 160px; gap: 8px; }
+    .upload-row input[type="text"] { min-width: 0; border: 1px solid #b9b6ad; border-radius: 6px; padding: 7px 10px; font: inherit; }
+    .log-list { display: grid; gap: 8px; font-size: 12px; }
+    .log-entry { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid #e1ddd5; border-radius: 7px; background: #faf9f5; }
+    .log-head { display: flex; gap: 8px; justify-content: space-between; align-items: baseline; }
+    .log-kind { font-weight: 650; }
+    .log-time { color: #7a766c; }
     section + section { margin-top: 16px; }
     @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } }
   </style>
@@ -143,6 +265,17 @@ export function renderIndexHtml({ boardUrl }) {
       <dl class="status" id="status"></dl>
       <p class="error" id="error"></p>
     </section>
+    <section class="panel">
+      <h2>Upload App</h2>
+      <div class="upload-form">
+        <div class="upload-row">
+          <input id="upload-app-id" type="text" placeholder="app id (optional)" autocomplete="off">
+          <button id="upload">Upload</button>
+        </div>
+        <input id="upload-files" type="file" webkitdirectory multiple>
+        <div class="meta" id="upload-meta">Choose an app directory to upload from this computer.</div>
+      </div>
+    </section>
     <div>
       <section class="panel">
         <h2>Compatible Apps</h2>
@@ -152,16 +285,25 @@ export function renderIndexHtml({ boardUrl }) {
         <h2>Legacy Apps</h2>
         <div class="apps" id="legacy"></div>
       </section>
+      <section class="panel">
+        <h2>Activity Log</h2>
+        <div class="log-list" id="logs"></div>
+      </section>
     </div>
   </main>
   <script>
-    const state = { status: null, apps: [] };
+    const state = { status: null, apps: [], logs: [] };
     const statusEl = document.getElementById("status");
     const compatibleEl = document.getElementById("compatible");
     const legacyEl = document.getElementById("legacy");
     const errorEl = document.getElementById("error");
+    const logsEl = document.getElementById("logs");
+    const uploadMetaEl = document.getElementById("upload-meta");
+    const uploadFilesEl = document.getElementById("upload-files");
+    const uploadAppIdEl = document.getElementById("upload-app-id");
 
     function setError(error) { errorEl.textContent = error ? String(error.message || error) : ""; }
+    function setUploadMeta(text) { uploadMetaEl.textContent = text || "Choose an app directory to upload from this computer."; }
     async function api(path, options = {}) {
       const response = await fetch(path, { cache: "no-store", ...options });
       const text = await response.text();
@@ -221,14 +363,88 @@ export function renderIndexHtml({ boardUrl }) {
       for (const app of compatible) compatibleEl.appendChild(appCard(app, false));
       for (const app of legacy) legacyEl.appendChild(appCard(app, true));
     }
+    function renderLogs() {
+      logsEl.replaceChildren();
+      if (!state.logs.length) {
+        const empty = document.createElement("div");
+        empty.className = "meta";
+        empty.textContent = "No recent actions.";
+        logsEl.appendChild(empty);
+        return;
+      }
+      for (const entry of state.logs) {
+        const el = document.createElement("div");
+        el.className = "log-entry";
+        const head = document.createElement("div");
+        head.className = "log-head";
+        const kind = document.createElement("div");
+        kind.className = "log-kind";
+        kind.textContent = entry.kind || "action";
+        const time = document.createElement("div");
+        time.className = "log-time";
+        time.textContent = entry.at || "";
+        head.append(kind, time);
+        const message = document.createElement("div");
+        message.className = "meta";
+        message.textContent = entry.error || entry.message || "";
+        el.append(head, message);
+        logsEl.appendChild(el);
+      }
+    }
+    function deriveUploadAppId(files) {
+      const first = files[0];
+      if (!first) return "";
+      const relative = first.webkitRelativePath || first.name || "";
+      const segments = relative.split("/").filter(Boolean);
+      return segments.length > 1 ? segments[0] : "";
+    }
+    async function fileToBase64(file) {
+      const buffer = await file.arrayBuffer();
+      let binary = "";
+      const bytes = new Uint8Array(buffer);
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      }
+      return btoa(binary);
+    }
+    async function uploadSelectedDirectory() {
+      const files = Array.from(uploadFilesEl.files || []);
+      if (!files.length) {
+        throw new Error("Choose an app directory before uploading");
+      }
+      const appId = uploadAppIdEl.value.trim() || deriveUploadAppId(files);
+      if (!appId) {
+        throw new Error("Unable to derive an app id from the selected files");
+      }
+      const root = files[0].webkitRelativePath ? files[0].webkitRelativePath.split("/")[0] : "";
+      const payload = {
+        appId,
+        files: await Promise.all(files.map(async (file) => {
+          const relative = file.webkitRelativePath || file.name;
+          const path = root && relative.startsWith(root + "/") ? relative.slice(root.length + 1) : relative;
+          return { path, base64: await fileToBase64(file) };
+        })),
+      };
+      await api("/api/upload", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      uploadFilesEl.value = "";
+      setUploadMeta("Uploaded " + files.length + " files as " + appId + ".");
+      await refresh();
+    }
     async function refresh() {
       setError(null);
       try {
-        const [status, apps] = await Promise.all([api("/api/status"), api("/api/apps")]);
+        const [status, apps, logs] = await Promise.all([api("/api/status"), api("/api/apps"), api("/api/logs")]);
         state.status = status;
         state.apps = apps.apps || [];
+        state.logs = logs.entries || [];
         renderStatus();
         renderApps();
+        renderLogs();
       } catch (error) {
         setError(error);
       }
@@ -245,6 +461,24 @@ export function renderIndexHtml({ boardUrl }) {
     document.getElementById("refresh").onclick = refresh;
     document.getElementById("rescan").onclick = () => action("/api/rescan", "POST");
     document.getElementById("stop").onclick = () => action("/api/stop", "POST");
+    document.getElementById("upload").onclick = async () => {
+      setError(null);
+      try {
+        await uploadSelectedDirectory();
+      } catch (error) {
+        setUploadMeta(error.message || String(error));
+        setError(error);
+      }
+    };
+    uploadFilesEl.onchange = () => {
+      const files = Array.from(uploadFilesEl.files || []);
+      if (!files.length) {
+        setUploadMeta("");
+        return;
+      }
+      const appId = uploadAppIdEl.value.trim() || deriveUploadAppId(files);
+      setUploadMeta(files.length + " files selected" + (appId ? " for " + appId : "") + ".");
+    };
     refresh();
   </script>
 </body>
@@ -296,8 +530,16 @@ export function parseArgs(argv = process.argv.slice(2)) {
 }
 
 export function createDeviceWebServer({ boardUrl, requestImpl = sendRequest }) {
+  const logs = [];
   return createServer(async (request, response) => {
-    if (await handleApiRequest({ request, response, boardUrl, requestImpl })) return;
+    if (await handleApiRequest({
+      request,
+      response,
+      boardUrl,
+      requestImpl,
+      logEntries: logs,
+      recordLogEntry: (entry) => recordLog(logs, entry),
+    })) return;
     if (request.method === "GET" && (request.url === "/" || request.url.startsWith("/?"))) {
       textResponse(response, 200, renderIndexHtml({ boardUrl }), "text/html; charset=utf-8");
       return;

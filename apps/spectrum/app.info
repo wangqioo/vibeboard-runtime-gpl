@@ -1,0 +1,4 @@
+name = Spectrum
+entry = main.lua
+description = Minimal real-audio spectrum visualizer migrated from upstream HoloCubic Spectrum
+capabilities = lvgl,timer,input,file,audio

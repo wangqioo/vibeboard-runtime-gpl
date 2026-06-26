@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -229,15 +230,23 @@ esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result)
         return ESP_ERR_INVALID_ARG;
     }
 
-    vb_app_registry_lock();
-    memset(result, 0, sizeof(*result));
-    strcpy(result->first_app_name, "-");
-    strcpy(result->first_app_entry, "main.lua");
+    vb_app_registry_result_t *next = heap_caps_calloc(1, sizeof(*next), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (next == NULL) {
+        next = heap_caps_calloc(1, sizeof(*next), MALLOC_CAP_8BIT);
+    }
+    if (next == NULL) {
+        ESP_LOGE(TAG, "registry scan buffer alloc failed");
+        return ESP_ERR_NO_MEM;
+    }
+    strcpy(next->first_app_name, "-");
+    strcpy(next->first_app_entry, "main.lua");
 
+    vb_app_registry_lock();
     DIR *dir = opendir(VB_APPS_PATH);
     if (dir == NULL) {
         ESP_LOGW(TAG, "apps directory not found: %s", VB_APPS_PATH);
         vb_app_registry_unlock();
+        free(next);
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -287,9 +296,9 @@ esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result)
             continue;
         }
 
-        result->app_count++;
-        if (result->stored_app_count < VB_APP_REGISTRY_MAX_APPS) {
-            vb_app_registry_entry_t *app = &result->apps[result->stored_app_count++];
+        next->app_count++;
+        if (next->stored_app_count < VB_APP_REGISTRY_MAX_APPS) {
+            vb_app_registry_entry_t *app = &next->apps[next->stored_app_count++];
             strlcpy(app->id, entry->d_name, sizeof(app->id));
             strlcpy(app->name, app_name, sizeof(app->name));
             strlcpy(app->entry, app_entry, sizeof(app->entry));
@@ -302,18 +311,20 @@ esp_err_t vb_app_registry_scan(vb_app_registry_result_t *result)
             }
         }
 
-        if (result->app_count == 1) {
-            strlcpy(result->first_app_name, app_name, sizeof(result->first_app_name));
-            strlcpy(result->first_app_entry, app_entry, sizeof(result->first_app_entry));
-            strlcpy(result->first_app_dir, app_dir, sizeof(result->first_app_dir));
-            strlcpy(result->first_app_path, app_path, sizeof(result->first_app_path));
-            if (result->first_app_entry[0] == '\0') {
-                strcpy(result->first_app_entry, "main.lua");
+        if (next->app_count == 1) {
+            strlcpy(next->first_app_name, app_name, sizeof(next->first_app_name));
+            strlcpy(next->first_app_entry, app_entry, sizeof(next->first_app_entry));
+            strlcpy(next->first_app_dir, app_dir, sizeof(next->first_app_dir));
+            strlcpy(next->first_app_path, app_path, sizeof(next->first_app_path));
+            if (next->first_app_entry[0] == '\0') {
+                strcpy(next->first_app_entry, "main.lua");
             }
         }
     }
 
     closedir(dir);
+    *result = *next;
+    free(next);
     ESP_LOGI(TAG, "found %d apps", result->app_count);
     vb_app_registry_unlock();
     return ESP_OK;

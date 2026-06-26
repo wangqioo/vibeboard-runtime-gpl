@@ -1,5 +1,6 @@
 #include "lua_app.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "app_registry.h"
@@ -9,6 +10,8 @@
 #include "lualib.h"
 
 static const char *TAG = "lua_app";
+#define VB_LUA_APP_WEBUI_ROUTE_BASE "/app"
+#define VB_LUA_APP_WEBUI_ROUTE_WILDCARD "/app/*"
 
 typedef enum {
     VB_LUA_APP_EVENT_EXIT = 0,
@@ -91,19 +94,17 @@ static void push_app_entry(lua_State *L, const vb_app_registry_entry_t *entry)
     lua_setfield(L, -2, "compatible");
 }
 
-static int push_scanned_apps(lua_State *L)
+static int push_registry_apps(lua_State *L, const vb_app_registry_result_t *result)
 {
-    vb_app_registry_result_t result;
-    esp_err_t err = vb_app_registry_scan(&result);
-    if (err != ESP_OK) {
+    if (result == NULL) {
         lua_pushnil(L);
-        lua_pushstring(L, esp_err_to_name(err));
+        lua_pushliteral(L, "app registry unavailable");
         return 2;
     }
 
     lua_newtable(L);
-    for (int i = 0; i < result.stored_app_count; i++) {
-        push_app_entry(L, &result.apps[i]);
+    for (int i = 0; i < result->stored_app_count; i++) {
+        push_app_entry(L, &result->apps[i]);
         lua_rawseti(L, -2, i + 1);
     }
     return 1;
@@ -111,12 +112,14 @@ static int push_scanned_apps(lua_State *L)
 
 static int lua_app_list(lua_State *L)
 {
-    return push_scanned_apps(L);
+    vb_lua_app_state_t *state = check_app_state(L);
+    return push_registry_apps(L, state->registry);
 }
 
 static int lua_app_rescan(lua_State *L)
 {
-    return push_scanned_apps(L);
+    vb_lua_app_state_t *state = check_app_state(L);
+    return push_registry_apps(L, state->registry);
 }
 
 static int lua_app_current(lua_State *L)
@@ -163,6 +166,41 @@ static int lua_app_set_home_exit(lua_State *L)
     return 1;
 }
 
+static int lua_app_route_base(lua_State *L)
+{
+    (void)check_app_state(L);
+    lua_pushliteral(L, VB_LUA_APP_WEBUI_ROUTE_BASE);
+    return 1;
+}
+
+static int lua_app_set_webui(lua_State *L)
+{
+    vb_lua_app_state_t *state = check_app_state(L);
+    state->webui_enabled = lua_toboolean(L, 1);
+    lua_pushboolean(L, true);
+    return 1;
+}
+
+static int lua_app_route(lua_State *L)
+{
+    vb_lua_app_state_t *state = check_app_state(L);
+    const char *path = luaL_checkstring(L, 1);
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+    if (path == NULL || path[0] != '/') {
+        return luaL_error(L, "route path must start with /");
+    }
+
+    lua_pushvalue(L, 2);
+    int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    if (state->route_callback_ref != LUA_NOREF) {
+        luaL_unref(L, LUA_REGISTRYINDEX, state->route_callback_ref);
+    }
+    state->route_callback_ref = ref;
+    state->webui_enabled = true;
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 static int lua_app_launch(lua_State *L)
 {
     vb_lua_app_state_t *state = check_app_state(L);
@@ -178,18 +216,17 @@ static int lua_app_launch(lua_State *L)
         return 2;
     }
 
-    vb_app_registry_result_t result;
-    esp_err_t err = vb_app_registry_scan(&result);
-    if (err != ESP_OK) {
+    const vb_app_registry_result_t *result = state->registry;
+    if (result == NULL) {
         lua_pushboolean(L, false);
-        lua_pushstring(L, esp_err_to_name(err));
+        lua_pushliteral(L, "app registry unavailable");
         return 2;
     }
 
     const vb_app_registry_entry_t *entry = NULL;
-    for (int i = 0; i < result.stored_app_count; i++) {
-        if (strcmp(result.apps[i].id, id) == 0) {
-            entry = &result.apps[i];
+    for (int i = 0; i < result->stored_app_count; i++) {
+        if (strcmp(result->apps[i].id, id) == 0) {
+            entry = &result->apps[i];
             break;
         }
     }
@@ -239,6 +276,8 @@ void vb_lua_app_init(vb_lua_app_state_t *state)
     }
     state->stop_requested = NULL;
     state->home_exit_enabled = true;
+    state->webui_enabled = false;
+    state->route_callback_ref = LUA_NOREF;
     for (int i = 0; i < VB_LUA_APP_EVENT_COUNT; i++) {
         state->event_callback_refs[i] = LUA_NOREF;
     }
@@ -253,6 +292,14 @@ void vb_lua_app_set_stop_flag(vb_lua_app_state_t *state, volatile bool *stop_req
     }
 }
 
+void vb_lua_app_set_registry(vb_lua_app_state_t *state, const vb_app_registry_result_t *registry)
+{
+    if (state == NULL) {
+        return;
+    }
+    state->registry = registry;
+}
+
 void vb_lua_app_cleanup(lua_State *L, vb_lua_app_state_t *state)
 {
     if (L == NULL || state == NULL) {
@@ -263,6 +310,10 @@ void vb_lua_app_cleanup(lua_State *L, vb_lua_app_state_t *state)
             luaL_unref(L, LUA_REGISTRYINDEX, state->event_callback_refs[i]);
             state->event_callback_refs[i] = LUA_NOREF;
         }
+    }
+    if (state->route_callback_ref != LUA_NOREF) {
+        luaL_unref(L, LUA_REGISTRYINDEX, state->route_callback_ref);
+        state->route_callback_ref = LUA_NOREF;
     }
 }
 
@@ -275,6 +326,9 @@ void vb_lua_app_register(lua_State *L, vb_lua_app_state_t *state)
         {"exiting", lua_app_exiting},
         {"exit", lua_app_exit},
         {"set_home_exit", lua_app_set_home_exit},
+        {"route_base", lua_app_route_base},
+        {"set_webui", lua_app_set_webui},
+        {"route", lua_app_route},
         {"launch", lua_app_launch},
         {"on", lua_app_on},
         {NULL, NULL},
@@ -284,6 +338,69 @@ void vb_lua_app_register(lua_State *L, vb_lua_app_state_t *state)
     lua_setfield(L, LUA_REGISTRYINDEX, "vb_lua_app_state");
     luaL_newlib(L, functions);
     lua_setglobal(L, "app");
+}
+
+bool vb_lua_app_dispatch_webui(lua_State *L,
+                               vb_lua_app_state_t *state,
+                               const char *path,
+                               const char *query,
+                               const char *method,
+                               const char *body,
+                               vb_lua_app_webui_response_t *response)
+{
+    if (L == NULL || state == NULL || response == NULL ||
+        !state->webui_enabled || state->route_callback_ref == LUA_NOREF) {
+        return false;
+    }
+
+    memset(response, 0, sizeof(*response));
+    response->status = 200;
+    strlcpy(response->type, "text/plain; charset=utf-8", sizeof(response->type));
+
+    lua_rawgeti(L, LUA_REGISTRYINDEX, state->route_callback_ref);
+    lua_newtable(L);
+    set_string_field(L, "path", path ? path : "");
+    set_string_field(L, "query", query ? query : "");
+    set_string_field(L, "method", method ? method : "GET");
+    set_string_field(L, "body", body ? body : "");
+
+    if (lua_pcall(L, 1, 1, 0) != LUA_OK) {
+        const char *err = lua_tostring(L, -1);
+        ESP_LOGW(TAG, "webui route failed: %s", err ? err : "unknown");
+        lua_pop(L, 1);
+        response->status = 500;
+        strlcpy(response->type, "application/json", sizeof(response->type));
+        snprintf(response->body, sizeof(response->body), "{\"ok\":false,\"error\":\"route failed\"}\n");
+        return true;
+    }
+
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, "status");
+        if (lua_isnumber(L, -1)) {
+            response->status = (int)lua_tointeger(L, -1);
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, -1, "type");
+        if (lua_isstring(L, -1)) {
+            strlcpy(response->type, lua_tostring(L, -1), sizeof(response->type));
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, -1, "body");
+        if (lua_isstring(L, -1)) {
+            strlcpy(response->body, lua_tostring(L, -1), sizeof(response->body));
+        }
+        lua_pop(L, 1);
+    } else if (lua_isstring(L, -1)) {
+        strlcpy(response->body, lua_tostring(L, -1), sizeof(response->body));
+    }
+    lua_pop(L, 1);
+
+    if (response->body[0] == '\0') {
+        strlcpy(response->body, "ok\n", sizeof(response->body));
+    }
+    return true;
 }
 
 bool vb_lua_app_should_handle_home_exit(const vb_lua_app_state_t *state)
