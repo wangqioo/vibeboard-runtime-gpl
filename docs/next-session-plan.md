@@ -270,6 +270,26 @@ That was not the ESP32-S3 Runtime board used earlier, whose MAC was `10:51:db:80
 
 ## Immediate Next Work
 
+### 0K. Migrated app performance parity checkpoint
+
+2026-06-26 记录：迁移 App 的体感慢/卡顿是后续优化重点。不要把它简单归因于“架构不同”，因为上游 Cubic/HoloCubic 也支持 Runtime + SD/Lua App + WebUI/HTTP 替换；真正需要排查的是 Runtime 兼容层、API 覆盖、资源加载、调度和热点路径的差异。
+
+Next session should pick 3 representative apps, preferably `weather`, `photos`, and either `nesgame` or `voice_ai`, then add before/after metrics for:
+
+- first paint / first usable time;
+- image/font/GIF decode and SD read duration;
+- Lua timer callback duration and frequency;
+- LVGL object count and display tick/frame progress;
+- metrics write frequency;
+- stop/switch latency under load.
+
+Likely hypotheses to test first:
+
+- ported apps are compensating for missing upstream APIs with extra Lua work, polling, staged boot, or simplified UI paths;
+- upstream has broader `httpd`/`websocket`/app event/LVGL coverage and `viper` hot-path support that we do not yet match;
+- resource-heavy apps are hitting SD read amplification, decode overhead, PSRAM/DMA pressure, or LVGL lock contention;
+- HTTPD/WiFi/SD/metrics/native tasks may be stealing time from Lua/LVGL during animation or startup.
+
 ### 0J. WebUI route bridge completed checkpoint
 
 2026-06-25 在 `lv-benchmark` 最小迁移完成后，下一条自动化切片收口了 `mini_claw`、`hwmon`、`Settings` 类上游 WebUI/httpd surface 需要的最小 Runtime bridge。这个切片的目标不是完整迁移 `mini_claw`，而是先提供 active Lua App 的 route callback 底座；当前实现已经把 request method/body 一并透传给 Lua：

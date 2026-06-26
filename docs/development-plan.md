@@ -249,7 +249,18 @@ AI 生成一个受限 Lua/LVGL App
 - HTTP 删除 App、staged upload + commit/abort、浏览器端管理 UI、Runtime-owned WiFi/Cubicserver config write、Runtime/API/App schema 版本查询、不兼容 App 拒绝启动、工具侧 App 包 hash preflight、工具侧版本/ABI 要求拒绝、以及板端 staged manifest 文件 hash 校验已完成第一版；
 - 后续补 `apps/smoke_app_manager` 上板 handoff smoke、`POST /runtime/config?name=wifi` 写入后重启联网 smoke、staged manifest hash 失败场景真机 smoke、以及更完整的升级提示 UI。
 
-第六优先级：上游兼容和高级能力。
+第六优先级：迁移 App 的性能和卡顿优化。
+
+2026-06-26 记录：用户反馈多个移植 App 的体感速度比上游慢、偶发卡顿。这个问题不能简单归因于“我们是 Runtime + Web 替换架构”，因为上游 Cubic/HoloCubic 同样支持 Runtime + SD/Lua App + WebUI/HTTP 替换；后续应把差异聚焦到兼容层成熟度、API 覆盖、资源加载、调度和热点路径实现。
+
+- 先建立可测指标，再做优化：首屏耗时、资源加载耗时、timer callback 耗时、LVGL object 数量、SD file open/read 次数与耗时、metrics 写入频率、display tick/frame 变化、stop/switch 延迟；
+- 优先抽样 3 个用户体感明显的 App 做对照，例如 `weather`、`photos`、`nesgame`，或 `voice_ai`/`spectrum` 这类资源和实时性更重的 App；
+- 对比上游能力缺口：上游有更完整的 `httpd`/`websocket`/app event/LVGL 绑定，以及 `viper` 这类热点函数优化路径；我们当前很多移植 App 可能用多步 Lua 逻辑、轮询、轻量替代 UI 或 staged boot 绕过缺口；
+- 重点检查资源路径：图片/GIF/PNG/BMP 解码、字体加载、PSRAM/SDMMC DMA 内存、SD 读放大、资源格式转换和首次渲染顺序；
+- 重点检查调度路径：Lua timer、LVGL lock、display takeover、HTTPD、WiFi、SD、metrics 写入和 native task 之间是否互相抢占；
+- 优化结论必须用上板指标或 smoke/soak 数据闭环，避免只凭主观感觉或单点代码判断。
+
+第七优先级：上游兼容和高级能力。
 
 - `weather` 已完成第一轮迁移和本地 Cubicserver mock 上板验证，后续只在需要时恢复更丰富 canvas/blur 视觉；
 - `voice_ai` 的 mock/command-provider board smoke 已能在干净启动和 `2048 -> voice_ai` 切换路径下录音并上传 PCM；2026-06-24 又补齐了真实 `lv_font_load/lv_font_free` 绑定、`lv_obj_set_style_text_font` 字体句柄应用、`font_loaded/font_handle/font_src/font_error` metrics，以及 `tools/voice-ai-smoke --require-font`。2026-06-24/25 进一步把 LVGL 分配器迁到 PSRAM 优先，修复切换后 SDMMC DMA 内存不足造成的 GIF/字体/图片加载失败风险。OpenAI-compatible command wrapper 的本机诊断已证明当前配置的 base URL 有 `/models`；`/responses` 不可用但 `/chat/completions` 已可用并通过 `OPENAI_REPLY_ENDPOINT=chat_completions` + `gpt-5.4-mini` 真实返回 reply，剩余 provider 端到端卡点是 `/audio/transcriptions` 返回 404。当前临时使用 `/sd/apps/weather/font/weather_ui_12.bin` 小字体以避开 175KB 中文字库造成的 LVGL/SD 内存压力；下一步是真实 provider 成功 transcript/reply、GIF 上板肉眼视觉、ES8311/扬声器真实外放、完整中文字体内存策略、以及真实 provider 端到端语音回合；
