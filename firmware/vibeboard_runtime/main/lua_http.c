@@ -7,6 +7,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_err.h"
 #include "esp_http_client.h"
+#include "esp_log.h"
 #include "lauxlib.h"
 #include "lua.h"
 
@@ -15,6 +16,8 @@
 #define VB_HTTP_CUBICSERVER_CONFIG_PATH "/sdcard/runtime/cubicserver.json"
 #define VB_HTTP_URL_MAX 512
 #define VB_HTTP_CUBICSERVER_CONFIG_MAX 512
+
+static const char *TAG = "lua_http";
 
 typedef struct {
     char *body;
@@ -121,7 +124,11 @@ static void call_callback(lua_State *L, int callback_index, esp_err_t err, esp_h
         lua_pushinteger(L, 0);
         lua_pushnil(L);
     }
-    lua_call(L, 2, 0);
+    if (lua_pcall(L, 2, 0, 0) != LUA_OK) {
+        const char *message = lua_tostring(L, -1);
+        ESP_LOGW(TAG, "http callback failed: %s", message != NULL ? message : "unknown error");
+        lua_pop(L, 1);
+    }
 }
 
 static esp_err_t perform_get_url(const char *url, int timeout_ms, vb_http_response_t *response, int *status_code)

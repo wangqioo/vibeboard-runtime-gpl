@@ -1711,6 +1711,21 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /vb_lua_time_register\(L\)/);
   });
 
+  it("keeps Lua HTTP callback dispatch protected while request execution is still synchronous", () => {
+    const httpSource = readRequired(luaHttpSourcePath);
+
+    assert.match(httpSource, /static void call_callback/);
+    assert.match(httpSource, /lua_pcall\(L,\s*2,\s*0,\s*0\)/);
+    assert.match(httpSource, /ESP_LOGW\(TAG,\s*"http callback failed:/);
+
+    const callbackBody = httpSource.match(/static void call_callback\([\s\S]*?\n\}/);
+    assert.ok(callbackBody, "call_callback body is present");
+    assert.doesNotMatch(callbackBody[0], /lua_call\(L,\s*2,\s*0\)/);
+
+    assert.match(httpSource, /esp_http_client_perform\(client\)/);
+    assert.doesNotMatch(httpSource, /xTaskCreate/);
+  });
+
   it("registers a sys Lua module for runtime version and display brightness", () => {
     const runner = readRequired(runnerSourcePath);
     const cmake = readRequired(cmakePath);
