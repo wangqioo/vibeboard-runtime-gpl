@@ -131,6 +131,16 @@
         request_inflight = false,
     },
     }
+    APP.perf = {
+    started_ms = 0,
+    first_paint_ms = 0,
+    ready_ms = 0,
+    resource_ms = 0,
+    http_ms = 0,
+    timer_max_ms = 0,
+    stop_requested = false,
+    last_error = "",
+    }
 
     APP.colors = {
     black = 0x000000,
@@ -196,7 +206,14 @@
         .. "\"startup_visible\":" .. json_bool(APP.state.startup_visible) .. ","
         .. "\"valid\":" .. json_bool(APP.state.valid) .. ","
         .. "\"last_error\":" .. json_string(APP.state.last_error or "") .. ","
-        .. "\"forecast_error\":" .. json_string(APP.state.forecast.last_error or "") .. "}"
+        .. "\"forecast_error\":" .. json_string(APP.state.forecast.last_error or "") .. ","
+        .. "\"perf_first_paint_ms\":" .. tostring(APP.perf.first_paint_ms or 0) .. ","
+        .. "\"perf_ready_ms\":" .. tostring(APP.perf.ready_ms or 0) .. ","
+        .. "\"perf_resource_ms\":" .. tostring(APP.perf.resource_ms or 0) .. ","
+        .. "\"perf_http_ms\":" .. tostring(APP.perf.http_ms or 0) .. ","
+        .. "\"perf_timer_max_ms\":" .. tostring(APP.perf.timer_max_ms or 0) .. ","
+        .. "\"perf_stop_requested\":" .. json_bool(APP.perf.stop_requested) .. ","
+        .. "\"perf_last_error\":" .. json_string(APP.perf.last_error or "") .. "}"
     pcall_fn(function()
         file.write(APP.METRICS_PATH, body)
     end)
@@ -386,6 +403,36 @@
         end
     end
     return 0
+    end
+
+    APP.perf.started_ms = now_ms()
+
+    local function perf_elapsed()
+    local elapsed = now_ms() - (APP.perf.started_ms or 0)
+    if elapsed < 0 then
+        return 0
+    end
+    return elapsed
+    end
+
+    local function mark_resource(start_ms)
+    local elapsed = now_ms() - (start_ms or now_ms())
+    if elapsed > 0 then
+        APP.perf.resource_ms = (APP.perf.resource_ms or 0) + elapsed
+    end
+    end
+
+    local function mark_first_paint()
+    if (APP.perf.first_paint_ms or 0) == 0 then
+        APP.perf.first_paint_ms = perf_elapsed()
+    end
+    end
+
+    local function mark_perf_timer(start_ms)
+    local elapsed = now_ms() - (start_ms or now_ms())
+    if elapsed > (APP.perf.timer_max_ms or 0) then
+        APP.perf.timer_max_ms = elapsed
+    end
     end
 
     local function request_time_sync(force)
@@ -1431,7 +1478,9 @@ end
 
     log("request", url)
 
+    local http_start = now_ms()
     http.cubicserver.get(url, { timeout_ms = APP.WEATHER_HTTP_TIMEOUT_MS }, function(status_code, body, headers)
+        APP.perf.http_ms = now_ms() - http_start
         APP.state.request_inflight = false
 
         if not APP.running then
@@ -1443,6 +1492,7 @@ end
         APP.state.valid = false
         APP.state.last_http_code = status_code
         APP.state.last_error = tostring(err)
+        APP.perf.last_error = tostring(err)
         warn("body decode failed", tostring(err))
         render_weather()
         return
@@ -1486,6 +1536,7 @@ end
     if app_exiting_fn then
         local ok, exiting = pcall_fn(app_exiting_fn)
         if ok and exiting then
+        APP.perf.stop_requested = true
         APP.stop("exit")
         return true
         end
@@ -1539,7 +1590,10 @@ end
         return
     end
 
+    local resource_start = now_ms()
     init_ui()
+    mark_resource(resource_start)
+    mark_first_paint()
     APP.state.ui_ready = true
     render_clock()
     render_weather()
@@ -1552,7 +1606,9 @@ end
         return
     end
 
+    local resource_start = now_ms()
     init_fonts()
+    mark_resource(resource_start)
     APP.state.fonts_ready = true
     render_clock()
     render_weather()
@@ -1568,14 +1624,17 @@ end
     APP.state.last_error = "assets ready"
     write_metrics()
 
+    local resource_start = now_ms()
     APP.state.assets_ready = true
     APP.state.ui_ready = true
     APP.state.last_error = nil
     lazy_load_visual_assets()
+    mark_resource(resource_start)
     render_clock()
     render_weather()
     render_forecast()
     hide_startup_page()
+    APP.perf.ready_ms = perf_elapsed()
     write_metrics()
     end
 
@@ -1608,6 +1667,7 @@ end
 
     APP.timers.stage_boot = tmr.create()
     APP.timers.stage_boot:alarm(APP.UI_BOOT_DELAY_MS, tmr.ALARM_AUTO, function()
+        local tick_start = now_ms()
         if not stage_boot_step() then
         if APP.timers.stage_boot then
             pcall_fn(function() APP.timers.stage_boot:stop() end)
@@ -1618,43 +1678,65 @@ end
         APP.state.background_error = "pending"
         write_metrics()
         end
+        mark_perf_timer(tick_start)
     end)
 
     APP.timers.startup = tmr.create()
     APP.timers.startup:alarm(STARTUP_HOLD_MS, tmr.ALARM_SINGLE or 0, function()
+        local tick_start = now_ms()
         hide_startup_page()
         APP.timers.startup = nil
+        mark_perf_timer(tick_start)
     end)
 
     APP.timers.initial_fetch = tmr.create()
     APP.timers.initial_fetch:alarm(APP.INITIAL_FETCH_DELAY_MS, tmr.ALARM_SINGLE or 0, function()
+        local tick_start = now_ms()
         APP.timers.initial_fetch = nil
         if not APP.running or maybe_stop_for_exit() then return end
         request_weather()
         request_forecast()
+        mark_perf_timer(tick_start)
     end)
 
     APP.timers.clock = tmr.create()
     APP.timers.clock:alarm(1000, tmr.ALARM_AUTO, function()
-        if not APP.running or maybe_stop_for_exit() then return end
+        local tick_start = now_ms()
+        if not APP.running or maybe_stop_for_exit() then
+        mark_perf_timer(tick_start)
+        return
+        end
         if APP.state.background_pending then
+        local resource_start = now_ms()
         APP.state.background_pending = false
         schedule_background_load()
         lazy_load_background()
+        mark_resource(resource_start)
         end
         render_clock()
+        mark_perf_timer(tick_start)
     end)
 
     APP.timers.fetch = tmr.create()
     APP.timers.fetch:alarm(APP.WEATHER_FETCH_MS, tmr.ALARM_AUTO, function()
-        if not APP.running or maybe_stop_for_exit() then return end
+        local tick_start = now_ms()
+        if not APP.running or maybe_stop_for_exit() then
+        mark_perf_timer(tick_start)
+        return
+        end
         request_weather()
+        mark_perf_timer(tick_start)
     end)
 
     APP.timers.forecast = tmr.create()
     APP.timers.forecast:alarm(APP.FORECAST_FETCH_MS, tmr.ALARM_AUTO, function()
-        if not APP.running or maybe_stop_for_exit() then return end
+        local tick_start = now_ms()
+        if not APP.running or maybe_stop_for_exit() then
+        mark_perf_timer(tick_start)
+        return
+        end
         request_forecast()
+        mark_perf_timer(tick_start)
     end)
     end
 
@@ -1665,6 +1747,7 @@ end
     local stop_reason = tostring(reason or "")
 
     APP.running = false
+    APP.perf.stop_requested = true
     APP.state.request_inflight = false
     APP.state.forecast.request_inflight = false
     unbind_input()

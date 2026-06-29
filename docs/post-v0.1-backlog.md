@@ -43,6 +43,12 @@ Goal: investigate the user-visible startup and animation slowness reported on mi
 
 Do not assume the cause is the Runtime + Web replacement architecture; upstream Cubic/HoloCubic also supports Runtime + SD/Lua App + WebUI/HTTP replacement. Focus on measurable implementation differences.
 
+First instrumentation slice status:
+
+- Lua HTTP callback dispatch is protected with `lua_pcall`, while request execution intentionally remains synchronous for this slice.
+- `weather`, `photos`, and `voice_ai` now emit flat `perf_*` fields in `metrics.json`: `perf_first_paint_ms`, `perf_ready_ms`, `perf_resource_ms`, `perf_http_ms`, `perf_timer_max_ms`, `perf_stop_requested`, and `perf_last_error`.
+- These fields are a baseline for comparison, not a claim that startup or animation stutter is fixed.
+
 Initial metrics:
 
 - first paint / first usable time;

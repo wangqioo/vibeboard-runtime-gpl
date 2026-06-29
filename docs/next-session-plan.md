@@ -2,6 +2,8 @@
 
 Date: 2026-06-25
 
+Update 2026-06-29: first post-v0.1 performance instrumentation slice is implemented locally. Lua HTTP callback dispatch now uses a protected `lua_pcall` path while HTTP request execution remains synchronous by design. `weather`, `photos`, and `voice_ai` expose flat `perf_*` metrics in their existing `metrics.json` files: first paint, ready time, resource time, HTTP time, max timer callback time, stop requested, and last performance error. This creates the baseline for the next async HTTP/resource scheduling slice; it does not claim performance parity is solved.
+
 ## Current Baseline
 
 ```text

@@ -81,6 +81,16 @@ APP.state = {
   init_stage = "boot",
   metrics_error = "",
 }
+APP.perf = {
+  started_ms = 0,
+  first_paint_ms = 0,
+  ready_ms = 0,
+  resource_ms = 0,
+  http_ms = 0,
+  timer_max_ms = 0,
+  stop_requested = false,
+  last_error = "",
+}
 
 local UI = APP.ui
 local S = APP.state
@@ -102,6 +112,34 @@ local function now_ms()
     if ok and type(value) == "number" then return math.floor(value / 1000) end
   end
   return 0
+end
+
+APP.perf.started_ms = now_ms()
+
+local function perf_elapsed()
+  local elapsed = now_ms() - (APP.perf.started_ms or 0)
+  if elapsed < 0 then return 0 end
+  return elapsed
+end
+
+local function mark_resource(start_ms)
+  local elapsed = now_ms() - (start_ms or now_ms())
+  if elapsed > 0 then
+    APP.perf.resource_ms = (APP.perf.resource_ms or 0) + elapsed
+  end
+end
+
+local function mark_first_paint()
+  if (APP.perf.first_paint_ms or 0) == 0 then
+    APP.perf.first_paint_ms = perf_elapsed()
+  end
+end
+
+local function mark_perf_timer(start_ms)
+  local elapsed = now_ms() - (start_ms or now_ms())
+  if elapsed > (APP.perf.timer_max_ms or 0) then
+    APP.perf.timer_max_ms = elapsed
+  end
 end
 
 local function text_or(value, fallback)
@@ -140,7 +178,14 @@ local function write_metrics()
     .. "\"ai_ui_active\":" .. tostring(S.ai_ui_active == true) .. ","
     .. "\"pending_id\":\"" .. json_escape(S.pending_id) .. "\","
     .. "\"last_error\":\"" .. json_escape(S.last_error) .. "\","
-    .. "\"metrics_error\":\"" .. json_escape(S.metrics_error) .. "\""
+    .. "\"metrics_error\":\"" .. json_escape(S.metrics_error) .. "\","
+    .. "\"perf_first_paint_ms\":" .. tostring(APP.perf.first_paint_ms or 0) .. ","
+    .. "\"perf_ready_ms\":" .. tostring(APP.perf.ready_ms or 0) .. ","
+    .. "\"perf_resource_ms\":" .. tostring(APP.perf.resource_ms or 0) .. ","
+    .. "\"perf_http_ms\":" .. tostring(APP.perf.http_ms or 0) .. ","
+    .. "\"perf_timer_max_ms\":" .. tostring(APP.perf.timer_max_ms or 0) .. ","
+    .. "\"perf_stop_requested\":" .. tostring(APP.perf.stop_requested == true) .. ","
+    .. "\"perf_last_error\":\"" .. json_escape(APP.perf.last_error or "") .. "\""
     .. "}"
   local ok, err = file.write("metrics.json", metrics)
   if not ok then
@@ -915,7 +960,9 @@ local function submit_audio(raw)
     ["X-Channels"] = "1",
     ["X-Reply-Limit"] = tostring(APP.config.reply_limit),
   }
+  local http_start = now_ms()
   http.post(bridge_url("/api/chat"), { headers = headers, timeout = 35000 }, raw, function(code, body)
+    APP.perf.http_ms = now_ms() - http_start
     handle_bridge_response(code, body)
   end)
 end
@@ -1095,7 +1142,9 @@ start_result_poll = function()
     return
   end
   if not tmr or not tmr.create then
+    local http_start = now_ms()
     http.get(bridge_url("/api/result?id=" .. S.pending_id), { timeout = 5000 }, function(code, body)
+      APP.perf.http_ms = now_ms() - http_start
       handle_result_response(code, body)
     end)
     return
@@ -1111,7 +1160,9 @@ start_result_poll = function()
     end
     if in_flight then return end
     in_flight = true
+    local http_start = now_ms()
     http.get(bridge_url("/api/result?id=" .. S.pending_id), { timeout = 5000 }, function(code, body)
+      APP.perf.http_ms = now_ms() - http_start
       in_flight = false
       handle_result_response(code, body)
     end)
@@ -1127,7 +1178,9 @@ schedule_reply = function()
   local timer = tmr.create()
   APP.timers.reply_delay = timer
   timer:alarm(350, tmr.ALARM_SINGLE or 0, function()
+    local tick_start = now_ms()
     show_pending_reply()
+    mark_perf_timer(tick_start)
   end)
 end
 
@@ -1137,11 +1190,13 @@ local function start_record_poll()
   local poll = tmr.create()
   APP.timers.record_poll = poll
   poll:alarm(APP.RECORD_POLL_MS, tmr.ALARM_AUTO, function()
+    local tick_start = now_ms()
     if APP.running and S.mode == "recording" then
       read_recording_chunk(0)
     else
       stop_record_poll()
     end
+    mark_perf_timer(tick_start)
   end)
 end
 
@@ -1226,6 +1281,7 @@ local function bind_keys()
 end
 
 local function build_ui()
+  local resource_start = now_ms()
   set_init_stage("build_ui:start")
   for key_name in pairs(UI) do
     UI[key_name] = nil
@@ -1268,6 +1324,8 @@ local function build_ui()
   end)
 
   set_init_stage("build_ui:done")
+  mark_first_paint()
+  mark_resource(resource_start)
 end
 
 local function start_timers()
@@ -1275,7 +1333,9 @@ local function start_timers()
   if tick then
     APP.timers.tick = tick
     tick:alarm(250, tmr.ALARM_AUTO, function()
+      local tick_start = now_ms()
       if APP.running then update_ui() end
+      mark_perf_timer(tick_start)
     end)
   end
 end
@@ -1287,6 +1347,7 @@ local function finish_boot()
   start_timers()
   set_init_stage("update_ui")
   update_ui()
+  APP.perf.ready_ms = perf_elapsed()
   set_init_stage("ready")
   write_metrics()
 end
@@ -1298,15 +1359,18 @@ local function schedule_boot()
   end
   APP.boot_timer = tmr.create()
   APP.boot_timer:alarm(50, tmr.ALARM_SINGLE or 0, function()
+    local tick_start = now_ms()
     APP.boot_timer = nil
     if APP.running then
       finish_boot()
     end
+    mark_perf_timer(tick_start)
   end)
 end
 
 function APP.stop()
   APP.running = false
+  APP.perf.stop_requested = true
   APP.boot_timer = stop_timer(APP.boot_timer)
   cleanup_ai_ui(true)
   stop_record_poll()

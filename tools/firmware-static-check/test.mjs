@@ -1887,7 +1887,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(http, /lua_isfunction\(L,\s*3\)/);
     assert.match(http, /lua_isfunction\(L,\s*4\)/);
     assert.match(http, /call_callback/);
-    assert.match(http, /lua_call\(L,\s*2,\s*0\)/);
+    assert.match(http, /lua_pcall\(L,\s*2,\s*0,\s*0\)/);
 
     assert.match(weather, /json\.decode/);
     assert.match(btc, /json\.decode/);
@@ -1984,6 +1984,31 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(nesgame, /nes\./);
     assert.match(readRequired(cmakePath), /lua_gamepad\.c/);
     assert.doesNotMatch(readRequired(cmakePath), /lua_nes\.c/);
+  });
+
+  it("exposes first-slice migrated app performance metrics", () => {
+    const weather = readRequired(weatherSourcePath);
+    const photos = readRequired(photosSourcePath);
+    const voiceAi = readRequired(voiceAiSourcePath);
+
+    for (const [name, source] of [
+      ["weather", weather],
+      ["photos", photos],
+      ["voice_ai", voiceAi],
+    ]) {
+      assert.match(source, /perf_first_paint_ms/, `${name} exposes first paint metric`);
+      assert.match(source, /perf_ready_ms/, `${name} exposes ready metric`);
+      assert.match(source, /perf_resource_ms/, `${name} exposes resource metric`);
+      assert.match(source, /perf_http_ms/, `${name} exposes HTTP metric`);
+      assert.match(source, /perf_timer_max_ms/, `${name} exposes timer max metric`);
+      assert.match(source, /perf_stop_requested/, `${name} exposes stop metric`);
+      assert.match(source, /perf_last_error/, `${name} exposes performance error metric`);
+      assert.match(source, /local function mark_perf_timer/, `${name} tracks timer callback duration`);
+    }
+
+    assert.match(weather, /APP\.perf\.started_ms\s*=\s*now_ms\(\)/);
+    assert.match(photos, /APP\.perf\.started_ms\s*=\s*now_ms\(\)/);
+    assert.match(voiceAi, /APP\.perf\.started_ms\s*=\s*now_ms\(\)/);
   });
 
   it("registers a Lua gamepad compatibility module", () => {

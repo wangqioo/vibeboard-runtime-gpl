@@ -26,6 +26,16 @@ PHOTOS_APP = {
 
 local APP = PHOTOS_APP
 _G.PHOTOS_APP = APP
+APP.perf = {
+  started_ms = 0,
+  first_paint_ms = 0,
+  ready_ms = 0,
+  resource_ms = 0,
+  http_ms = 0,
+  timer_max_ms = 0,
+  stop_requested = false,
+  last_error = ""
+}
 
 local MAIN = (rawget(_G, "LV_PART_MAIN") or 0) | (rawget(_G, "LV_STATE_DEFAULT") or 0)
 local KEY_NAMES = {}
@@ -34,6 +44,46 @@ if key then
   KEY_NAMES[key.RIGHT] = "RIGHT"
   KEY_NAMES[key.HOME] = "HOME"
   KEY_NAMES[key.EXIT] = "EXIT"
+end
+
+local function now_ms()
+  if millis then
+    local ok, value = pcall(millis)
+    if ok and type(value) == "number" then return value end
+  end
+  if tmr and tmr.now then
+    local ok, value = pcall(function() return tmr.now() end)
+    if ok and type(value) == "number" then return math.floor(value / 1000) end
+  end
+  return 0
+end
+
+APP.perf.started_ms = now_ms()
+
+local function perf_elapsed()
+  local elapsed = now_ms() - (APP.perf.started_ms or 0)
+  if elapsed < 0 then return 0 end
+  return elapsed
+end
+
+local function mark_resource(start_ms)
+  local elapsed = now_ms() - (start_ms or now_ms())
+  if elapsed > 0 then
+    APP.perf.resource_ms = (APP.perf.resource_ms or 0) + elapsed
+  end
+end
+
+local function mark_first_paint()
+  if (APP.perf.first_paint_ms or 0) == 0 then
+    APP.perf.first_paint_ms = perf_elapsed()
+  end
+end
+
+local function mark_perf_timer(start_ms)
+  local elapsed = now_ms() - (start_ms or now_ms())
+  if elapsed > (APP.perf.timer_max_ms or 0) then
+    APP.perf.timer_max_ms = elapsed
+  end
 end
 
 local function json_escape(value)
@@ -56,6 +106,13 @@ local function write_metrics()
     .. ',"current_name":"' .. json_escape(APP.current_name) .. '"'
     .. ',"current_src":"' .. json_escape(APP.current_src) .. '"'
     .. ',"last_error":"' .. json_escape(APP.last_error) .. '"'
+    .. ',"perf_first_paint_ms":' .. tostring(APP.perf.first_paint_ms or 0)
+    .. ',"perf_ready_ms":' .. tostring(APP.perf.ready_ms or 0)
+    .. ',"perf_resource_ms":' .. tostring(APP.perf.resource_ms or 0)
+    .. ',"perf_http_ms":' .. tostring(APP.perf.http_ms or 0)
+    .. ',"perf_timer_max_ms":' .. tostring(APP.perf.timer_max_ms or 0)
+    .. ',"perf_stop_requested":' .. tostring(APP.perf.stop_requested == true)
+    .. ',"perf_last_error":"' .. json_escape(APP.perf.last_error or "") .. '"'
     .. "}"
   pcall(function() file.write(APP.METRICS_PATH, body) end)
 end
@@ -145,6 +202,7 @@ end
 local function show_current()
   APP.image_count = #APP.images
   local name = current_image_name()
+  local resource_start = now_ms()
 
   if name == "" then
     APP.current_name = ""
@@ -154,6 +212,7 @@ local function show_current()
     if APP.ui.image and lv_img_set_src then
       pcall(function() lv_img_set_src(APP.ui.image, "") end)
     end
+    mark_resource(resource_start)
     write_metrics()
     return
   end
@@ -165,6 +224,7 @@ local function show_current()
   if APP.ui.image and lv_img_set_src then
     pcall(function() lv_img_set_src(APP.ui.image, APP.current_src) end)
   end
+  mark_resource(resource_start)
   write_metrics()
 end
 
@@ -181,6 +241,7 @@ local function create_label(parent, text, x, y, width, color)
 end
 
 local function draw_ui()
+  local resource_start = now_ms()
   local root = lv_scr_act()
   lv_obj_clean(root)
   style_panel(root, 0x05070a)
@@ -203,10 +264,15 @@ local function draw_ui()
       pcall(function() lv_img_set_antialias(APP.ui.image, true) end)
     end
   end
+  mark_first_paint()
+  mark_resource(resource_start)
 
+  resource_start = now_ms()
   APP.images = scan_images()
+  mark_resource(resource_start)
   APP.image_count = #APP.images
   APP.photos_ready = true
+  APP.perf.ready_ms = perf_elapsed()
   show_current()
 end
 
@@ -239,6 +305,7 @@ end
 function APP.stop(_reason)
   if APP.stopped then return end
   APP.stopped = true
+  APP.perf.stop_requested = true
   for name, timer in pairs(APP.timers) do
     if timer then
       pcall(function() timer:stop() end)
@@ -271,16 +338,19 @@ end
 if tmr and tmr.create then
   APP.timers.tick = tmr.create()
   APP.timers.tick:alarm(1000, tmr.ALARM_AUTO, function()
+    local tick_start = now_ms()
     if app and app.exiting and app.exiting() then
+      APP.perf.stop_requested = true
+      mark_perf_timer(tick_start)
       APP.stop("exiting")
       return
     end
     APP.ticks = APP.ticks + 1
     if APP.image_count > 1 and APP.PLAY_MS > 0 and (APP.ticks * 1000) % APP.PLAY_MS == 0 then
       move_selection(1)
-    else
-      write_metrics()
     end
+    mark_perf_timer(tick_start)
+    write_metrics()
   end)
 else
   write_metrics()
