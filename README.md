@@ -224,6 +224,8 @@ See [docs/ai-generation-contract.md](docs/ai-generation-contract.md) for the pac
 - [docs/runtime-boundary.md](docs/runtime-boundary.md): what can be done as an app vs firmware.
 - [docs/app-package-format.md](docs/app-package-format.md): app metadata, manifest, paths, runtime configs.
 - [docs/deployment-flow.md](docs/deployment-flow.md): packaging, staged upload, launch/delete flow.
+- [docs/releases/v0.1-runtime-milestone.md](docs/releases/v0.1-runtime-milestone.md): v0.1 milestone scope and release notes.
+- [docs/post-v0.1-backlog.md](docs/post-v0.1-backlog.md): follow-up backlog for physical QA, external services, long soak, and performance work.
 - [docs/runtime-capabilities.md](docs/runtime-capabilities.md): implemented APIs with build and board evidence.
 - [docs/development-plan.md](docs/development-plan.md): detailed Chinese status log and roadmap.
 - [docs/device-bringup.md](docs/device-bringup.md): hardware bring-up evidence log.
