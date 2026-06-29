@@ -6231,3 +6231,101 @@ Conclusion: current firmware/package still proves legal ROM startup and host-aud
 the latest board state does not reproduce the earlier `frame_growth=1606` baseline. Next NES work should
 diagnose host-audio drop/backpressure, APU/core scheduling, and `/apps/file` metrics read reliability
 before claiming long NES performance restored.
+
+## 2026-06-29 Runtime performance first-slice flash and metrics smoke
+
+The post-v0.1 performance first slice was merged into `main` as:
+
+```text
+6b648d1 fix: protect lua http callbacks
+3157628 feat: add migrated app performance metrics
+```
+
+Local verification before flashing:
+
+```text
+npm run test:firmware-static -- --test-name-pattern "performance metrics|Lua HTTP callback"
+# 105 tests, 105 pass
+
+npm run package:app -- apps/weather
+npm run package:app -- apps/photos
+npm run package:app -- apps/voice_ai
+# all three packages built under dist/apps/
+```
+
+Firmware build and flash:
+
+```text
+source /Users/wq/esp-idf/export.sh >/tmp/vibeboard-idf-export.log && \
+  export PATH="/Users/wq/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20260121/xtensa-esp-elf/bin:$PATH" && \
+  idf.py build
+# vibeboard_runtime.bin binary size 0x1b8bd0; 4 MB app partition 57% free
+
+source /Users/wq/esp-idf/export.sh >/tmp/vibeboard-idf-export.log && \
+  export PATH="/Users/wq/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20260121/xtensa-esp-elf/bin:$PATH" && \
+  idf.py -p /dev/cu.usbmodem112301 flash
+# ESP32-S3 MAC 10:51:db:80:e2:e8; bootloader/app/partition hashes verified; hard reset completed
+```
+
+Runtime recovery check:
+
+```text
+npm run device:check -- http://192.168.1.32:8080
+# ESP32-S3 detected on /dev/cu.usbmodem112301
+# HTTP /status reachable: yes (200)
+# VibeBoard Runtime: yes
+```
+
+The updated app packages were uploaded after the firmware flash:
+
+```text
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/weather weather
+# uploaded 37 files; commit ok; confirmed weather in /apps
+
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/photos photos
+# uploaded 5 files; commit ok; confirmed photos in /apps
+
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/voice_ai voice_ai
+# uploaded 19 files; commit ok; confirmed voice_ai in /apps
+```
+
+Board metrics smoke passed for the three first-slice apps:
+
+```text
+npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app weather \
+  --polls 35 --interval-ms 500 --metrics-polls 60 --metrics-interval-ms 500 \
+  --require-metrics ui_ready=true --require-metrics fonts_ready=true \
+  --require-metrics assets_ready=true --require-metrics 'perf_ready_ms>=0' \
+  --require-metrics 'perf_resource_ms>=0' --require-metrics perf_last_error= \
+  --stop --stop-polls 35 --stop-interval-ms 500
+# metrics included perf_first_paint_ms=320, perf_ready_ms=1310,
+# perf_resource_ms=1010, perf_http_ms=0, perf_timer_max_ms=770, perf_last_error=""
+
+npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app photos \
+  --polls 35 --interval-ms 500 --metrics-polls 20 --metrics-interval-ms 500 \
+  --require-metrics photos_ready=true --require-metrics 'perf_ready_ms>=0' \
+  --require-metrics 'perf_resource_ms>=0' --require-metrics 'perf_timer_max_ms>=0' \
+  --require-metrics perf_last_error= --stop --stop-polls 35 --stop-interval-ms 500
+# metrics included perf_first_paint_ms=10, perf_ready_ms=20,
+# perf_resource_ms=70, perf_http_ms=0, perf_timer_max_ms=0, perf_last_error=""
+
+npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app voice_ai \
+  --allow-starting --polls 80 --interval-ms 500 --metrics-polls 80 \
+  --metrics-interval-ms 500 --require-metrics init_stage=ready \
+  --require-metrics 'perf_ready_ms>=0' --require-metrics 'perf_resource_ms>=0' \
+  --require-metrics 'perf_timer_max_ms>=0' --require-metrics perf_last_error= \
+  --stop --stop-polls 80 --stop-interval-ms 500
+# metrics included perf_first_paint_ms=160, perf_ready_ms=180,
+# perf_resource_ms=0, perf_http_ms=0, perf_timer_max_ms=0, perf_last_error=""
+```
+
+Final board state:
+
+```text
+curl -fsS http://192.168.1.32:8080/status
+# sd=true, app_count=45, state=idle, runtime_version=0.1.0
+```
+
+Conclusion: the protected Lua HTTP callback path is flashed, and the first-slice `perf_*` metrics are
+board-readable for `weather`, `photos`, and `voice_ai`. This is a measurement baseline only; async HTTP
+execution, cancellation semantics, and broader resource scheduling remain follow-up performance work.
