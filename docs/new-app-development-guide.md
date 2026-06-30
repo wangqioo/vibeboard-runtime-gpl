@@ -115,10 +115,13 @@ capabilities = lvgl,network,audio,file,timer,input
 shared.libs = voice_audio
 ```
 
-Load it from the packaged app:
+Load it from the packaged app with the filesystem path used by Lua `dofile`.
+The `/sd/...` prefix is for LVGL image/font resources; Lua files should use
+`/sdcard/apps/<app_id>/...`:
 
 ```lua
-local voice_audio = dofile("lib/voice_audio.lua")
+local APP_FILE_DIR = "/sdcard/apps/<app_id>"
+local voice_audio = dofile(APP_FILE_DIR .. "/lib/voice_audio.lua")
 ```
 
 Record a bridge-ready 16 kHz mono PCM clip:

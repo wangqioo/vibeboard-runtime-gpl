@@ -1947,6 +1947,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(guide, /Runtime Native Interfaces/);
     assert.match(guide, /i2s\.record_file/);
     assert.match(guide, /i2s\.play_file/);
+    assert.match(guide, /\/sdcard\/apps\/<app_id>/);
+    assert.match(guide, /dofile\(APP_FILE_DIR \.\. "\/lib\/voice_audio\.lua"\)/);
     assert.match(guide, /voice_audio\.record_bridge_pcm/);
     assert.match(guide, /voice_audio\.post_bridge_chat/);
     assert.match(guide, /desktop-bridge/);
