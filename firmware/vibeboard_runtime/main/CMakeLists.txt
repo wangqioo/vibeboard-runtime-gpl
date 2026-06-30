@@ -29,6 +29,8 @@ idf_component_register(
         "native_module_static_adapter.c"
         "nes_host_v1_shim.c"
         "nes_native_adapter.c"
+        "vb_font_common_cn_13.c"
+        "vb_font_voice_ai_13.c"
         "../../../modules/nes/core/apu2A03.cpp"
         "../../../modules/nes/core/bus.cpp"
         "../../../modules/nes/core/cartridge.cpp"

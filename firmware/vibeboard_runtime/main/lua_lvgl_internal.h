@@ -22,3 +22,6 @@ bool vb_lua_lvgl_resolve_asset_path(const char *path, char *resolved, size_t res
 void vb_lua_lvgl_fs_register(lua_State *L);
 void vb_lua_lvgl_canvas_register(lua_State *L);
 void vb_lua_lvgl_widgets_register(lua_State *L);
+lua_Integer vb_lua_lvgl_simsun_16_cjk_font_ref(void);
+lua_Integer vb_lua_lvgl_common_cn_13_font_ref(void);
+lua_Integer vb_lua_lvgl_voice_ai_13_font_ref(void);

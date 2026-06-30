@@ -313,12 +313,7 @@ static void launch_selected_from_task(void)
         if (key_err != ESP_ERR_INVALID_STATE) {
             ESP_LOGW(TAG, "failed to forward BOOT long press: %s", esp_err_to_name(key_err));
         }
-        if (vb_app_runner_is_running()) {
-            ESP_LOGI(TAG, "launcher inactive; BOOT long press: stop app");
-            esp_err_t err = vb_app_runner_stop();
-            if (err != ESP_OK && err != ESP_ERR_NOT_FOUND) {
-                ESP_LOGW(TAG, "failed to stop app from BOOT long press: %s", esp_err_to_name(err));
-            }
+        if (key_err != ESP_ERR_INVALID_STATE || vb_app_runner_is_running()) {
             return;
         }
 

@@ -15,10 +15,24 @@
 #define VB_LVGL_ANIM_H 4
 #define VB_LVGL_ANIM_OPA 5
 #define VB_LVGL_ANIM_PATH_EASE_OUT 1
+#define VB_LVGL_FONT_SIMSUN_16_CJK_REF (-16016)
+#define VB_LVGL_FONT_COMMON_CN_13_REF (-13014)
+#define VB_LVGL_FONT_VOICE_AI_13_REF (-13013)
+
+LV_FONT_DECLARE(vb_font_common_cn_13)
+LV_FONT_DECLARE(vb_font_voice_ai_13)
 
 static const lv_font_t *vb_lua_lvgl_font_from_ref(lua_Integer font_ref)
 {
     switch ((int)font_ref) {
+    case VB_LVGL_FONT_COMMON_CN_13_REF:
+        return &vb_font_common_cn_13;
+    case VB_LVGL_FONT_VOICE_AI_13_REF:
+        return &vb_font_voice_ai_13;
+#if LV_FONT_SIMSUN_16_CJK
+    case VB_LVGL_FONT_SIMSUN_16_CJK_REF:
+        return &lv_font_simsun_16_cjk;
+#endif
 #if LV_FONT_MONTSERRAT_10
     case 10:
         return &lv_font_montserrat_10;
@@ -47,6 +61,25 @@ static const lv_font_t *vb_lua_lvgl_font_from_ref(lua_Integer font_ref)
         return (const lv_font_t *)(uintptr_t)font_ref;
     }
     return LV_FONT_DEFAULT;
+}
+
+lua_Integer vb_lua_lvgl_simsun_16_cjk_font_ref(void)
+{
+#if LV_FONT_SIMSUN_16_CJK
+    return VB_LVGL_FONT_SIMSUN_16_CJK_REF;
+#else
+    return 0;
+#endif
+}
+
+lua_Integer vb_lua_lvgl_common_cn_13_font_ref(void)
+{
+    return VB_LVGL_FONT_COMMON_CN_13_REF;
+}
+
+lua_Integer vb_lua_lvgl_voice_ai_13_font_ref(void)
+{
+    return VB_LVGL_FONT_VOICE_AI_13_REF;
 }
 
 static int create_object(lua_State *L, lv_obj_t *(*create_fn)(lv_obj_t *))

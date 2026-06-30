@@ -1,4 +1,24 @@
 dependencies:
+  espressif/es7210:
+    component_hash: 761ac59d31d8babb01f6338045cc877f2a75027bae9823a4e4d0b6e5b6f63faf
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4,<6.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.0.1~1
+  espressif/es8311:
+    component_hash: 46b3117250344bb03f143d5e2becf81cfb111679fbd7b95cefc2d302d36cc393
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4,<6.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.0.0~1
   espressif/esp_lcd_touch:
     component_hash: 3f85a7d95af876f1a6ecca8eb90a81614890d0f03a038390804e5a77e2caf862
     dependencies:
@@ -59,11 +79,13 @@ dependencies:
       type: service
     version: 8.3.11
 direct_dependencies:
+- espressif/es7210
+- espressif/es8311
 - espressif/esp_lcd_touch_ft5x06
 - espressif/esp_lvgl_port
 - georgik/lua
 - idf
 - lvgl/lvgl
-manifest_hash: fe124325d3f26560d4101bb91216cdc217152716325ac92981bd515d0d2993d3
+manifest_hash: 93cea3ad3cc623f98e0422f16c84cb5357810d0986b7029bb1e2a6db39d8063f
 target: esp32s3
 version: 2.0.0

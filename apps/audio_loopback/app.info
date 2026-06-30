@@ -1,0 +1,4 @@
+name = Audio Loopback
+entry = main.lua
+description = On-device I2S record and playback diagnostic
+capabilities = lvgl,timer,input,file,audio

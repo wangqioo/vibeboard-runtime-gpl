@@ -308,9 +308,9 @@ function hasVisibleGifMetrics(metrics) {
 
 function hasLoadedFontMetrics(metrics) {
   return metrics?.font_loaded === true &&
-    Number(metrics?.font_handle || 0) > 1024 &&
+    Number(metrics?.font_handle || 0) !== 0 &&
     typeof metrics?.font_src === "string" &&
-    metrics.font_src.endsWith(".bin") &&
+    (metrics.font_src.endsWith(".bin") || metrics.font_src.startsWith("builtin:")) &&
     (metrics.font_error || "") === "";
 }
 

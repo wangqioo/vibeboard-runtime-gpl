@@ -99,6 +99,7 @@ Generated UI code may use only the LVGL symbols below. If the app needs another 
 - `ANIM_H`, `ANIM_OPA`, `ANIM_PATH_EASE_OUT`, `ANIM_W`, `ANIM_X`, `ANIM_Y`
 - `LV_ALIGN_BOTTOM_LEFT`, `LV_ALIGN_CENTER`, `LV_ALIGN_TOP_LEFT`, `LV_ALIGN_TOP_MID`
 - `LV_ANIM_OFF`, `LV_ANIM_ON`
+- `LV_FONT_COMMON_CN_13`, `LV_FONT_SIMSUN_16_CJK`, `LV_FONT_VOICE_AI_13`
 - `LV_GRAD_DIR_VER`, `LV_IMG_CF_TRUE_COLOR`
 - `LV_LABEL_LONG_CLIP`, `LV_LABEL_LONG_SCROLL_CIRCULAR`, `LV_LABEL_LONG_WRAP`
 - `LV_OBJ_FLAG_HIDDEN`, `LV_OBJ_FLAG_SCROLLABLE`
@@ -127,6 +128,25 @@ Generated UI code may use only the LVGL symbols below. If the app needs another 
 - `lv_slider_create`, `lv_slider_get_value`, `lv_slider_set_range`, `lv_slider_set_value`
 - `lv_switch_create`
 - `lv_textarea_add_text`, `lv_textarea_create`, `lv_textarea_get_text`, `lv_textarea_set_text`
+
+## Font Policy For Generated Apps
+
+Generated apps must prefer the shared Runtime font set below instead of creating
+ad hoc tiny Chinese subsets for dynamic text:
+
+1. `LV_FONT_COMMON_CN_13` for normal dynamic Chinese text at 13 px. It is
+   generated from `apps/voice_ai/font/msyh_cn_3500_charset.txt` and covers the
+   common 3500 Chinese character set, ASCII, common punctuation, `℃`, and `°`.
+2. `LV_FONT_SIMSUN_16_CJK` for built-in 16 px CJK fallback/default text when the
+   common 13 px font is not appropriate.
+3. App-specific generated fonts only for fixed-format special sizes or layouts,
+   such as weather temperature/time text, game tiles, or dashboards. When the
+   app-specific font contains Chinese text, generate it from the shared common
+   charset and document the source.
+
+If an app needs a new text size or glyph set that is not covered by these fonts,
+return `Runtime update required` so the font can be added to firmware/runtime
+deliberately.
 
 Examples that must return `Runtime update required`: `app.set_status_text(...)`, `gamepad.connect(...)`, `tmr.delay(...)`, unsupported `lv_*` bindings, native ABI changes, or hardware driver work.
 

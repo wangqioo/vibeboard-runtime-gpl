@@ -1,11 +1,117 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8790;
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
+
+function pcmToWav(audio, metadata = {}) {
+  const sampleRate = Number.isFinite(metadata.sampleRate) ? metadata.sampleRate : 16000;
+  const bits = Number.isFinite(metadata.bits) ? metadata.bits : 16;
+  const channels = Number.isFinite(metadata.channels) ? metadata.channels : 1;
+  if (bits !== 16) {
+    throw new Error(`WAV save supports pcm_s16le only; got ${bits}-bit PCM`);
+  }
+  const header = Buffer.alloc(44);
+  const byteRate = sampleRate * channels * 2;
+  const blockAlign = channels * 2;
+
+  header.write("RIFF", 0, "ascii");
+  header.writeUInt32LE(36 + audio.length, 4);
+  header.write("WAVE", 8, "ascii");
+  header.write("fmt ", 12, "ascii");
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36, "ascii");
+  header.writeUInt32LE(audio.length, 40);
+  return Buffer.concat([header, audio]);
+}
+
+function timestampForFilename(date = new Date()) {
+  return date.toISOString().replace(/[:.]/g, "-");
+}
+
+function roundMetric(value, digits = 6) {
+  return Number(value.toFixed(digits));
+}
+
+function analyzeAudioQuality(audio, metadata = {}) {
+  const bits = Number.isFinite(metadata.bits) ? metadata.bits : 0;
+  const channels = Number.isFinite(metadata.channels) ? metadata.channels : 1;
+  const sampleRate = Number.isFinite(metadata.sampleRate) ? metadata.sampleRate : 0;
+  if (bits !== 16 || audio.length < 2) {
+    return {
+      supported: false,
+      reason: bits === 16 ? "empty audio" : `unsupported bit depth: ${bits}`,
+    };
+  }
+
+  const sampleCount = Math.floor(audio.length / 2);
+  let peakAbs = 0;
+  let sumSquares = 0;
+  let silentSamples = 0;
+  let clippedSamples = 0;
+  const silentThreshold = 256;
+
+  for (let offset = 0; offset + 1 < audio.length; offset += 2) {
+    const sample = audio.readInt16LE(offset);
+    const abs = Math.abs(sample);
+    if (abs > peakAbs) peakAbs = abs;
+    sumSquares += sample * sample;
+    if (abs <= silentThreshold) silentSamples += 1;
+    if (abs >= 32760) clippedSamples += 1;
+  }
+
+  const rmsAbs = Math.sqrt(sumSquares / sampleCount);
+  const frameRate = sampleRate > 0 && channels > 0 ? sampleRate * channels : 0;
+  return {
+    supported: true,
+    sample_count: sampleCount,
+    duration_seconds: frameRate > 0 ? roundMetric(sampleCount / frameRate) : 0,
+    peak_abs: peakAbs,
+    peak_percent: roundMetric(peakAbs / 32767),
+    rms_abs: roundMetric(rmsAbs, 3),
+    rms_percent: roundMetric(rmsAbs / 32767),
+    silent_ratio: roundMetric(silentSamples / sampleCount),
+    clipped_ratio: roundMetric(clippedSamples / sampleCount),
+  };
+}
+
+async function saveAudioCapture({ dir, audio, metadata, result = null }) {
+  if (!dir) {
+    return null;
+  }
+  const absoluteDir = resolve(dir);
+  await mkdir(absoluteDir, { recursive: true });
+  const id = `${timestampForFilename()}-${randomUUID().slice(0, 8)}`;
+  const pcmPath = join(absoluteDir, `${id}.pcm`);
+  const wavPath = join(absoluteDir, `${id}.wav`);
+  const jsonPath = join(absoluteDir, `${id}.json`);
+  const record = {
+    id,
+    created_at: new Date().toISOString(),
+    audio_bytes: audio.length,
+    metadata,
+    audio_quality: analyzeAudioQuality(audio, metadata),
+    pcm_path: pcmPath,
+    wav_path: wavPath,
+    json_path: jsonPath,
+    result,
+  };
+
+  await writeFile(pcmPath, audio);
+  await writeFile(wavPath, pcmToWav(audio, metadata));
+  await writeFile(jsonPath, `${JSON.stringify(record, null, 2)}\n`, "utf8");
+  return record;
+}
 
 function jsonResponse(response, statusCode, payload) {
   const body = JSON.stringify(payload);
@@ -61,6 +167,24 @@ async function defaultReply({ transcript }) {
     reply: `我已收到录音：${transcript}`,
     uiCode: "",
   };
+}
+
+function deviceFacingErrorReply(error) {
+  const message = String(error?.message || error || "");
+  const lower = message.toLowerCase();
+  if (lower.includes("no speech detected") || lower.includes("empty transcript")) {
+    return "没有识别到语音，请靠近麦克风再试一次";
+  }
+  if (lower.includes("speech recognition timed out")) {
+    return "语音识别超时，请再说一次";
+  }
+  if (lower.includes("speech recognition permission")) {
+    return "电脑端没有语音识别权限，请允许后再试";
+  }
+  if (lower.includes("command exited") || lower.includes("returned invalid json")) {
+    return "电脑端语音识别失败，请查看后端日志";
+  }
+  return `语音识别失败：${message || "未知错误"}`;
 }
 
 function runShellCommand(command, input) {
@@ -268,6 +392,7 @@ export function createVoiceBridgeServer({
   providerName = "mock",
   transcribe = defaultTranscribe,
   reply = defaultReply,
+  saveAudioDir = process.env.VOICE_BRIDGE_SAVE_AUDIO_DIR || "",
 } = {}) {
   const jobs = new Map();
   const stats = {
@@ -277,17 +402,35 @@ export function createVoiceBridgeServer({
     lastTranscript: "",
     lastReply: "",
     lastUiCode: "",
+    lastSavedAudio: null,
+    lastAudioQuality: null,
   };
 
   async function runTrackedJob({ audio, metadata }) {
     stats.chatRequests += 1;
     stats.lastAudioBytes = audio.length;
     stats.lastMetadata = metadata;
-    const result = await runJob({ audio, metadata, transcribe, reply });
-    stats.lastTranscript = result.transcript || "";
-    stats.lastReply = result.reply || "";
-    stats.lastUiCode = result.ui_code || "";
-    return result;
+    try {
+      const result = await runJob({ audio, metadata, transcribe, reply });
+      stats.lastTranscript = result.transcript || "";
+      stats.lastReply = result.reply || "";
+      stats.lastUiCode = result.ui_code || "";
+      stats.lastSavedAudio = await saveAudioCapture({ dir: saveAudioDir, audio, metadata, result });
+      stats.lastAudioQuality = stats.lastSavedAudio?.audio_quality || null;
+      return result;
+    } catch (error) {
+      stats.lastTranscript = "";
+      stats.lastReply = deviceFacingErrorReply(error);
+      stats.lastUiCode = "";
+      stats.lastSavedAudio = await saveAudioCapture({
+        dir: saveAudioDir,
+        audio,
+        metadata,
+        result: { ok: false, error: error.message },
+      });
+      stats.lastAudioQuality = stats.lastSavedAudio?.audio_quality || null;
+      throw error;
+    }
   }
 
   return createServer(async (request, response) => {
@@ -309,6 +452,8 @@ export function createVoiceBridgeServer({
           last_transcript: stats.lastTranscript,
           last_reply: stats.lastReply,
           last_ui_code: stats.lastUiCode,
+          last_saved_audio: stats.lastSavedAudio,
+          last_audio_quality: stats.lastAudioQuality,
         });
         return;
       }
@@ -355,7 +500,13 @@ export function createVoiceBridgeServer({
 
       jsonResponse(response, 404, { ok: false, error: "not found" });
     } catch (error) {
-      jsonResponse(response, 500, { ok: false, error: error.message });
+      jsonResponse(response, 500, {
+        ok: false,
+        error: error.message,
+        transcript: "",
+        reply: deviceFacingErrorReply(error),
+        ui_code: "",
+      });
     }
   });
 }

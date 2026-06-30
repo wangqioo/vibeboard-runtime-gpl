@@ -259,10 +259,11 @@ Example:
 
 ```json
 {
-  "bclk_pin": 1,
-  "ws_pin": 2,
-  "din_pin": 3,
-  "mclk_pin": -1
+  "bclk_pin": 14,
+  "ws_pin": 13,
+  "din_pin": 12,
+  "dout_pin": 45,
+  "mclk_pin": 38
 }
 ```
 
@@ -273,4 +274,4 @@ POST /runtime/config?name=i2s
 npm run runtime:config -- http://192.168.1.32:8080 i2s runtime/i2s.local.json
 ```
 
-The write path is build-verified. Real board microphone pins still need to be written, followed by `apps/smoke_i2s` board smoke confirming non-zero PCM capture.
+The LCKFB SZPI ESP32-S3 audio wiring follows the board examples: ES7210 input uses MCLK 38, BCLK 14, WS 13, DIN 12; ES8311 output uses MCLK 38, BCLK 14, WS 13, DOUT 45. The write path is build-verified, and `apps/smoke_i2s` can confirm driver-level RX/TX metrics after writing the config.

@@ -136,6 +136,8 @@ const hwmonSourcePath = join(repoRoot, "apps/hwmon/main.lua");
 const hwmonConfigPath = join(repoRoot, "apps/hwmon/config.json");
 const spectrumInfoPath = join(repoRoot, "apps/spectrum/app.info");
 const spectrumSourcePath = join(repoRoot, "apps/spectrum/main.lua");
+const audioLoopbackInfoPath = join(repoRoot, "apps/audio_loopback/app.info");
+const audioLoopbackSourcePath = join(repoRoot, "apps/audio_loopback/main.lua");
 const codexBuddyInfoPath = join(repoRoot, "apps/codex_buddy/app.info");
 const codexBuddySourcePath = join(repoRoot, "apps/codex_buddy/main.lua");
 const codexBuddyConfigPath = join(repoRoot, "apps/codex_buddy/config.example.json");
@@ -157,6 +159,9 @@ const weatherInfoPath = join(repoRoot, "apps/weather/app.info");
 const weatherSourcePath = join(repoRoot, "apps/weather/main.lua");
 const voiceAiInfoPath = join(repoRoot, "apps/voice_ai/app.info");
 const voiceAiSourcePath = join(repoRoot, "apps/voice_ai/main.lua");
+const voiceAiCharsetPath = join(repoRoot, "apps/voice_ai/font/voice_ui_charset.txt");
+const voiceAiFontSourcePath = join(firmwareRoot, "main/vb_font_voice_ai_13.c");
+const commonCnFontSourcePath = join(firmwareRoot, "main/vb_font_common_cn_13.c");
 const voiceAiSmokeToolPath = join(repoRoot, "tools/voice-ai-smoke/index.mjs");
 const voiceAiSmokeTestPath = join(repoRoot, "tools/voice-ai-smoke/test.mjs");
 const nesgameInfoPath = join(repoRoot, "apps/nesgame/app.info");
@@ -1311,7 +1316,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(installService, /send_json\(req,\s*body\)[\s\S]*return\s+ESP_OK/);
     assert.match(installService, /selected_index/);
     assert.match(installService, /queue_launch_after_response\(s_context->registry,\s*selected_index\)/);
-    assert.match(installService, /launch_deferred_task[\s\S]*vb_app_runner_launch_async_from_registry\(&job->registry,\s*job->selected_index\)/);
+    assert.match(installService, /static void http_launch_before_start\(void \*user_data\)[\s\S]*vb_launcher_ui_note_async_launch\(\)/);
+    assert.match(installService, /const vb_app_runner_launch_options_t options = \{[\s\S]*\.before_start = http_launch_before_start/);
+    assert.match(installService, /launch_deferred_task[\s\S]*vb_app_runner_launch_async_with_options\(entry,\s*&options\)/);
+    assert.doesNotMatch(installService, /launch_deferred_task[\s\S]*vb_app_runner_launch_async_from_registry\(&job->registry,\s*job->selected_index\)/);
     assert.doesNotMatch(installService, /launch_handler[\s\S]*vb_app_runner_launch_async_from_registry\(s_context->registry,\s*selected_index\)/);
     assert.doesNotMatch(installService, /vb_app_runner_launch_async\(&selected_app\)/);
     assert.doesNotMatch(installService, /vb_app_runner_launch_async_with_options\(&selected_app,\s*&launch_options\)/);
@@ -1320,7 +1328,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /vb_app_runner_last_message/);
     assert.match(source, /Failed:/);
     assert.match(source, /Stopped/);
-    assert.match(source, /launcher inactive; BOOT long press: stop app/);
+    assert.doesNotMatch(source, /launcher inactive; BOOT long press: stop app/);
+    assert.doesNotMatch(source, /if \(vb_app_runner_is_running\(\)\) \{\s*ESP_LOGI\(TAG,\s*"launcher inactive; BOOT long press: stop app"/);
     assert.match(source, /xTaskCreatePinnedToCoreWithCaps\(return_to_launcher_task/);
     assert.match(source, /"vb_return",\s*8192/);
     assert.match(source, /MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT/);
@@ -1783,6 +1792,57 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(weatherSource, /http\.cubicserver\.get\(url,\s*\{\s*timeout_ms\s*=\s*APP\.WEATHER_HTTP_TIMEOUT_MS\s*\}/);
   });
 
+  it("defaults weather to Shanghai and writes fetch results to metrics", () => {
+    const weatherSource = readRequired(weatherSourcePath);
+
+    assert.match(weatherSource, /WEATHER_LOCATION\s*=\s*"101020100"/);
+    assert.match(weatherSource, /CITY_NAME\s*=\s*"Shanghai"/);
+    assert.match(weatherSource, /\\"temp\\":/);
+    assert.match(weatherSource, /\\"text\\":/);
+    assert.match(weatherSource, /\\"humidity\\":/);
+    assert.match(weatherSource, /\\"wind_speed\\":/);
+    assert.match(weatherSource, /\\"last_http_code\\":/);
+    assert.match(weatherSource, /\\"last_update_ms\\":/);
+    assert.match(weatherSource, /parse_weather_body\(status_code,\s*plain\)\s+render_weather\(\)\s+write_metrics\(\)/);
+    assert.match(weatherSource, /APP\.state\.last_error\s*=\s*"Cubic config missing"[\s\S]*write_metrics\(\)/);
+    assert.match(weatherSource, /APP\.state\.last_error\s*=\s*"Cubic HTTP missing"[\s\S]*write_metrics\(\)/);
+  });
+
+  it("renders weather Celsius without relying on a missing single-glyph unit", () => {
+    const weatherSource = readRequired(weatherSourcePath);
+
+    assert.match(weatherSource, /local CELSIUS_FORECAST = "C"/);
+    assert.match(weatherSource, /local function create_degree_mark\(parent,\s*x,\s*y,\s*color\)/);
+    assert.match(weatherSource, /lv_obj_set_style_bg_opa,\s*id,\s*0,\s*MAIN_STYLE/);
+    assert.match(weatherSource, /lv_obj_set_style_border_width,\s*id,\s*2,\s*MAIN_STYLE/);
+    assert.match(weatherSource, /local TEMP_VALUE_X = 212/);
+    assert.match(weatherSource, /local TEMP_UNIT_X = 238/);
+    assert.match(weatherSource, /call\(lv_obj_set_pos,\s*APP\.ui\.temp_value_label,\s*TEMP_VALUE_X,\s*100\)/);
+    assert.match(weatherSource, /APP\.ui\.temp_value_label = create_label\(now_page,\s*"--",\s*FONT_34,\s*C\.text,\s*TEMP_VALUE_X,\s*100,\s*0,\s*ALIGN_LEFT\)/);
+    assert.match(weatherSource, /APP\.ui\.temp_degree_mark = create_degree_mark\(now_page,\s*TEMP_UNIT_X,\s*103,\s*C\.text\)/);
+    assert.match(weatherSource, /APP\.ui\.temp_unit_label = create_label\(now_page,\s*"C",\s*FONT_16,\s*C\.text,\s*TEMP_UNIT_X \+ 10,\s*100,\s*24,\s*ALIGN_LEFT\)/);
+    assert.match(weatherSource, /local function set_temp_value\(value\)/);
+    assert.match(weatherSource, /set_temp_value\(format_temp_value_text\(APP\.state\.temp\)\)/);
+    assert.match(weatherSource, /set_label_text\(APP\.ui\.temp_unit_label,\s*"C"\)/);
+    assert.doesNotMatch(weatherSource, /local function temp_value_x\(text\)/);
+    assert.doesNotMatch(weatherSource, /create_label\(now_page,\s*"--",\s*FONT_34,\s*C\.text,\s*172,\s*100,\s*104,\s*ALIGN_RIGHT\)/);
+    assert.doesNotMatch(weatherSource, /APP\.ui\.temp_label = create_label/);
+    assert.doesNotMatch(weatherSource, /local CELSIUS = "\\226\\132\\131"/);
+    assert.match(weatherSource, /return "--"/);
+    assert.match(weatherSource, /return tostring\(n\)/);
+    assert.match(weatherSource, /return rounded_int_text\(max_temp\) \.\. "\/" \.\. rounded_int_text\(min_temp\) \.\. CELSIUS_FORECAST/);
+  });
+
+  it("keeps stale real weather visible across transient fetch failures", () => {
+    const weatherSource = readRequired(weatherSourcePath);
+
+    assert.match(weatherSource, /local function has_cached_weather\(\)/);
+    assert.match(weatherSource, /APP\.state\.last_update_ms or 0\) > 0/);
+    assert.match(weatherSource, /if not has_cached_weather\(\) then\s+APP\.state\.valid = false\s+end/);
+    assert.match(weatherSource, /APP\.state\.last_error = tostring\(err\)/);
+    assert.match(weatherSource, /render_weather\(\)\s+write_metrics\(\)\s+return/);
+  });
+
   it("defers weather network startup until the app can observe stop requests", () => {
     const weatherSource = readRequired(weatherSourcePath);
 
@@ -1872,6 +1932,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const weather = readRequired(weatherSourcePath);
     const btc = readRequired(btcSourcePath);
     const voiceAi = readRequired(voiceAiSourcePath);
+    const voiceAiFontSource = readRequired(voiceAiFontSourcePath);
     const voiceAiSmokeTool = readRequired(voiceAiSmokeToolPath);
     const voiceAiSmokeTest = readRequired(voiceAiSmokeTestPath);
     const nesgame = readRequired(nesgameSourcePath);
@@ -1913,6 +1974,13 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(canvas, /"lv_canvas_blur_ver"/);
 
     assert.match(voiceAi, /lv_gif_set_src/);
+    assert.match(voiceAi, /USE_GIF\s*=\s*false/);
+    assert.match(voiceAi, /reply\s*=\s*"短按开始"/);
+    assert.match(voiceAi, /UI\.action_key\s*=\s*label\(root,\s*18,\s*82,\s*90,\s*28,\s*"\[HOME\]"/);
+    assert.match(voiceAi, /UI\.action_text\s*=\s*label\(root,\s*10,\s*116,\s*106,\s*22,\s*"短按录音"/);
+    assert.doesNotMatch(voiceAi, /UI\.media_panel/);
+    assert.doesNotMatch(voiceAi, /UI\.line\s*=\s*lv_obj_create\(root\)/);
+    assert.doesNotMatch(voiceAi, /BASE OK|MEDIA OFF/);
     assert.match(voiceAi, /local\s+root\s*=\s*lv_scr_act\(\)/);
     assert.doesNotMatch(voiceAi, /lv_obj_create\(nil\)/);
     assert.match(readRequired(sdkconfigDefaultsPath), /CONFIG_LV_USE_GIF=y/);
@@ -1940,19 +2008,50 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(voiceAi, /font_error/);
     assert.match(voiceAi, /S\.font_loaded = true/);
     assert.match(voiceAi, /S\.font_error = ok and \("invalid handle " \.\. tostring\(handle\)\) or tostring\(handle\)/);
-    assert.match(voiceAi, /load_font_ref\("\/sd\/apps\/weather\/font\/weather_ui_12\.bin",\s*FONT_12\)/);
+    assert.match(voiceAi, /local FONT_COMMON_CN = rawget\(_G,\s*"LV_FONT_COMMON_CN_13"\)/);
+    assert.match(voiceAi, /FONT_CJK = FONT_COMMON_CN/);
+    assert.match(voiceAi, /FONT_CJK = rawget\(_G,\s*"LV_FONT_VOICE_AI_13"\)/);
+    assert.match(voiceAi, /FONT_CJK = rawget\(_G,\s*"LV_FONT_SIMSUN_16_CJK"\)/);
+    assert.match(voiceAi, /APP\.font_cn = FONT_CJK/);
+    assert.match(voiceAi, /S\.font_src = \(FONT_CJK == FONT_COMMON_CN\) and "builtin:LV_FONT_COMMON_CN_13" or "builtin:LV_FONT_VOICE_AI_13"/);
+    assert.doesNotMatch(voiceAi, /APP\.font_cn = load_font_chain\(\{/);
+    assert.doesNotMatch(voiceAi, /"\/sd\/apps\/voice_ai\/font\/voice_ui_13\.bin"/);
+    assert.doesNotMatch(voiceAi, /"\/sd\/apps\/voice_ai\/font\/msyh_cn_13\.bin"/);
+    assert.doesNotMatch(voiceAi, /"\/sd\/apps\/weather\/font\/weather_ui_12\.bin"/);
+    assert.doesNotMatch(voiceAi, /APP\.font_cn = load_font_ref\("\/sd\/apps\/weather\/font\/weather_ui_12\.bin"/);
     assert.match(voiceAi, /use_gif/);
     assert.match(voiceAi, /gif_visible/);
     assert.match(voiceAi, /gif_state/);
     assert.match(voiceAi, /gif_src/);
     assert.match(voiceAi, /S\.shown_gif_src/);
     assert.match(voiceAi, /last_i2s_error/);
-    assert.match(voiceAi, /read_recording_chunk\(80\)/);
-    assert.match(voiceAi, /MAX_RECORD_BYTES\s*=\s*262144/);
-    assert.match(voiceAi, /local function max_record_bytes\(\)/);
-    assert.match(voiceAi, /if S\.record_bytes >= byte_limit then\s*stop_recording_and_send\(\)/);
-    assert.match(voiceAi, /if #pcm > remaining then\s*pcm = pcm:sub\(1,\s*remaining\)/);
+    assert.match(voiceAi, /CAPTURE_RATE\s*=\s*48000/);
+    assert.match(voiceAi, /CAPTURE_CHANNELS\s*=\s*2/);
+    assert.match(voiceAi, /CAPTURE_PATH\s*=\s*"capture\.raw"/);
+    assert.match(voiceAi, /i2s\.record_file\(APP\.I2S_ID,\s*APP\.CAPTURE_PATH/);
+    assert.match(voiceAi, /read_voice_capture_file\(\)/);
+    assert.match(voiceAi, /downsample_capture_file_to_16k_mono/);
+    assert.doesNotMatch(voiceAi, /i2s\.read\(/);
+    assert.doesNotMatch(voiceAi, /downsample_left_48k_stereo_to_16k_mono/);
+    assert.doesNotMatch(voiceAi, /raw_tail/);
+    assert.doesNotMatch(voiceAi, /RECORD_POLL_MS/);
+    assert.match(voiceAi, /rate\s*=\s*APP\.CAPTURE_RATE/);
+    assert.match(voiceAi, /channel\s*=\s*i2s\.CHANNEL_STEREO/);
+    assert.doesNotMatch(voiceAi, /channel\s*=\s*i2s\.CHANNEL_ONLY_LEFT/);
+    assert.match(voiceAi, /MAX_RECORD_BYTES\s*=\s*98304/);
+    assert.match(voiceAi, /local max_record_bytes[\s\S]*max_record_bytes\s*=\s*function\(\)/);
+    assert.match(voiceAi, /record_stopping = false/);
+    assert.match(voiceAi, /if S\.record_stopping then return end/);
+    assert.match(voiceAi, /S\.record_stopping = true/);
+    assert.match(voiceAi, /S\.record_stopping = false/);
+    assert.match(voiceAi, /ignore_record_until_ms/);
+    assert.match(voiceAi, /if S\.mode == "recording" then\s+return/);
+    assert.match(voiceAi, /now < \(S\.ignore_record_until_ms or 0\)/);
+    assert.match(voiceAi, /submit_audio\(raw\)\s*raw\s*=\s*nil\s*if type\(collectgarbage\) == "function" then collectgarbage\("collect"\) end/);
     assert.match(voiceAi, /last_http_code/);
+    assert.match(voiceAi, /local function show_pending_reply\(\)[\s\S]*set_mode\("reply"\)\s*write_metrics\(\)/);
+    assert.match(readRequired(voiceAiCharsetPath), /\./);
+    assert.match(voiceAiFontSource, /--symbols [^\n]*\./);
     assert.match(voiceAi, /DEFAULT_BRIDGE_URL\s*=\s*"http:\/\/192\.168\.1\.26:8790"/);
     assert.match(voiceAi, /local function load_config\(\)[\s\S]*return true, "default"/);
     assert.match(voiceAi, /set_init_stage\("load_config"\)/);
@@ -2081,6 +2180,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /i2s_start/);
     assert.match(source, /i2s_read/);
     assert.match(source, /i2s_write/);
+    assert.match(source, /i2s_record_file/);
+    assert.match(source, /i2s_play_file/);
     assert.match(source, /i2s_stop/);
     assert.match(source, /i2s_status/);
     assert.match(source, /MODE_MASTER/);
@@ -2088,15 +2189,72 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /CHANNEL_ONLY_LEFT/);
     assert.match(source, /FORMAT_I2S/);
     assert.match(source, /\/sdcard\/runtime\/i2s\.json/);
+    assert.match(source, /board_lckfb_szpi_s3\.h/);
+    assert.match(source, /vb_board_audio_prepare\(want_rx,\s*want_tx,\s*rate,\s*bits[\s\S]*next_rx_uses_tdm/);
     assert.match(source, /i2s_channel_read/);
     assert.match(source, /i2s_channel_write/);
+    assert.match(source, /resolve_app_file_path/);
+    assert.match(source, /esp_timer_get_time/);
+    assert.match(source, /resample_step_q32/);
+    assert.match(source, /next_source_frame_q32/);
+    assert.doesNotMatch(source, /int\s+downsample\s*=\s*in_rate\s*\/\s*out_rate/);
+    assert.match(source, /heap_caps_malloc\(\(size_t\)chunk_bytes,\s*MALLOC_CAP_8BIT\)/);
+    assert.doesNotMatch(source, /i2s play_file buffer alloc failed[\s\S]*MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT/);
+    assert.match(source, /VB_LUA_FILE_APP_DIR_REGISTRY_KEY\s+"vb_file_app_dir"/);
+    assert.match(source, /"record_file",\s*i2s_record_file/);
+    assert.match(source, /"play_file",\s*i2s_play_file/);
     assert.match(source, /i2s_channel_disable/);
+    assert.match(source, /#include\s+"driver\/i2s_tdm\.h"/);
+    assert.match(source, /init_rx_tdm/);
+    assert.match(source, /I2S_TDM_PHILIPS_SLOT_DEFAULT_CONFIG/);
+    assert.match(source, /I2S_TDM_SLOT0\s*\|\s*I2S_TDM_SLOT1/);
+    assert.match(source, /table_bool_tristate\(L,\s*"tdm"\)/);
+    assert.match(source, /next_rx_uses_tdm\s*=\s*want_rx\s*&&\s*!want_tx\s*&&\s*channel\s*==\s*VB_LUA_I2S_CHANNEL_STEREO\s*&&\s*rx_tdm_mode\s*!=\s*0/);
+    assert.match(source, /lua_setfield\(L,\s*-2,\s*"rx_tdm"\)/);
     assert.match(source, /dout_pin/);
+    assert.match(source, /mclk_pin/);
     assert.match(source, /tx_bytes/);
     assert.match(source, /stop_port\(port\)/);
     assert.doesNotMatch(source, /if \(port->started\) \{\s*lua_pushboolean\(L,\s*true\);\s*return 1;\s*\}/);
+
+    const i2sWriteBody = source.match(/static int i2s_write\(lua_State \*L\)[\s\S]*?\n}\n\nint vb_i2s_tx_stream_begin/);
+    assert.ok(i2sWriteBody, "i2s_write body is present");
+    assert.match(i2sWriteBody[0], /i2s_channel_write\(port->tx,\s*data,\s*len,\s*&written,\s*pdMS_TO_TICKS\(timeout_ms\)\)/);
+    assert.match(i2sWriteBody[0], /port->writes\+\+/);
+    assert.match(i2sWriteBody[0], /port->tx_bytes\s*\+=\s*written/);
+    assert.doesNotMatch(i2sWriteBody[0], /vb_i2s_tx_stream_write/);
+
+    const stopPortBody = source.match(/static void stop_port\(vb_lua_i2s_port_t \*port\)[\s\S]*?\n}\n\nstatic int i2s_stop/);
+    assert.ok(stopPortBody, "stop_port body is present");
+    assert.match(stopPortBody[0], /ptrdiff_t\s+port_id\s*=\s*port\s*-\s*s_i2s/);
+    assert.match(stopPortBody[0], /s_tx_streams\[port_id\]\.in_use\s*=\s*false/);
     assert.match(runner, /#include\s+"lua_i2s\.h"/);
     assert.match(runner, /vb_lua_i2s_register\(L\)/);
+  });
+
+  it("prepares LCKFB audio codecs and amplifier before runtime I2S use", () => {
+    const boardHeader = readRequired(join(firmwareRoot, "main/board_lckfb_szpi_s3.h"));
+    const boardSource = readRequired(join(firmwareRoot, "main/board_lckfb_szpi_s3.c"));
+    const manifest = readRequired(join(firmwareRoot, "main/idf_component.yml"));
+
+    assert.match(manifest, /espressif\/es7210:\s*"\^1\.0\.0"/);
+    assert.match(manifest, /espressif\/es8311:\s*"\^1\.0\.0"/);
+    assert.match(boardHeader, /VB_PCA9557_PA_EN_BIT\s+BIT\(1\)/);
+    assert.match(boardHeader, /vb_board_audio_prepare\(bool want_rx,\s*bool want_tx,\s*uint32_t sample_rate[\s\S]*bool rx_tdm/);
+    assert.match(boardSource, /#include\s+"es7210\.h"/);
+    assert.match(boardSource, /#include\s+"es8311\.h"/);
+    assert.match(boardSource, /static uint8_t\s+s_pca9557_output\s*=\s*VB_PCA9557_LCD_CS_BIT\s*\|\s*VB_PCA9557_DVP_PWDN_BIT/);
+    assert.match(boardSource, /pca9557_set_output\(VB_PCA9557_PA_EN_BIT,\s*true\)/);
+    assert.match(boardSource, /es8311_create\(VB_I2C_PORT,\s*ES8311_ADDRRES_0\)/);
+    assert.match(boardSource, /es8311_voice_volume_set\(handle,\s*70,\s*NULL\)/);
+    assert.match(boardSource, /es7210_new_codec\(&i2c_config,\s*&handle\)/);
+    assert.match(boardSource, /\.i2c_addr\s*=\s*0x41/);
+    assert.match(boardSource, /\.flags\.tdm_enable\s*=\s*tdm_enable/);
+    assert.match(boardSource, /s_es7210_tdm/);
+    assert.doesNotMatch(boardSource, /s_es7210_ready\s*&&\s*s_es7210_sample_rate\s*==\s*sample_rate\s*&&\s*s_es7210_bits\s*==\s*bits\s*&&\s*s_es7210_tdm\s*==\s*tdm_enable[\s\S]*return ESP_OK/);
+    assert.match(boardSource, /I2S_MCLK_MULTIPLE_256/);
+    assert.match(boardSource, /ES7210_MIC_GAIN_30DB/);
+    assert.match(boardSource, /vb_board_audio_prepare\(bool want_rx,\s*bool want_tx[\s\S]*bool rx_tdm/);
   });
 
   it("routes NES host audio writes through the runtime I2S TX helper", () => {
@@ -2202,6 +2360,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const internal = readRequired(luaLvglInternalHeaderPath);
     const fsSource = readRequired(luaLvglFsSourcePath);
     const widgetSource = readRequired(luaLvglWidgetsSourcePath);
+    const voiceAiFontSource = readRequired(voiceAiFontSourcePath);
+    const commonCnFontSource = readRequired(commonCnFontSourcePath);
+    const sdkconfig = readRequired(join(firmwareRoot, "sdkconfig"));
     const runner = readRequired(runnerSourcePath);
     const cmake = readRequired(cmakePath);
     const defaults = readRequired(sdkconfigDefaultsPath);
@@ -2260,6 +2421,31 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(widgetSource, /lv_obj_set_style_text_color/);
     assert.match(widgetSource, /lv_obj_set_style_text_font/);
     assert.match(widgetSource, /vb_lua_lvgl_font_from_ref/);
+    assert.match(widgetSource, /VB_LVGL_FONT_SIMSUN_16_CJK_REF\s+\(-16016\)/);
+    assert.match(widgetSource, /VB_LVGL_FONT_COMMON_CN_13_REF\s+\(-13014\)/);
+    assert.match(widgetSource, /VB_LVGL_FONT_VOICE_AI_13_REF\s+\(-13013\)/);
+    assert.match(widgetSource, /LV_FONT_DECLARE\(vb_font_common_cn_13\)/);
+    assert.match(widgetSource, /LV_FONT_DECLARE\(vb_font_voice_ai_13\)/);
+    assert.match(widgetSource, /case VB_LVGL_FONT_COMMON_CN_13_REF:[\s\S]*return &vb_font_common_cn_13/);
+    assert.match(widgetSource, /case VB_LVGL_FONT_VOICE_AI_13_REF:[\s\S]*return &vb_font_voice_ai_13/);
+    assert.match(widgetSource, /vb_lua_lvgl_common_cn_13_font_ref/);
+    assert.match(widgetSource, /vb_lua_lvgl_voice_ai_13_font_ref/);
+    assert.match(commonCnFontSource, /--symbols [^\n]*℃/);
+    assert.match(commonCnFontSource, /--symbols [^\n]*\./);
+    assert.match(commonCnFontSource, /--no-compress/);
+    assert.match(commonCnFontSource, /--no-prefilter/);
+    assert.match(commonCnFontSource, /\.bitmap_format\s*=\s*0/);
+    assert.match(voiceAiFontSource, /--no-compress/);
+    assert.match(voiceAiFontSource, /--no-prefilter/);
+    assert.match(voiceAiFontSource, /\.bitmap_format\s*=\s*0/);
+    assert.doesNotMatch(sdkconfig, /CONFIG_LV_USE_FONT_COMPRESSED=y/);
+    assert.match(widgetSource, /case VB_LVGL_FONT_SIMSUN_16_CJK_REF:[\s\S]*return &lv_font_simsun_16_cjk/);
+    assert.match(widgetSource, /vb_lua_lvgl_simsun_16_cjk_font_ref/);
+    assert.match(readRequired(join(firmwareRoot, "main/CMakeLists.txt")), /"vb_font_common_cn_13\.c"/);
+    assert.match(readRequired(join(firmwareRoot, "main/CMakeLists.txt")), /"vb_font_voice_ai_13\.c"/);
+    assert.match(readRequired(join(firmwareRoot, "main/lua_lvgl.c")), /lua_setglobal\(L,\s*"LV_FONT_COMMON_CN_13"\)/);
+    assert.match(readRequired(join(firmwareRoot, "main/lua_lvgl.c")), /lua_setglobal\(L,\s*"LV_FONT_VOICE_AI_13"\)/);
+    assert.match(readRequired(join(firmwareRoot, "main/lua_lvgl.c")), /lua_setglobal\(L,\s*"LV_FONT_SIMSUN_16_CJK"\)/);
     assert.match(widgetSource, /case 10:[\s\S]*lv_font_montserrat_10/);
     assert.match(widgetSource, /case 12:[\s\S]*lv_font_montserrat_12/);
     assert.match(widgetSource, /case 14:[\s\S]*lv_font_montserrat_14/);
@@ -2926,6 +3112,64 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(source, /lv_canvas_create/);
     assert.doesNotMatch(source, /lv_canvas_draw_line/);
     assert.doesNotMatch(source, /lv_canvas_draw_polyline/);
+  });
+
+  it("ships Audio Loopback as an on-device record and playback diagnostic", () => {
+    const info = readRequired(audioLoopbackInfoPath);
+    const source = readRequired(audioLoopbackSourcePath);
+
+    assert.match(info, /name = Audio Loopback/);
+    assert.match(info, /entry = main\.lua/);
+    assert.match(info, /capabilities = lvgl,timer,input,file,audio/);
+    assert.match(source, /AUDIO_LOOPBACK_APP/);
+    assert.match(source, /app\.set_home_exit\(false\)/);
+    assert.match(source, /key\.on\(key\.HOME/);
+    assert.match(source, /CAPTURE_MODES/);
+    assert.match(source, /name\s*=\s*"tdm48"/);
+    assert.match(source, /name\s*=\s*"tdm16"/);
+    assert.match(source, /rate\s*=\s*48000/);
+    assert.match(source, /rate\s*=\s*16000/);
+    assert.match(source, /PLAYBACK_RATE\s*=\s*16000/);
+    assert.match(source, /RECORD_SECONDS\s*=\s*2/);
+    assert.match(source, /CAPTURE_PATH\s*=\s*"capture\.raw"/);
+    assert.match(source, /BITS\s*=\s*16/);
+    assert.match(source, /CHANNELS\s*=\s*2/);
+    assert.match(source, /CHUNK_BYTES\s*=\s*4096/);
+    assert.match(source, /IO_TIMEOUT_MS\s*=\s*1000/);
+    assert.match(source, /PLAYBACK_GAIN\s*=\s*3/);
+    assert.match(source, /record_elapsed_ms/);
+    assert.match(source, /effective_sample_rate/);
+    assert.match(source, /read_ms/);
+    assert.match(source, /write_ms/);
+    assert.match(source, /expected_record_bytes/);
+    assert.match(source, /i2s\.record_file\(APP\.I2S_ID,\s*APP\.CAPTURE_PATH/);
+    assert.match(source, /i2s\.play_file\(APP\.I2S_ID,\s*APP\.CAPTURE_PATH/);
+    assert.match(source, /tdm\s*=\s*true,[\s\S]*buffer_count\s*=\s*2,[\s\S]*buffer_len\s*=\s*128/);
+    assert.match(source, /target_bytes\s*=\s*capture_target_bytes\(capture_mode\)/);
+    assert.match(source, /PLAYBACK_PROFILES/);
+    assert.match(source, /tdm48-left/);
+    assert.match(source, /tdm48-right/);
+    assert.match(source, /tdm48-mix/);
+    assert.match(source, /tdm16-left/);
+    assert.match(source, /tdm16-right/);
+    assert.match(source, /tdm16-mix/);
+    assert.ok(
+      source.indexOf("tdm48-left") < source.indexOf("tdm16-left"),
+      "Audio Loopback should test 48 kHz TDM before 16 kHz TDM"
+    );
+    assert.match(source, /select\s*=\s*profile\.channel/);
+    assert.match(source, /source_rate\s*=\s*S\.effective_sample_rate > 0 and S\.effective_sample_rate or capture_mode\.rate/);
+    assert.match(source, /channel\s*=\s*i2s\.CHANNEL_STEREO/);
+    assert.match(source, /MAX_RECORD_BYTES\s*=\s*384000/);
+    assert.match(source, /peak_abs/);
+    assert.match(source, /rms_abs/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /Short HOME: native record\/play profile/);
+    assert.doesNotMatch(source, /i2s\.read\(/);
+    assert.doesNotMatch(source, /i2s\.write\(/);
+    assert.doesNotMatch(source, /i2s\.start\(/);
+    assert.doesNotMatch(source, /tmr\.create\(\)/);
+    assert.doesNotMatch(source, /http\./);
   });
 
   it("ships Codex Buddy as a deterministic desktop bridge migration", () => {

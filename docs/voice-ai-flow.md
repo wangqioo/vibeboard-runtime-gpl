@@ -4,7 +4,9 @@ This document tracks the current device-to-desktop bridge contract for `apps/voi
 
 ## Current Slice
 
-The device app records PCM through the Lua `i2s` module, then posts the raw bytes to a desktop bridge:
+The device app records through the Runtime native `i2s.record_file(...)` path,
+then converts the app-local capture file to the bridge PCM contract and posts
+the raw bytes to a desktop bridge:
 
 ```text
 POST /api/chat
@@ -15,6 +17,21 @@ X-Bits: 16
 X-Channels: 1
 X-Reply-Limit: 100
 ```
+
+Recording duration is constrained by both `max_record_ms` and the app memory
+guard `MAX_RECORD_BYTES = 98304`. With the current default PCM contract
+(`pcm_s16le`, 16000 Hz, 16-bit, mono), the byte guard wins:
+
+```text
+98304 / (16000 * 2) = 3.072 seconds
+```
+
+This is not a microphone or I2S hardware limit. The app captures to an
+app-local raw file first, but it still constructs the final 16 kHz mono upload
+body in Lua before HTTP upload. The 96 KiB guard keeps Voice AI from exhausting
+or fragmenting memory while GIFs, fonts, LVGL objects, and HTTP upload are
+active. Longer production recordings should use streaming upload or a
+firmware-side file-to-HTTP helper before raising the constant.
 
 The synchronous bridge response is:
 
@@ -123,6 +140,77 @@ false timeout after a clean app restart.
 its custom GIF and font assets live while still serving app files. After flashing the board, the same
 `voice-ai:smoke` command returned `voice-ai smoke ok: audio=1536 chats=0->1 state=running current_app=voice_ai gif=idle font=loaded reply=reply:transcript:2048`, and direct `/apps/file` reads for `metrics.json`, `main.lua`, and `app.info` all succeeded while the app was running.
 
+2026-07-01 physical Voice AI success: `voice_ai` was moved off the old Lua timer
+`i2s.read` recording path and onto the same native file-backed audio lane used
+by `audio_loopback`. The debug sequence exposed two firmware bugs: ES7210 RX
+could reuse stale codec state and return all-zero captures after app switching,
+and `i2s.play_file` could fail after recording because playback buffers required
+internal RAM. The fixes force RX codec re-prepare before capture and let
+`play_file` allocate normal 8-bit-capable heap memory instead of internal-only
+memory. After flashing `/dev/cu.usbmodem112301`, `audio_loopback` returned to
+`mode=idle`, `record_bytes=384000`, `play_bytes=128968`, and `last_error=""`.
+The user then launched `voice_ai`, short-pressed HOME, spoke into the microphone,
+and confirmed that the device displayed the recognized text and reply. Bridge
+stats captured the successful local Apple Speech command-provider round trip:
+
+```json
+{
+  "provider": "command",
+  "chat_requests": 8,
+  "last_audio_bytes": 98304,
+  "last_metadata": {
+    "format": "pcm_s16le",
+    "sampleRate": 16000,
+    "bits": 16,
+    "channels": 1
+  },
+  "last_transcript": "<recognized user speech>",
+  "last_reply": "识别结果：<recognized user speech>",
+  "last_audio_quality": {
+    "duration_seconds": 3.072,
+    "peak_abs": 5462,
+    "rms_abs": 420.221,
+    "silent_ratio": 0.621745
+  }
+}
+```
+
+This is the first confirmed physical end-to-end path:
+
+```text
+ES7210 microphone -> Runtime native record_file -> app-local raw capture ->
+16 kHz mono PCM upload -> desktop bridge command provider -> Apple Speech ->
+local reply command -> device UI display
+```
+
+Future microphone applications should start from this lane. Lua code should
+request high-level capture/playback operations from Runtime and should not use
+timer-driven `i2s.read` loops for user-facing voice capture unless the firmware
+adds a tested streaming API.
+
+## Reuse Guidance
+
+For future microphone, speaker, or backend-linked applications, treat the
+2026-07-01 Voice AI path as the baseline:
+
+- Capture through Runtime-owned codec/I2S helpers such as `i2s.record_file`.
+- Keep sample-rate conversion, channel selection, codec re-prepare, and playback
+  buffering in firmware or in one shared Runtime helper.
+- Let Lua own product behavior, UI state, and HTTP request orchestration, not
+  low-level microphone timing.
+- Save raw captures on the desktop bridge during bring-up so failed STT runs can
+  be distinguished from silent input, bad channel selection, upload failure, or
+  provider errors.
+- Verify each new backend provider independently. The local Apple Speech command
+  provider is proven; external STT/LLM services still depend on their endpoint
+  shape, credentials, latency, and privacy/logging policy.
+
+This makes new audio apps practical, but it is not a blanket guarantee that
+all future audio features are finished by default. Long recordings, streaming
+upload, wake-word detection, echo cancellation, noise suppression, automatic
+gain control, and cloud providers are follow-up capabilities on top of this
+baseline.
+
 ## Desktop Bridge
 
 The local testable bridge lives in `desktop-bridge/server.mjs`.
@@ -139,6 +227,24 @@ Provider selection:
 node desktop-bridge/server.mjs --host 0.0.0.0 --port 8790 --provider mock
 node desktop-bridge/server.mjs --host 0.0.0.0 --port 8790 --provider command
 ```
+
+Local macOS Speech transcription can run without a cloud STT provider:
+
+```sh
+VOICE_BRIDGE_SAVE_AUDIO_DIR=recordings \
+VOICE_BRIDGE_TRANSCRIBE_COMMAND="swift desktop-bridge/apple-speech-transcribe.swift" \
+VOICE_BRIDGE_REPLY_COMMAND="node desktop-bridge/local-reply.mjs" \
+node desktop-bridge/server.mjs --host 0.0.0.0 --port 8790 --provider command
+```
+
+When `VOICE_BRIDGE_SAVE_AUDIO_DIR` is set, each `/api/chat` upload is saved as
+raw `.pcm`, playable `.wav`, and `.json` metadata/result files. The `.pcm` file
+is the exact byte stream uploaded by the device. The Apple Speech command reads
+the command-provider JSON contract from stdin, writes a temporary WAV file for
+`SFSpeechRecognizer`, then prints `{"transcript":"..."}` to stdout. The default
+locale is `zh-CN`; set `APPLE_SPEECH_LOCALE` to another BCP-47 locale when
+needed. The first run may require granting Speech Recognition permission to the
+terminal process.
 
 The `command` provider keeps real STT/LLM credentials outside this repo. It calls local commands with JSON on stdin and expects JSON on stdout:
 
@@ -339,4 +445,6 @@ voice-ai smoke ok: audio=6144 chats=3->4 state=running current_app=voice_ai gif=
   This proves fresh board PCM reached the command-provider bridge with GIF/font metrics ready. The empty `reply=` means the current command provider/wrapper still lacks a successful transcript/reply result; real credentials/provider behavior remains open.
 - OpenAI-compatible STT and LLM command wrappers are available as `npm run voice:openai:transcribe` and `npm run voice:openai:reply`; they are test-covered with mocked HTTP and keep the reply step transcript-only.
 - Board-verify the GIF buddy path on the physical screen with `"use_gif": true`.
-- Board-verify production STT/LLM command-provider wrappers with real credentials and privacy/logging policy.
+- Cloud STT/LLM providers still need their own credential/privacy/logging
+  verification. The local Apple Speech command-provider path is physically
+  verified, but that does not prove every external STT endpoint works.

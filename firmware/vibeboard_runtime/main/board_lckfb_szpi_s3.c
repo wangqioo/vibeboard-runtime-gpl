@@ -1,11 +1,15 @@
 #include "board_lckfb_szpi_s3.h"
 
+#include <inttypes.h>
 #include <string.h>
 
 #include "driver/i2c.h"
+#include "driver/i2s_std.h"
 #include "driver/ledc.h"
 #include "driver/sdmmc_host.h"
 #include "driver/spi_master.h"
+#include "es7210.h"
+#include "es8311.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
@@ -31,6 +35,13 @@ static TaskHandle_t input_task;
 static volatile bool input_stop_requested;
 static bool s_display_takeover_active;
 static bool s_backlight_ready;
+static bool s_es7210_ready;
+static bool s_es8311_ready;
+static uint32_t s_es7210_sample_rate;
+static uint16_t s_es7210_bits;
+static bool s_es7210_tdm;
+static uint32_t s_es8311_sample_rate;
+static uint8_t s_pca9557_output = VB_PCA9557_LCD_CS_BIT | VB_PCA9557_DVP_PWDN_BIT;
 static int s_backlight_percent;
 static vb_board_input_callback_t input_callback;
 static void *input_user_data;
@@ -74,14 +85,135 @@ static esp_err_t pca9557_write(uint8_t reg_addr, uint8_t value)
 
 static esp_err_t pca9557_init(void)
 {
-    ESP_RETURN_ON_ERROR(pca9557_write(0x01, VB_PCA9557_LCD_CS_BIT), TAG, "pca output failed");
+    s_pca9557_output = VB_PCA9557_LCD_CS_BIT | VB_PCA9557_DVP_PWDN_BIT;
+    ESP_RETURN_ON_ERROR(pca9557_write(0x01, s_pca9557_output), TAG, "pca output failed");
     ESP_RETURN_ON_ERROR(pca9557_write(0x03, 0xf8), TAG, "pca config failed");
     return ESP_OK;
 }
 
+static esp_err_t pca9557_set_output(uint8_t bit, bool high)
+{
+    if (high) {
+        s_pca9557_output |= bit;
+    } else {
+        s_pca9557_output &= (uint8_t)~bit;
+    }
+    return pca9557_write(0x01, s_pca9557_output);
+}
+
 static esp_err_t lcd_cs_set(bool high)
 {
-    return pca9557_write(0x01, high ? VB_PCA9557_LCD_CS_BIT : 0x00);
+    return pca9557_set_output(VB_PCA9557_LCD_CS_BIT, high);
+}
+
+static esp_err_t audio_es8311_init(uint32_t sample_rate)
+{
+    if (sample_rate == 0) {
+        sample_rate = 16000;
+    }
+    if (s_es8311_ready && s_es8311_sample_rate == sample_rate) {
+        return ESP_OK;
+    }
+
+    es8311_handle_t handle = es8311_create(VB_I2C_PORT, ES8311_ADDRRES_0);
+    ESP_RETURN_ON_FALSE(handle != NULL, ESP_FAIL, TAG, "es8311 create failed");
+
+    const uint32_t mclk_multiple = 384;
+    const es8311_clock_config_t clock_config = {
+        .mclk_inverted = false,
+        .sclk_inverted = false,
+        .mclk_from_mclk_pin = true,
+        .mclk_frequency = sample_rate * mclk_multiple,
+        .sample_frequency = sample_rate,
+    };
+
+    ESP_RETURN_ON_ERROR(
+        es8311_init(handle, &clock_config, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16),
+        TAG,
+        "es8311 init failed"
+    );
+    ESP_RETURN_ON_ERROR(
+        es8311_sample_frequency_config(handle, sample_rate * mclk_multiple, sample_rate),
+        TAG,
+        "es8311 sample frequency failed"
+    );
+    ESP_RETURN_ON_ERROR(es8311_voice_volume_set(handle, 70, NULL), TAG, "es8311 volume failed");
+    ESP_RETURN_ON_ERROR(es8311_microphone_config(handle, false), TAG, "es8311 mic disable failed");
+    ESP_RETURN_ON_ERROR(pca9557_set_output(VB_PCA9557_PA_EN_BIT, true), TAG, "pa enable failed");
+
+    s_es8311_ready = true;
+    s_es8311_sample_rate = sample_rate;
+    ESP_LOGI(TAG, "ES8311 output codec ready at %" PRIu32 " Hz", sample_rate);
+    return ESP_OK;
+}
+
+static es7210_i2s_bits_t es7210_bits_from_width(uint16_t bits)
+{
+    switch (bits) {
+    case 16:
+        return ES7210_I2S_BITS_16B;
+    case 24:
+        return ES7210_I2S_BITS_24B;
+    case 32:
+        return ES7210_I2S_BITS_32B;
+    default:
+        return ES7210_I2S_BITS_16B;
+    }
+}
+
+static esp_err_t audio_es7210_init(uint32_t sample_rate, uint16_t bits, bool tdm_enable)
+{
+    if (sample_rate == 0) {
+        sample_rate = 48000;
+    }
+    if (bits == 0) {
+        bits = 16;
+    }
+    es7210_dev_handle_t handle = NULL;
+    const es7210_i2c_config_t i2c_config = {
+        .i2c_port = VB_I2C_PORT,
+        .i2c_addr = 0x41,
+    };
+    ESP_RETURN_ON_ERROR(es7210_new_codec(&i2c_config, &handle), TAG, "es7210 create failed");
+
+    const es7210_codec_config_t codec_config = {
+        .i2s_format = ES7210_I2S_FMT_I2S,
+        .mclk_ratio = I2S_MCLK_MULTIPLE_256,
+        .sample_rate_hz = sample_rate,
+        .bit_width = es7210_bits_from_width(bits),
+        .mic_bias = ES7210_MIC_BIAS_2V87,
+        .mic_gain = ES7210_MIC_GAIN_30DB,
+        .flags.tdm_enable = tdm_enable,
+    };
+    ESP_RETURN_ON_ERROR(es7210_config_codec(handle, &codec_config), TAG, "es7210 config failed");
+    ESP_RETURN_ON_ERROR(es7210_config_volume(handle, 0), TAG, "es7210 volume failed");
+
+    s_es7210_ready = true;
+    s_es7210_sample_rate = sample_rate;
+    s_es7210_bits = bits;
+    s_es7210_tdm = tdm_enable;
+    ESP_LOGI(TAG, "ES7210 input codec ready at %" PRIu32 " Hz, %s", sample_rate, tdm_enable ? "tdm" : "std");
+    return ESP_OK;
+}
+
+esp_err_t vb_board_audio_prepare(bool want_rx, bool want_tx, uint32_t sample_rate, uint16_t bits, uint16_t channels, bool rx_tdm)
+{
+    (void)channels;
+    if (want_tx) {
+        esp_err_t tx_err = audio_es8311_init(sample_rate);
+        if (tx_err != ESP_OK) {
+            ESP_LOGW(TAG, "audio TX codec prepare failed: %s", esp_err_to_name(tx_err));
+            return tx_err;
+        }
+    }
+    if (want_rx) {
+        esp_err_t rx_err = audio_es7210_init(sample_rate, bits, rx_tdm);
+        if (rx_err != ESP_OK) {
+            ESP_LOGW(TAG, "audio RX codec prepare failed: %s", esp_err_to_name(rx_err));
+            return rx_err;
+        }
+    }
+    return ESP_OK;
 }
 
 static esp_err_t backlight_init(void)

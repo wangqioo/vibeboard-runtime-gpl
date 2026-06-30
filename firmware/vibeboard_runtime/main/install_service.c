@@ -56,6 +56,12 @@ typedef struct {
 
 static void send_json(httpd_req_t *req, const char *json);
 
+static void http_launch_before_start(void *user_data)
+{
+    (void)user_data;
+    vb_launcher_ui_note_async_launch();
+}
+
 static void reboot_deferred_task(void *arg)
 {
     (void)arg;
@@ -84,7 +90,15 @@ static void launch_deferred_task(void *arg)
     }
 
     vTaskDelay(pdMS_TO_TICKS(VB_LAUNCH_DEFERRED_DELAY_MS));
-    esp_err_t err = vb_app_runner_launch_async_from_registry(&job->registry, job->selected_index);
+    esp_err_t err = ESP_ERR_INVALID_ARG;
+    if (job->selected_index >= 0 && job->selected_index < job->registry.stored_app_count) {
+        const vb_app_registry_entry_t *entry = &job->registry.apps[job->selected_index];
+        const vb_app_runner_launch_options_t options = {
+            .before_start = http_launch_before_start,
+            .user_data = NULL,
+        };
+        err = vb_app_runner_launch_async_with_options(entry, &options);
+    }
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "deferred launch failed: %s", esp_err_to_name(err));
         vb_app_runner_note_launch_failure(err, esp_err_to_name(err));

@@ -5,6 +5,7 @@ tmp/
 *.log
 dist/
 generated/
+recordings/
 .worktrees/
 firmware/**/build/
 firmware/**/managed_components/

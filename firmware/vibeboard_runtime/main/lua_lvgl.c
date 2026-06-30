@@ -136,6 +136,15 @@ void vb_lua_lvgl_register(lua_State *L)
     lua_pushinteger(L, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lua_setglobal(L, "LV_LABEL_LONG_SCROLL_CIRCULAR");
 
+    lua_pushinteger(L, vb_lua_lvgl_simsun_16_cjk_font_ref());
+    lua_setglobal(L, "LV_FONT_SIMSUN_16_CJK");
+
+    lua_pushinteger(L, vb_lua_lvgl_common_cn_13_font_ref());
+    lua_setglobal(L, "LV_FONT_COMMON_CN_13");
+
+    lua_pushinteger(L, vb_lua_lvgl_voice_ai_13_font_ref());
+    lua_setglobal(L, "LV_FONT_VOICE_AI_13");
+
     lua_pushinteger(L, LV_ANIM_OFF);
     lua_setglobal(L, "LV_ANIM_OFF");
 

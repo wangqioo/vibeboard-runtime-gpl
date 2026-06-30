@@ -19,6 +19,7 @@ const MIGRATED_APP_EXPECTED_CAPABILITIES = new Map([
   ["apps/settings", ["lvgl", "timer", "input", "file"]],
   ["apps/hwmon", ["lvgl", "network", "timer", "file"]],
   ["apps/spectrum", ["lvgl", "timer", "input", "file", "audio"]],
+  ["apps/audio_loopback", ["lvgl", "timer", "input", "file", "audio"]],
   ["apps/videos", ["lvgl", "timer", "input", "file"]],
   ["apps/photos", ["lvgl", "timer", "input", "file"]],
   ["apps/plane", ["lvgl", "timer", "input", "file"]],

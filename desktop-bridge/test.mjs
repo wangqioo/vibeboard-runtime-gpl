@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { request as httpRequest } from "node:http";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProviderFromEnv, createVoiceBridgeServer, parseArgs, runOnceFile } from "./server.mjs";
@@ -515,6 +515,8 @@ describe("voice bridge http api", () => {
         last_transcript: "",
         last_reply: "",
         last_ui_code: "",
+        last_saved_audio: null,
+        last_audio_quality: null,
       });
 
       await requestJson(server, "/api/chat", {
@@ -545,7 +547,198 @@ describe("voice bridge http api", () => {
         last_transcript: "bytes=5,bits=32",
         last_reply: "reply:bytes=5,bits=32",
         last_ui_code: "",
+        last_saved_audio: null,
+        last_audio_quality: null,
       });
+    });
+  });
+
+  it("saves uploaded audio as PCM, WAV, and metadata when configured", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "vibeboard-voice-save-"));
+    try {
+      await withServer({
+        saveAudioDir: dir,
+        transcribe: async ({ audio }) => `bytes=${audio.length}`,
+        reply: async ({ transcript }) => ({ reply: `reply:${transcript}`, uiCode: "" }),
+      }, async (server) => {
+        const body = Buffer.from([1, 2, 3, 4]);
+        const response = await requestJson(server, "/api/chat", {
+          method: "POST",
+          body,
+          headers: {
+            "content-type": "application/octet-stream",
+            "x-audio-format": "pcm_s16le",
+            "x-sample-rate": "16000",
+            "x-bits": "16",
+            "x-channels": "1",
+          },
+        });
+
+        assert.equal(response.status, 200);
+        assert.equal(response.json.transcript, "bytes=4");
+
+        const files = (await readdir(dir)).sort();
+        const pcmFile = files.find((file) => file.endsWith(".pcm"));
+        const wavFile = files.find((file) => file.endsWith(".wav"));
+        const jsonFile = files.find((file) => file.endsWith(".json"));
+        assert.ok(pcmFile);
+        assert.ok(wavFile);
+        assert.ok(jsonFile);
+        assert.deepEqual(await readFile(join(dir, pcmFile)), body);
+
+        const wav = await readFile(join(dir, wavFile));
+        assert.equal(wav.subarray(0, 4).toString("ascii"), "RIFF");
+        assert.equal(wav.subarray(8, 12).toString("ascii"), "WAVE");
+        assert.deepEqual(wav.subarray(44), body);
+
+        const metadata = JSON.parse(await readFile(join(dir, jsonFile), "utf8"));
+        assert.equal(metadata.audio_bytes, 4);
+        assert.equal(metadata.pcm_path.endsWith(pcmFile), true);
+        assert.equal(metadata.wav_path.endsWith(wavFile), true);
+        assert.deepEqual(metadata.metadata, {
+          format: "pcm_s16le",
+          sampleRate: 16000,
+          bits: 16,
+          channels: 1,
+          replyLimit: 100,
+        });
+        assert.equal(metadata.result.transcript, "bytes=4");
+        assert.equal(metadata.result.reply, "reply:bytes=4");
+
+        const stats = await requestJson(server, "/debug/stats");
+        assert.equal(stats.status, 200);
+        assert.equal(stats.json.last_saved_audio.pcm_path.endsWith(pcmFile), true);
+        assert.equal(stats.json.last_saved_audio.wav_path.endsWith(wavFile), true);
+        assert.equal(stats.json.last_saved_audio.json_path.endsWith(jsonFile), true);
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("records basic PCM16 audio quality metrics for saved uploads", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "vibeboard-voice-quality-"));
+    try {
+      await withServer({
+        saveAudioDir: dir,
+        transcribe: async ({ audio }) => `bytes=${audio.length}`,
+        reply: async ({ transcript }) => ({ reply: `reply:${transcript}`, uiCode: "" }),
+      }, async (server) => {
+        const body = Buffer.alloc(8);
+        body.writeInt16LE(0, 0);
+        body.writeInt16LE(16384, 2);
+        body.writeInt16LE(-16384, 4);
+        body.writeInt16LE(32767, 6);
+
+        await requestJson(server, "/api/chat", {
+          method: "POST",
+          body,
+          headers: {
+            "content-type": "application/octet-stream",
+            "x-audio-format": "pcm_s16le",
+            "x-sample-rate": "16000",
+            "x-bits": "16",
+            "x-channels": "1",
+          },
+        });
+
+        const jsonFile = (await readdir(dir)).find((file) => file.endsWith(".json"));
+        assert.ok(jsonFile);
+        const saved = JSON.parse(await readFile(join(dir, jsonFile), "utf8"));
+        assert.equal(saved.audio_quality.supported, true);
+        assert.equal(saved.audio_quality.sample_count, 4);
+        assert.equal(saved.audio_quality.duration_seconds, 0.00025);
+        assert.equal(saved.audio_quality.peak_abs, 32767);
+        assert.equal(saved.audio_quality.peak_percent, 1);
+        assert.equal(saved.audio_quality.silent_ratio, 0.25);
+        assert.equal(saved.audio_quality.clipped_ratio, 0.25);
+        assert.ok(saved.audio_quality.rms_abs > 20000);
+        assert.ok(saved.audio_quality.rms_percent > 0.6);
+
+        const stats = await requestJson(server, "/debug/stats");
+        assert.equal(stats.json.last_audio_quality.peak_abs, 32767);
+        assert.equal(stats.json.last_audio_quality.silent_ratio, 0.25);
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("still saves uploaded audio when transcription fails", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "vibeboard-voice-save-fail-"));
+    try {
+      await withServer({
+        saveAudioDir: dir,
+        transcribe: async () => {
+          throw new Error("speech unavailable");
+        },
+      }, async (server) => {
+        const body = Buffer.from([5, 6, 7, 8]);
+        const response = await requestJson(server, "/api/chat", {
+          method: "POST",
+          body,
+          headers: {
+            "content-type": "application/octet-stream",
+            "x-audio-format": "pcm_s16le",
+            "x-sample-rate": "16000",
+            "x-bits": "16",
+            "x-channels": "1",
+          },
+        });
+
+        assert.equal(response.status, 500);
+        assert.deepEqual(response.json, {
+          ok: false,
+          error: "speech unavailable",
+          transcript: "",
+          reply: "语音识别失败：speech unavailable",
+          ui_code: "",
+        });
+
+        const files = (await readdir(dir)).sort();
+        const pcmFile = files.find((file) => file.endsWith(".pcm"));
+        const jsonFile = files.find((file) => file.endsWith(".json"));
+        assert.ok(pcmFile);
+        assert.ok(jsonFile);
+        assert.deepEqual(await readFile(join(dir, pcmFile)), body);
+
+        const metadata = JSON.parse(await readFile(join(dir, jsonFile), "utf8"));
+        assert.equal(metadata.audio_bytes, 4);
+        assert.deepEqual(metadata.result, { ok: false, error: "speech unavailable" });
+
+        const stats = await requestJson(server, "/debug/stats");
+        assert.equal(stats.status, 200);
+        assert.equal(stats.json.last_saved_audio.json_path.endsWith(jsonFile), true);
+        assert.equal(stats.json.last_transcript, "");
+        assert.equal(stats.json.last_reply, "语音识别失败：speech unavailable");
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("hides command-provider internals from device-facing failure replies", async () => {
+    await withServer({
+      transcribe: async () => {
+        throw new Error('command exited 1: {"error":"speech recognition failed: No speech detected"}');
+      },
+    }, async (server) => {
+      const response = await requestJson(server, "/api/chat", {
+        method: "POST",
+        body: Buffer.from([1, 2, 3, 4]),
+        headers: {
+          "content-type": "application/octet-stream",
+          "x-audio-format": "pcm_s16le",
+          "x-sample-rate": "16000",
+          "x-bits": "16",
+          "x-channels": "1",
+        },
+      });
+
+      assert.equal(response.status, 500);
+      assert.equal(response.json.error, 'command exited 1: {"error":"speech recognition failed: No speech detected"}');
+      assert.equal(response.json.reply, "没有识别到语音，请靠近麦克风再试一次");
+      assert.equal(response.json.reply.includes("command exited"), false);
     });
   });
 

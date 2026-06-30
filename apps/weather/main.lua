@@ -10,7 +10,7 @@
     SCREEN_H = 240,
 
     WEATHER_NOW_PATH = "/v1/weather/now",
-    WEATHER_LOCATION = "101210401",
+    WEATHER_LOCATION = "101020100",
     WEATHER_FETCH_MS = 60000,
     FORECAST_FETCH_MS = 10 * 60000,
     TIME_SYNC_RETRY_MS = 30000,
@@ -22,7 +22,7 @@
     TZ_OFFSET_SEC = 8 * 3600,
     TIMEZONE = "CST-8",
     NTP_SERVER = "pool.ntp.org",
-    CITY_NAME = "Ningbo",
+    CITY_NAME = "Shanghai",
 
     ASSET_DIR = "/sd/apps/weather/assets",
     CUBICSERVER_CONFIG_PATH = "/sd/runtime/cubicserver.json",
@@ -45,7 +45,7 @@
         lv_obj_clean(root)
       end)
     end
-    local CELSIUS = "\226\132\131"
+    local CELSIUS_FORECAST = "C"
     local LABEL_LONG_CLIP = rawget(_G, "LV_LABEL_LONG_CLIP") or rawget(_G, "LABEL_LONG_CLIP")
 
     local ALIGN_LEFT = rawget(_G, "LV_TEXT_ALIGN_LEFT") or 0
@@ -74,6 +74,8 @@
     local FORECAST_GLASS_W = 300
     local FORECAST_GLASS_H = 170
     local FORECAST_GLASS_BLUR = 8
+    local TEMP_VALUE_X = 212
+    local TEMP_UNIT_X = 238
 
     local math_floor = math.floor
     local math_abs = math.abs
@@ -205,6 +207,12 @@
         .. "\"boot_stage\":" .. tostring(APP.state.boot_stage or 0) .. ","
         .. "\"startup_visible\":" .. json_bool(APP.state.startup_visible) .. ","
         .. "\"valid\":" .. json_bool(APP.state.valid) .. ","
+        .. "\"temp\":" .. tostring(APP.state.temp or 0) .. ","
+        .. "\"text\":" .. json_string(APP.state.text or "") .. ","
+        .. "\"humidity\":" .. tostring(APP.state.humidity or 0) .. ","
+        .. "\"wind_speed\":" .. tostring(APP.state.wind_speed or 0) .. ","
+        .. "\"last_http_code\":" .. tostring(APP.state.last_http_code or 0) .. ","
+        .. "\"last_update_ms\":" .. tostring(APP.state.last_update_ms or 0) .. ","
         .. "\"last_error\":" .. json_string(APP.state.last_error or "") .. ","
         .. "\"forecast_error\":" .. json_string(APP.state.forecast.last_error or "") .. ","
         .. "\"perf_first_paint_ms\":" .. tostring(APP.perf.first_paint_ms or 0) .. ","
@@ -600,9 +608,9 @@
     return "----.--.--"
     end
 
-    local function format_temp_text(temp)
+    local function format_temp_value_text(temp)
     if temp == nil then
-        return "--" .. CELSIUS
+        return "--"
     end
 
     local n = temp
@@ -611,7 +619,7 @@
     else
         n = -math_floor(math_abs(n) + 0.5)
     end
-    return tostring(n) .. CELSIUS
+    return tostring(n)
     end
 
     local function format_condition_text(text)
@@ -659,10 +667,10 @@
 
     local function format_forecast_temp_text(max_temp, min_temp)
     if max_temp == nil and min_temp == nil then
-        return "--/--" .. CELSIUS
+        return "--/--" .. CELSIUS_FORECAST
     end
 
-    return rounded_int_text(max_temp) .. "/" .. rounded_int_text(min_temp) .. CELSIUS
+    return rounded_int_text(max_temp) .. "/" .. rounded_int_text(min_temp) .. CELSIUS_FORECAST
     end
 
     local function format_wind_level(speed)
@@ -721,6 +729,14 @@
     end
     end
 
+    local function set_temp_value(value)
+    value = tostring(value or "--")
+    set_label_text(APP.ui.temp_value_label, value)
+    if APP.ui.temp_value_label and lv_obj_set_pos then
+        call(lv_obj_set_pos, APP.ui.temp_value_label, TEMP_VALUE_X, 100)
+    end
+    end
+
     local function style_panel(id, bg, opa, radius, border_opa)
     if not id then return end
 
@@ -759,6 +775,20 @@
     call(lv_obj_set_style_bg_opa, id, opa or 36, MAIN_STYLE)
     call(lv_obj_set_style_radius, id, h > 1 and math_floor(h / 2) or 0, MAIN_STYLE)
     call(lv_obj_set_style_border_width, id, 0, MAIN_STYLE)
+    call(rawget(_G, "lv_obj_set_style_pad_all"), id, 0, MAIN_STYLE)
+    return id
+    end
+
+    local function create_degree_mark(parent, x, y, color)
+    local id = lv_obj_create(parent)
+    reset_obj(id)
+    call(lv_obj_set_pos, id, x or 0, y or 0)
+    call(lv_obj_set_size, id, 8, 8)
+    call(lv_obj_set_style_bg_opa, id, 0, MAIN_STYLE)
+    call(lv_obj_set_style_radius, id, 4, MAIN_STYLE)
+    call(lv_obj_set_style_border_width, id, 2, MAIN_STYLE)
+    call(lv_obj_set_style_border_color, id, color or C.text, MAIN_STYLE)
+    call(lv_obj_set_style_border_opa, id, 255, MAIN_STYLE)
     call(rawget(_G, "lv_obj_set_style_pad_all"), id, 0, MAIN_STYLE)
     return id
     end
@@ -878,7 +908,7 @@
         icon = create_img(group, qweather_icon_path_for("partly", "103"), 27, 38, 180)
     end
     local text = create_label(group, "--", FONT_12, C.text, 8, 91, item_w - 16, ALIGN_CENTER)
-    local temp = create_label(group, "--/--" .. CELSIUS, FONT_16, C.text, 0, 114, item_w, ALIGN_CENTER)
+    local temp = create_label(group, "--/--" .. CELSIUS_FORECAST, FONT_16, C.text, 0, 114, item_w, ALIGN_CENTER)
     local rain = create_label(group, "--mm", FONT_12, C.text_soft, 0, 141, item_w, ALIGN_CENTER)
 
     return {
@@ -1126,7 +1156,9 @@
         APP.ui.weather_icon = create_img(now_page, qweather_icon_path("partly"), 206, 20, 320)
         APP.state.displayed_icon_code = qweather_icon_code("partly")
     end
-    APP.ui.temp_label = create_label(now_page, "--" .. CELSIUS, FONT_34, C.text, 184, 100, 124, ALIGN_CENTER)
+    APP.ui.temp_value_label = create_label(now_page, "--", FONT_34, C.text, TEMP_VALUE_X, 100, 0, ALIGN_LEFT)
+    APP.ui.temp_degree_mark = create_degree_mark(now_page, TEMP_UNIT_X, 103, C.text)
+    APP.ui.temp_unit_label = create_label(now_page, "C", FONT_16, C.text, TEMP_UNIT_X + 10, 100, 24, ALIGN_LEFT)
 
     local strip = lv_obj_create(now_page)
     APP.ui.strip = strip
@@ -1188,7 +1220,8 @@
     end
 
     if not APP.state.valid then
-        set_label_text(APP.ui.temp_label, "--" .. CELSIUS)
+        set_temp_value("--")
+        set_label_text(APP.ui.temp_unit_label, "C")
         set_label_text(APP.ui.cond_label, APP.state.request_inflight and "Updating" or "Waiting")
         set_label_text(APP.ui.precip.value, "--mm")
         set_label_text(APP.ui.humidity.value, "--%")
@@ -1196,7 +1229,8 @@
         return
     end
 
-    set_label_text(APP.ui.temp_label, format_temp_text(APP.state.temp))
+    set_temp_value(format_temp_value_text(APP.state.temp))
+    set_label_text(APP.ui.temp_unit_label, "C")
     set_label_text(APP.ui.cond_label, format_condition_text(APP.state.text))
     set_label_text(APP.ui.precip.value, format_precip_text())
     set_label_text(APP.ui.humidity.value, format_humidity_text(APP.state.humidity))
@@ -1223,7 +1257,7 @@
         else
             set_img_src(col.icon, qweather_icon_path_for("partly", "103"))
             set_label_text(col.text, "--")
-            set_label_text(col.temp, "--/--" .. CELSIUS)
+            set_label_text(col.temp, "--/--" .. CELSIUS_FORECAST)
             set_label_text(col.rain, "--mm")
         end
         end
@@ -1326,11 +1360,17 @@ end
     return body
     end
 
+    local function has_cached_weather()
+    return (APP.state.last_update_ms or 0) > 0
+    end
+
     local function parse_weather_body(status_code, body)
     APP.state.last_http_code = status_code
 
     if status_code ~= 200 or not body then
+        if not has_cached_weather() then
         APP.state.valid = false
+        end
         APP.state.last_error = "HTTP " .. tostring(status_code)
         return false
     end
@@ -1453,6 +1493,7 @@ end
         APP.state.valid = false
         APP.state.last_error = "Cubic HTTP missing"
         render_weather()
+        write_metrics()
         return
     end
 
@@ -1461,6 +1502,7 @@ end
         APP.state.last_error = "Cubic config missing"
         APP.state.request_inflight = false
         render_weather()
+        write_metrics()
         return
     end
 
@@ -1489,17 +1531,21 @@ end
 
         local plain, err = normalize_weather_body(body)
         if not plain then
+        if not has_cached_weather() then
         APP.state.valid = false
+        end
         APP.state.last_http_code = status_code
         APP.state.last_error = tostring(err)
         APP.perf.last_error = tostring(err)
         warn("body decode failed", tostring(err))
         render_weather()
+        write_metrics()
         return
         end
 
         parse_weather_body(status_code, plain)
         render_weather()
+        write_metrics()
     end)
     end
 

@@ -35,6 +35,7 @@ export const DEMO_APP_DIRS = [
   "apps/settings",
   "apps/hwmon",
   "apps/spectrum",
+  "apps/audio_loopback",
   "apps/videos",
   "apps/photos",
   "apps/plane",

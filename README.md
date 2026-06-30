@@ -156,6 +156,18 @@ npm run runtime:config -- http://192.168.1.32:8080 cubicserver runtime/cubicserv
 npm run runtime:config -- http://192.168.1.32:8080 i2s runtime/i2s.local.json
 ```
 
+Run a local real-weather bridge for the migrated Weather app:
+
+```bash
+npm run weather:bridge
+```
+
+The bridge listens on `0.0.0.0:8792`, defaults to Shanghai, fetches Open-Meteo, and returns the QWeather-shaped `/v1/weather/now` JSON that `apps/weather` expects. Point the board at the host running the bridge:
+
+```bash
+npm run runtime:config -- http://192.168.1.32:8080 cubicserver '{"base_url":"http://192.168.1.26:8792"}'
+```
+
 ## Curated Apps
 
 Migrated or curated user-facing apps:

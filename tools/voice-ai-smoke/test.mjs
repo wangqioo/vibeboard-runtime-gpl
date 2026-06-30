@@ -196,7 +196,7 @@ describe("runVoiceAiSmoke", () => {
           return {
             ok: true,
             status: 200,
-            text: '{"mode":"idle","init_stage":"ready","use_gif":true,"gif_visible":true,"gif_state":"idle","gif_src":"/apps/voice_ai/assets/buddy/idle_0.gif","font_loaded":true,"font_handle":123456,"font_src":"/sd/apps/weather/font/weather_ui_12.bin","font_error":""}',
+            text: '{"mode":"idle","init_stage":"ready","use_gif":true,"gif_visible":true,"gif_state":"idle","gif_src":"/apps/voice_ai/assets/buddy/idle_0.gif","font_loaded":true,"font_handle":-13014,"font_src":"builtin:LV_FONT_COMMON_CN_13","font_error":""}',
           };
         }
         if (url === "http://board:8080/input/key?code=HOME&event=SHORT") {
@@ -226,7 +226,7 @@ describe("runVoiceAiSmoke", () => {
       {
         ok: true,
         status: 200,
-        text: '{"mode":"idle","init_stage":"ready","font_loaded":true,"font_handle":123456,"font_src":"/sd/apps/voice_ai/font/msyh_cn_13.bin","font_error":"","record_bytes":0,"rx_events":0,"submit_count":0,"last_audio_bytes":0}',
+        text: '{"mode":"idle","init_stage":"ready","font_loaded":true,"font_handle":-13014,"font_src":"builtin:LV_FONT_COMMON_CN_13","font_error":"","record_bytes":0,"rx_events":0,"submit_count":0,"last_audio_bytes":0}',
       },
     ];
 
@@ -261,8 +261,8 @@ describe("runVoiceAiSmoke", () => {
     });
 
     assert.equal(result.readyMetrics.font_loaded, true);
-    assert.equal(result.readyMetrics.font_handle, 123456);
-    assert.match(result.readyMetrics.font_src, /msyh_cn_13\.bin$/);
+    assert.equal(result.readyMetrics.font_handle, -13014);
+    assert.equal(result.readyMetrics.font_src, "builtin:LV_FONT_COMMON_CN_13");
     assert.equal(result.readyMetrics.font_error, "");
   });
 
@@ -703,7 +703,7 @@ describe("runVoiceAiSmoke", () => {
   it("fails when font metrics are required but not loaded", async () => {
     const appMetrics = [
       '{"mode":"idle","init_stage":"old","font_loaded":false,"font_handle":0,"font_src":"","font_error":""}',
-      '{"mode":"idle","init_stage":"ready","font_loaded":false,"font_handle":0,"font_src":"/sd/apps/voice_ai/font/msyh_cn_13.bin","font_error":"invalid handle 0"}',
+      '{"mode":"idle","init_stage":"ready","font_loaded":false,"font_handle":0,"font_src":"builtin:LV_FONT_COMMON_CN_13","font_error":"invalid handle 0"}',
     ];
     await assert.rejects(
       runVoiceAiSmoke({

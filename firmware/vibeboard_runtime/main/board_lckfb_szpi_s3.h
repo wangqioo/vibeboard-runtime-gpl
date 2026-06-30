@@ -17,6 +17,8 @@ extern "C" {
 
 #define VB_PCA9557_ADDR 0x19
 #define VB_PCA9557_LCD_CS_BIT BIT(0)
+#define VB_PCA9557_PA_EN_BIT BIT(1)
+#define VB_PCA9557_DVP_PWDN_BIT BIT(2)
 
 #define VB_LCD_SPI_HOST SPI3_HOST
 #define VB_LCD_PIXEL_CLOCK_HZ (80 * 1000 * 1000)
@@ -50,6 +52,7 @@ esp_err_t vb_board_start_storage(vb_board_status_t *status);
 esp_err_t vb_board_start_display(vb_board_status_t *status);
 esp_err_t vb_board_mount_sd(vb_board_status_t *status);
 void vb_board_unmount_sd(vb_board_status_t *status);
+esp_err_t vb_board_audio_prepare(bool want_rx, bool want_tx, uint32_t sample_rate, uint16_t bits, uint16_t channels, bool rx_tdm);
 esp_err_t vb_board_display_takeover(void);
 void vb_board_display_release_takeover(void);
 esp_err_t vb_board_draw_rgb565(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const void *rgb565);

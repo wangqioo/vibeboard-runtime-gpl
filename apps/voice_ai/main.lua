@@ -9,23 +9,40 @@ VOICE_AI_APP = {
   APP_DIR = "/sd/apps/voice_ai",
   DEFAULT_BRIDGE_URL = "http://192.168.1.26:8790",
   I2S_ID = 0,
-  READ_BYTES = 4096,
-  RECORD_POLL_MS = 80,
-  MAX_RECORD_BYTES = 262144,
-  USE_GIF = true,
+  CAPTURE_RATE = 48000,
+  CAPTURE_CHANNELS = 2,
+  CAPTURE_PATH = "capture.raw",
+  DOWNSAMPLE_FRAMES = 3,
+  CHUNK_BYTES = 4096,
+  IO_TIMEOUT_MS = 1000,
+  MAX_RECORD_BYTES = 98304,
+  USE_GIF = false,
+  USE_CUSTOM_FONT = false,
 }
 
 local APP = VOICE_AI_APP
 local MAIN_STYLE = (rawget(_G, "LV_PART_MAIN") or 0) | (rawget(_G, "LV_STATE_DEFAULT") or 0)
 local ALIGN_LEFT = rawget(_G, "LV_TEXT_ALIGN_LEFT") or 0
 local ALIGN_CENTER = rawget(_G, "LV_TEXT_ALIGN_CENTER") or 1
-local FONT_10 = rawget(_G, "LV_FONT_MONTSERRAT_10") or 10
-local FONT_12 = rawget(_G, "LV_FONT_MONTSERRAT_12") or 12
+local FONT_14 = rawget(_G, "LV_FONT_MONTSERRAT_14") or 14
+local FONT_10 = rawget(_G, "LV_FONT_MONTSERRAT_10") or FONT_14
+local FONT_12 = rawget(_G, "LV_FONT_MONTSERRAT_12") or FONT_14
+local FONT_COMMON_CN = rawget(_G, "LV_FONT_COMMON_CN_13")
+local FONT_CJK = FONT_COMMON_CN
+if type(FONT_CJK) ~= "number" or FONT_CJK == 0 then
+  FONT_CJK = rawget(_G, "LV_FONT_VOICE_AI_13")
+end
+if type(FONT_CJK) ~= "number" or FONT_CJK == 0 then
+  FONT_CJK = rawget(_G, "LV_FONT_SIMSUN_16_CJK")
+end
+if type(FONT_CJK) ~= "number" or FONT_CJK == 0 then
+  FONT_CJK = FONT_12
+end
 local LABEL_LONG_CLIP = rawget(_G, "LV_LABEL_LONG_CLIP") or rawget(_G, "LABEL_LONG_CLIP")
 local LABEL_LONG_WRAP = rawget(_G, "LV_LABEL_LONG_WRAP") or LABEL_LONG_CLIP
 
 local C = {
-  bg = 0x000000,
+  bg = 0x06162C,
   line = 0x242B33,
   text = 0xF4F7FA,
   sub = 0xAAB4C2,
@@ -63,11 +80,17 @@ APP.state = {
   ai_ui_active = false,
   record_started_ms = 0,
   record_bytes = 0,
+  raw_record_bytes = 0,
+  record_elapsed_ms = 0,
+  effective_sample_rate = 0,
+  read_ms = 0,
+  write_ms = 0,
+  record_stopping = false,
   rx_events = 0,
   chunks = {},
   last_error = "",
   transcript = "",
-  reply = "按下说话",
+  reply = "短按开始",
   pending_reply = "",
   pending_ui_code = "",
   pending_id = "",
@@ -76,6 +99,7 @@ APP.state = {
   last_http_code = 0,
   last_audio_bytes = 0,
   last_i2s_error = "",
+  ignore_record_until_ms = 0,
   home_events = 0,
   last_key_event = 0,
   init_stage = "boot",
@@ -159,6 +183,11 @@ local function write_metrics()
     .. "\"mode\":\"" .. json_escape(S.mode) .. "\","
     .. "\"init_stage\":\"" .. json_escape(S.init_stage) .. "\","
     .. "\"record_bytes\":" .. tostring(S.record_bytes or 0) .. ","
+    .. "\"raw_record_bytes\":" .. tostring(S.raw_record_bytes or 0) .. ","
+    .. "\"record_elapsed_ms\":" .. tostring(S.record_elapsed_ms or 0) .. ","
+    .. "\"effective_sample_rate\":" .. tostring(S.effective_sample_rate or 0) .. ","
+    .. "\"read_ms\":" .. tostring(S.read_ms or 0) .. ","
+    .. "\"write_ms\":" .. tostring(S.write_ms or 0) .. ","
     .. "\"rx_events\":" .. tostring(S.rx_events or 0) .. ","
     .. "\"submit_count\":" .. tostring(S.submit_count or 0) .. ","
     .. "\"home_events\":" .. tostring(S.home_events or 0) .. ","
@@ -256,6 +285,9 @@ local function style_obj(id, bg, opa, border)
   call(lv_obj_remove_style_all, id)
   call(lv_obj_set_style_bg_color, id, bg or C.bg, MAIN_STYLE)
   call(lv_obj_set_style_bg_opa, id, opa or 255, MAIN_STYLE)
+  call(lv_obj_set_style_text_font, id, FONT_14, MAIN_STYLE)
+  call(lv_obj_set_style_text_color, id, C.text, MAIN_STYLE)
+  call(lv_obj_set_style_text_opa, id, 255, MAIN_STYLE)
   call(lv_obj_set_style_border_width, id, border and 1 or 0, MAIN_STYLE)
   if border then
     call(lv_obj_set_style_border_color, id, border, MAIN_STYLE)
@@ -270,7 +302,9 @@ end
 
 local function set_label_style(id, font, color, align)
   if not id then return end
-  call(lv_obj_set_style_text_font, id, font or FONT_12, MAIN_STYLE)
+  if font ~= false then
+    call(lv_obj_set_style_text_font, id, font or FONT_12, MAIN_STYLE)
+  end
   call(lv_obj_set_style_text_color, id, color or C.text, MAIN_STYLE)
   call(lv_obj_set_style_text_opa, id, 255, MAIN_STYLE)
   call(lv_obj_set_style_text_letter_space, id, 0, MAIN_STYLE)
@@ -372,6 +406,18 @@ local function load_font_ref(path, fallback)
   end
   S.font_error = ok and ("invalid handle " .. tostring(handle)) or tostring(handle)
   return fallback
+end
+
+local function load_font_chain(paths, fallback)
+  local last = fallback
+  for _, path in ipairs(paths or {}) do
+    local handle = load_font_ref(path, last)
+    if S.font_loaded then
+      return handle
+    end
+    last = handle
+  end
+  return last
 end
 
 local function release_fonts()
@@ -563,6 +609,12 @@ end
 local function clear_recording()
   S.chunks = {}
   S.record_bytes = 0
+  S.raw_record_bytes = 0
+  S.record_elapsed_ms = 0
+  S.effective_sample_rate = 0
+  S.read_ms = 0
+  S.write_ms = 0
+  S.record_stopping = false
   S.rx_events = 0
   S.record_started_ms = 0
 end
@@ -571,6 +623,107 @@ local function stop_i2s()
   if i2s and i2s.stop then
     pcall(function() i2s.stop(APP.I2S_ID) end)
   end
+end
+
+local function read_i16_le(data, index)
+  local lo = string.byte(data, index) or 0
+  local hi = string.byte(data, index + 1) or 0
+  local sample = lo + hi * 256
+  if sample >= 32768 then sample = sample - 65536 end
+  return sample
+end
+
+local function clamp_i16(sample)
+  if sample > 32767 then return 32767 end
+  if sample < -32768 then return -32768 end
+  return math.floor(sample)
+end
+
+local function i16_to_bytes(sample)
+  sample = clamp_i16(sample)
+  if sample < 0 then sample = sample + 65536 end
+  return string.char(sample % 256, math.floor(sample / 256) % 256)
+end
+
+local max_record_bytes
+
+local function downsample_capture_chunk_to_16k_mono(input)
+  if not input or #input == 0 then return "" end
+  local out = {}
+  local frames = APP.DOWNSAMPLE_FRAMES or 3
+  local bytes_per_sample = math.floor((APP.config.sample_bits or 16) / 8)
+  local bytes_per_capture_frame = (APP.CAPTURE_CHANNELS or 2) * bytes_per_sample
+  local bytes_per_output = frames * bytes_per_capture_frame
+  local pos = 1
+  while pos + bytes_per_output - 1 <= #input do
+    local sum = 0
+    for frame = 0, frames - 1 do
+      sum = sum + read_i16_le(input, pos + (frame * bytes_per_capture_frame))
+    end
+    out[#out + 1] = i16_to_bytes(sum / frames)
+    pos = pos + bytes_per_output
+  end
+  return table.concat(out)
+end
+
+local function downsample_capture_file_to_16k_mono(path)
+  if not file or not file.open then
+    return nil, "file.open missing"
+  end
+  local handle = file.open(path, "r")
+  if not handle then
+    return nil, "capture open failed"
+  end
+  local chunks = {}
+  local total = 0
+  local tail = ""
+  while true do
+    local chunk = handle:read(APP.CHUNK_BYTES)
+    if not chunk or #chunk <= 0 then break end
+    S.raw_record_bytes = (S.raw_record_bytes or 0) + #chunk
+    local input = tail .. chunk
+    local frames = APP.DOWNSAMPLE_FRAMES or 3
+    local bytes_per_sample = math.floor((APP.config.sample_bits or 16) / 8)
+    local bytes_per_capture_frame = (APP.CAPTURE_CHANNELS or 2) * bytes_per_sample
+    local bytes_per_output = frames * bytes_per_capture_frame
+    local usable = #input - (#input % bytes_per_output)
+    if usable > 0 then
+      local pcm = downsample_capture_chunk_to_16k_mono(input:sub(1, usable))
+      if pcm and #pcm > 0 then
+        chunks[#chunks + 1] = pcm
+        total = total + #pcm
+        if total >= max_record_bytes() then
+          break
+        end
+      end
+    end
+    if usable < #input then
+      tail = input:sub(usable + 1)
+    else
+      tail = ""
+    end
+  end
+  handle:close()
+  if total == 0 then
+    return nil, "empty capture"
+  end
+  local ok, raw_or_err = pcall(table.concat, chunks)
+  for i = 1, #chunks do
+    chunks[i] = nil
+  end
+  if not ok then
+    return nil, tostring(raw_or_err or "audio concat failed")
+  end
+  local raw = raw_or_err
+  local limit = max_record_bytes()
+  if #raw > limit then
+    raw = raw:sub(1, limit)
+  end
+  return raw, nil
+end
+
+local function read_voice_capture_file()
+  return downsample_capture_file_to_16k_mono(APP.CAPTURE_PATH)
 end
 
 local function stop_timer(timer)
@@ -639,6 +792,9 @@ local function ai_style_obj(id, bg)
   call(lv_obj_remove_style_all, id)
   call(lv_obj_set_style_bg_color, id, bg or C.bg, MAIN_STYLE)
   call(lv_obj_set_style_bg_opa, id, 255, MAIN_STYLE)
+  call(lv_obj_set_style_text_font, id, FONT_14, MAIN_STYLE)
+  call(lv_obj_set_style_text_color, id, C.text, MAIN_STYLE)
+  call(lv_obj_set_style_text_opa, id, 255, MAIN_STYLE)
   call(lv_obj_set_style_border_width, id, 0, MAIN_STYLE)
   call(lv_obj_set_style_radius, id, 0, MAIN_STYLE)
   call(lv_obj_set_style_pad_all, id, 0, MAIN_STYLE)
@@ -656,7 +812,7 @@ local function ai_label(parent, x, y, w, h, text, color, align)
     call(lv_label_set_long_mode, id, LABEL_LONG_WRAP)
   end
   call(lv_label_set_text, id, text_or(text, ""))
-  set_label_style(id, APP.font_cn, color or C.text, align or ALIGN_LEFT)
+  set_label_style(id, FONT_CJK, color or C.text, align or ALIGN_LEFT)
   return id
 end
 
@@ -889,7 +1045,9 @@ local function handle_bridge_response(code, body)
     if type(doc) == "table" and doc.transcript then
       S.transcript = text_or(doc.transcript, "")
     end
-    if type(doc) == "table" and doc.error then
+    if type(doc) == "table" and doc.reply then
+      S.last_error = text_or(doc.reply, "HTTP " .. tostring(code))
+    elseif type(doc) == "table" and doc.error then
       S.last_error = text_or(doc.error, "HTTP " .. tostring(code))
     else
       S.last_error = "HTTP " .. tostring(code)
@@ -967,10 +1125,8 @@ local function submit_audio(raw)
   end)
 end
 
-local stop_record_poll
-local read_recording_chunk
 local stop_recording_and_send
-local function max_record_bytes()
+max_record_bytes = function()
   local configured = math.floor(APP.config.sample_rate * (APP.config.sample_bits / 8) * APP.config.max_record_ms / 1000)
   local hard_limit = tonumber(APP.MAX_RECORD_BYTES) or configured
   if configured < hard_limit then return configured end
@@ -979,78 +1135,26 @@ end
 
 stop_recording_and_send = function()
   if S.mode ~= "recording" then return end
-  for _ = 1, 8 do
-    read_recording_chunk(80)
-    if S.record_bytes > 0 then
-      break
-    end
-  end
-  stop_record_poll()
+  if S.record_stopping then return end
+  S.record_stopping = true
   stop_i2s()
-  local chunks = S.chunks or {}
-  local raw = table.concat(chunks)
-  clear_recording()
+  local raw, read_err = read_voice_capture_file()
+  if type(collectgarbage) == "function" then collectgarbage("collect") end
   if not raw or #raw == 0 then
-    S.last_error = "未录到声音"
+    S.last_error = tostring(read_err or "未录到声音")
+    APP.perf.last_error = S.last_error
+    S.record_stopping = false
     set_mode("error")
     write_metrics()
     return
   end
+  S.record_bytes = #raw
+  S.last_i2s_error = ""
+  S.ignore_record_until_ms = now_ms() + 5000
+  write_metrics()
   submit_audio(raw)
-end
-
-read_recording_chunk = function(wait_ms)
-  if not APP.running or S.mode ~= "recording" then return end
-  if not i2s or not i2s.read then return end
-  local byte_limit = max_record_bytes()
-  if S.record_bytes >= byte_limit then
-    stop_recording_and_send()
-    return
-  end
-  local ok, pcm_or_err = pcall(function()
-    return i2s.read(APP.I2S_ID, APP.READ_BYTES, wait_ms or 0)
-  end)
-  if not ok then
-    S.last_i2s_error = tostring(pcm_or_err or "i2s read failed")
-    write_metrics()
-    return
-  end
-  local pcm = pcm_or_err
-  if pcm and #pcm > 0 then
-    local remaining = byte_limit - S.record_bytes
-    if remaining <= 0 then
-      stop_recording_and_send()
-      return
-    end
-    if #pcm > remaining then
-      pcm = pcm:sub(1, remaining)
-    end
-    S.last_i2s_error = ""
-    S.chunks[#S.chunks + 1] = pcm
-    S.record_bytes = S.record_bytes + #pcm
-    write_metrics()
-  end
-  local elapsed = now_ms() - S.record_started_ms
-  if elapsed >= APP.config.max_record_ms or S.record_bytes >= byte_limit then
-    stop_recording_and_send()
-  end
-end
-
-local function on_i2s_rx(id, dir)
-  if not APP.running or S.mode ~= "recording" or dir ~= "rx" then return end
-  S.rx_events = (S.rx_events or 0) + 1
-  read_recording_chunk(0)
-end
-
-stop_record_poll = function()
-  local poll = APP.timers.record_poll
-  if poll then
-    pcall(function()
-      poll:stop()
-      poll:unregister()
-    end)
-    APP.timers.record_poll = nil
-  end
+  raw = nil
+  if type(collectgarbage) == "function" then collectgarbage("collect") end
 end
 
 local function stop_result_poll()
@@ -1089,6 +1193,7 @@ local function show_pending_reply()
   S.pending_id = ""
   S.result_polls = 0
   set_mode("reply")
+  write_metrics()
   if ui_code ~= "" then
     show_ai_ui(ui_code)
   end
@@ -1184,28 +1289,12 @@ schedule_reply = function()
   end)
 end
 
-local function start_record_poll()
-  stop_record_poll()
-  if not tmr or not tmr.create then return end
-  local poll = tmr.create()
-  APP.timers.record_poll = poll
-  poll:alarm(APP.RECORD_POLL_MS, tmr.ALARM_AUTO, function()
-    local tick_start = now_ms()
-    if APP.running and S.mode == "recording" then
-      read_recording_chunk(0)
-    else
-      stop_record_poll()
-    end
-    mark_perf_timer(tick_start)
-  end)
-end
-
 local function start_recording()
   if S.mode == "recording" or S.mode == "sending" then return end
   cleanup_ai_ui(true)
   stop_reply_delay()
   stop_result_poll()
-  if not i2s or not i2s.start or not i2s.read then
+  if not i2s or not i2s.record_file then
     S.last_error = "I2S 不可用"
     set_mode("error")
     return
@@ -1226,32 +1315,51 @@ local function start_recording()
   set_mode("recording")
   write_metrics()
 
-  local ok, err = pcall(function()
-    i2s.start(APP.I2S_ID, {
-      mode = i2s.MODE_MASTER | i2s.MODE_RX,
-      rate = APP.config.sample_rate,
+  local target_bytes = APP.CAPTURE_RATE * APP.CAPTURE_CHANNELS * (APP.config.sample_bits / 8)
+  local capture_ms = APP.config.max_record_ms or 3000
+  target_bytes = math.floor(target_bytes * capture_ms / 1000)
+  local max_raw_bytes = math.floor(max_record_bytes() * APP.DOWNSAMPLE_FRAMES * APP.CAPTURE_CHANNELS)
+  if target_bytes > max_raw_bytes then target_bytes = max_raw_bytes end
+
+  local ok, result_or_err = pcall(function()
+    return i2s.record_file(APP.I2S_ID, APP.CAPTURE_PATH, {
+      rate = APP.CAPTURE_RATE,
       bits = APP.config.sample_bits,
-      channel = i2s.CHANNEL_ONLY_LEFT,
-      format = i2s.FORMAT_I2S,
-      buffer_count = 4,
-      buffer_len = 256,
-    }, on_i2s_rx)
+      channel = i2s.CHANNEL_STEREO,
+      target_bytes = target_bytes,
+      chunk_bytes = APP.CHUNK_BYTES,
+      timeout_ms = APP.IO_TIMEOUT_MS,
+      buffer_count = 2,
+      buffer_len = 128,
+      tdm = true,
+    })
   end)
   if not ok then
     clear_recording()
-    S.last_error = tostring(err or "录音失败")
+    S.last_i2s_error = tostring(result_or_err or "录音失败")
+    S.last_error = S.last_i2s_error
     set_mode("error")
     write_metrics()
-    stop_record_poll()
   else
-    start_record_poll()
+    local result = result_or_err or {}
+    S.raw_record_bytes = tonumber(result.bytes) or target_bytes
+    S.record_elapsed_ms = tonumber(result.elapsed_ms) or 0
+    S.effective_sample_rate = tonumber(result.effective_sample_rate) or 0
+    S.read_ms = tonumber(result.read_ms) or 0
+    S.write_ms = tonumber(result.write_ms) or 0
+    write_metrics()
+    stop_recording_and_send()
   end
 end
 
 local function on_short_press()
+  local now = now_ms()
   if S.mode == "recording" then
-    stop_recording_and_send()
+    return
   elseif S.mode ~= "sending" then
+    if now < (S.ignore_record_until_ms or 0) then
+      return
+    end
     start_recording()
   end
 end
@@ -1308,19 +1416,19 @@ local function build_ui()
     end)
   end
 
-  set_init_stage("build_ui:line")
-  pcall(function()
-    UI.line = lv_obj_create(root)
-    call(lv_obj_set_pos, UI.line, 122, 20)
-    call(lv_obj_set_size, UI.line, 1, 198)
-    style_obj(UI.line, C.line, 255, nil)
-  end)
-
   set_init_stage("build_ui:labels")
   pcall(function()
-    UI.status = label(root, 134, 32, 174, 20, "按下说话", APP.font_cn, C.cyan, ALIGN_LEFT)
-    UI.reply = label(root, 134, 68, 174, 118, "短按开始", APP.font_cn, C.text, ALIGN_LEFT, LABEL_LONG_WRAP)
-    UI.hint = label(root, 134, 207, 174, 16, "短按录音  长按退出", APP.font_cn, C.dim, ALIGN_LEFT)
+    local ui_font = APP.USE_CUSTOM_FONT and APP.font_cn or FONT_CJK
+    UI.action_key = label(root, 18, 82, 90, 28, "[HOME]", FONT_14, C.green, ALIGN_CENTER)
+    UI.action_text = label(root, 10, 116, 106, 22, "短按录音", ui_font, C.text, ALIGN_CENTER)
+    UI.status = label(root, 134, 32, 174, 22, "按下说话", ui_font, C.cyan, ALIGN_LEFT)
+    UI.reply = label(root, 134, 68, 174, 118, "短按开始", ui_font, C.text, ALIGN_LEFT, LABEL_LONG_WRAP)
+    UI.hint = label(root, 134, 207, 174, 18, "短按发送  长按退出", ui_font, C.dim, ALIGN_LEFT)
+    call(lv_obj_move_foreground, UI.action_key)
+    call(lv_obj_move_foreground, UI.action_text)
+    call(lv_obj_move_foreground, UI.status)
+    call(lv_obj_move_foreground, UI.reply)
+    call(lv_obj_move_foreground, UI.hint)
   end)
 
   set_init_stage("build_ui:done")
@@ -1373,7 +1481,6 @@ function APP.stop()
   APP.perf.stop_requested = true
   APP.boot_timer = stop_timer(APP.boot_timer)
   cleanup_ai_ui(true)
-  stop_record_poll()
   stop_i2s()
   for _, timer in pairs(APP.timers or {}) do
     stop_timer(timer)
@@ -1399,7 +1506,11 @@ if not config_ok then
   S.last_error = "config: " .. tostring(config_err or "load failed")
 end
 set_init_stage("load_font")
-APP.font_cn = load_font_ref("/sd/apps/weather/font/weather_ui_12.bin", FONT_12)
+APP.font_cn = FONT_CJK
+S.font_loaded = true
+S.font_handle = FONT_CJK
+S.font_src = (FONT_CJK == FONT_COMMON_CN) and "builtin:LV_FONT_COMMON_CN_13" or "builtin:LV_FONT_VOICE_AI_13"
+S.font_error = ""
 set_init_stage("bind_keys")
 bind_keys()
 set_init_stage("scheduled_boot", true)
