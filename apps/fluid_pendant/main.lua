@@ -10,6 +10,7 @@ FLUID_PENDANT_APP = {
 }
 
 local APP = FLUID_PENDANT_APP
+APP.METRICS_PATH = "metrics.json"
 
 local pcall_fn = pcall
 local math_floor = math.floor
@@ -38,12 +39,15 @@ local lv_obj_clear_flag_fn = rawget(_G, "lv_obj_clear_flag")
 local lv_obj_invalidate_fn = rawget(_G, "lv_obj_invalidate")
 local runtime_app = rawget(_G, "app")
 local app_exiting_fn = runtime_app and runtime_app.exiting or nil
-local app_on_fn = runtime_app and runtime_app.on or nil
 local runtime_tmr = rawget(_G, "tmr")
 local tmr_now_fn = runtime_tmr and runtime_tmr.now or nil
 local millis_fn = rawget(_G, "millis")
 local runtime_time = rawget(_G, "time")
 local time_getlocal_fn = runtime_time and runtime_time.getlocal or nil
+local runtime_imu = rawget(_G, "imu")
+local runtime_file = rawget(_G, "file")
+local runtime_viper = rawget(_G, "viper")
+local HAS_VIPER_ACCEL = runtime_viper and runtime_viper.compile_c and runtime_viper.buf
 local function clear_root()
   if not lv_scr_act or not lv_obj_clean then
     return
@@ -92,13 +96,14 @@ local DISPLAY_OFF_THRESHOLD = 0.14
 local DISPLAY_EDGE_MARGIN = 0.03
 local DISPLAY_EDGE_CONFIRM_FRAMES = 2
 
-local TICK_MS = 25
+local TICK_MS = HAS_VIPER_ACCEL and 25 or 50
 local GRAVITY = 16
 local TILT_FULL_SCALE_DEG = 45
 local IMU_X_SIGN = -1
 local IMU_Y_SIGN = 1
+local IMU_FILTER_ALPHA = 0.34
 
-local NUMBER_OF_PARTICLES = 220
+local NUMBER_OF_PARTICLES = HAS_VIPER_ACCEL and 220 or 120
 local PARTICLE_RADIUS = 0.0155
 local SPACING = 0.045
 local CELL_NUM_X = 26
@@ -108,8 +113,8 @@ local DT = 0.016
 local BOUNCYNESS = -0.9
 local OVER_RELAXATION = 1.8
 local STIFFNESS_COEFFICIENT = 1.0
-local PUSH_ITER = 2
-local GRID_ITER = 6
+local PUSH_ITER = HAS_VIPER_ACCEL and 2 or 1
+local GRID_ITER = HAS_VIPER_ACCEL and 6 or 3
 local FLIP_RATIO = 0.9
 
 local FLUID_CELL = 0
@@ -879,13 +884,35 @@ local accel_x = 0
 local accel_y = GRAVITY
 local target_accel_x = 0
 local target_accel_y = GRAVITY
-local imu_registered = false
+APP.imu_state = {
+  registered = false,
+  available = false,
+  events = 0,
+  errors = 0,
+  last_ms = 0,
+  roll = 0,
+  pitch = 0,
+  filtered_roll = 0,
+  filtered_pitch = 0,
+  has_filtered_tilt = false,
+}
+APP.metrics = {
+  tick_count = 0,
+  tick_max_us = 0,
+  sim_total_us = 0,
+  sim_max_us = 0,
+  last_us = 0,
+  generation = 0,
+  error = "",
+}
 local profile_state = {
   draw_last_us = 0,
   draw_total_us = 0,
   draw_api_us = 0,
   draw_end_us = 0,
   draw_walk_us = 0,
+  draw_last_frame_us = 0,
+  draw_max_us = 0,
   draw_frames = 0,
 }
 
@@ -950,6 +977,80 @@ local function elapsed_us(t0, t1)
   return (4294967296 - t0) + t1
 end
 
+local function json_string(value)
+  value = tostring(value or "")
+  value = value:gsub("\\", "\\\\")
+  value = value:gsub('"', '\\"')
+  value = value:gsub("\n", "\\n")
+  value = value:gsub("\r", "\\r")
+  return '"' .. value .. '"'
+end
+
+local function write_metrics()
+  if not runtime_file or not runtime_file.putcontents then
+    return
+  end
+  local avg_draw_us = 0
+  if profile_state.draw_frames > 0 then
+    avg_draw_us = profile_state.draw_total_us / profile_state.draw_frames
+  end
+  local avg_sim_us = 0
+  if APP.metrics.tick_count > 0 then
+    avg_sim_us = APP.metrics.sim_total_us / APP.metrics.tick_count
+  end
+  local fps = 0
+  if avg_draw_us > 0 then
+    fps = 1000000 / avg_draw_us
+  end
+  local body = "{"
+    .. '"version":' .. json_string(APP.VERSION) .. ","
+    .. '"engine":' .. json_string(APP.viper_ctx and "viper" or "lua") .. ","
+    .. '"metrics_generation":' .. tostring(APP.metrics.generation) .. ","
+    .. '"tick_ms":' .. tostring(TICK_MS) .. ","
+    .. '"particles":' .. tostring(NUMBER_OF_PARTICLES) .. ","
+    .. '"push_iter":' .. tostring(PUSH_ITER) .. ","
+    .. '"grid_iter":' .. tostring(GRID_ITER) .. ","
+    .. '"imu_available":' .. tostring(APP.imu_state.available) .. ","
+    .. '"imu_registered":' .. tostring(APP.imu_state.registered) .. ","
+    .. '"imu_events":' .. tostring(APP.imu_state.events) .. ","
+    .. '"imu_errors":' .. tostring(APP.imu_state.errors) .. ","
+    .. '"last_imu_ms":' .. tostring(APP.imu_state.last_ms) .. ","
+    .. '"roll":' .. string_format("%.2f", APP.imu_state.roll) .. ","
+    .. '"pitch":' .. string_format("%.2f", APP.imu_state.pitch) .. ","
+    .. '"accel_x":' .. string_format("%.3f", accel_x) .. ","
+    .. '"accel_y":' .. string_format("%.3f", accel_y) .. ","
+    .. '"frames":' .. tostring(profile_state.draw_frames) .. ","
+    .. '"fps":' .. string_format("%.2f", fps) .. ","
+    .. '"tick_count":' .. tostring(APP.metrics.tick_count) .. ","
+    .. '"tick_max_ms":' .. string_format("%.2f", APP.metrics.tick_max_us / 1000) .. ","
+    .. '"sim_avg_ms":' .. string_format("%.2f", avg_sim_us / 1000) .. ","
+    .. '"sim_max_ms":' .. string_format("%.2f", APP.metrics.sim_max_us / 1000) .. ","
+    .. '"draw_last_ms":' .. string_format("%.2f", profile_state.draw_last_frame_us / 1000) .. ","
+    .. '"draw_avg_ms":' .. string_format("%.2f", avg_draw_us / 1000) .. ","
+    .. '"draw_max_ms":' .. string_format("%.2f", profile_state.draw_max_us / 1000) .. ","
+    .. '"draw_api_avg_ms":' .. string_format("%.2f", (profile_state.draw_frames > 0 and profile_state.draw_api_us / profile_state.draw_frames or 0) / 1000) .. ","
+    .. '"draw_end_avg_ms":' .. string_format("%.2f", (profile_state.draw_frames > 0 and profile_state.draw_end_us / profile_state.draw_frames or 0) / 1000) .. ","
+    .. '"metrics_error":' .. json_string(APP.metrics.error)
+    .. "}\n"
+  local ok, err = pcall_fn(runtime_file.putcontents, APP.METRICS_PATH, body)
+  if not ok then
+    APP.metrics.error = tostring(err or "metrics write failed")
+  else
+    APP.metrics.error = ""
+  end
+end
+
+local function maybe_write_metrics()
+  local t = now_us()
+  if not t then
+    return
+  end
+  if APP.metrics.last_us == 0 or elapsed_us(APP.metrics.last_us, t) >= 1000000 then
+    APP.metrics.last_us = t
+    write_metrics()
+  end
+end
+
 local function profile_draw(total_us, api_us, end_us)
   local t1 = now_us()
   if not t1 or not total_us then
@@ -958,6 +1059,10 @@ local function profile_draw(total_us, api_us, end_us)
 
   api_us = api_us or 0
   end_us = end_us or 0
+  profile_state.draw_last_frame_us = total_us
+  if total_us > profile_state.draw_max_us then
+    profile_state.draw_max_us = total_us
+  end
   profile_state.draw_total_us = profile_state.draw_total_us + total_us
   profile_state.draw_api_us = profile_state.draw_api_us + api_us
   profile_state.draw_end_us = profile_state.draw_end_us + end_us
@@ -970,6 +1075,8 @@ local function profile_draw(total_us, api_us, end_us)
   end
 
   if elapsed_us(profile_state.draw_last_us, t1) >= 1000000 then
+    APP.metrics.generation = APP.metrics.generation + 1
+    write_metrics()
     if print and profile_state.draw_frames > 0 and profile_state.draw_total_us > 0 then
       local avg_us = profile_state.draw_total_us / profile_state.draw_frames
       local api_avg_us = profile_state.draw_api_us / profile_state.draw_frames
@@ -994,7 +1101,13 @@ local function profile_draw(total_us, api_us, end_us)
     profile_state.draw_api_us = 0
     profile_state.draw_end_us = 0
     profile_state.draw_walk_us = 0
+    profile_state.draw_max_us = 0
     profile_state.draw_frames = 0
+    APP.metrics.tick_count = 0
+    APP.metrics.tick_max_us = 0
+    APP.metrics.sim_total_us = 0
+    APP.metrics.sim_max_us = 0
+    APP.metrics.last_us = t1
   end
 end
 
@@ -1895,6 +2008,17 @@ local function set_accel_from_tilt(roll, pitch)
   roll = tonumber(roll) or 0
   pitch = tonumber(pitch) or 0
 
+  if APP.imu_state.has_filtered_tilt then
+    APP.imu_state.filtered_roll = APP.imu_state.filtered_roll * (1 - IMU_FILTER_ALPHA) + roll * IMU_FILTER_ALPHA
+    APP.imu_state.filtered_pitch = APP.imu_state.filtered_pitch * (1 - IMU_FILTER_ALPHA) + pitch * IMU_FILTER_ALPHA
+  else
+    APP.imu_state.filtered_roll = roll
+    APP.imu_state.filtered_pitch = pitch
+    APP.imu_state.has_filtered_tilt = true
+  end
+  roll = APP.imu_state.filtered_roll
+  pitch = APP.imu_state.filtered_pitch
+
   local x_scale = clamp(pitch / TILT_FULL_SCALE_DEG, -1, 1)
   local y_scale = clamp(roll / TILT_FULL_SCALE_DEG, -1, 1)
 
@@ -1917,6 +2041,7 @@ end
 
 local function simulation_step()
   update_accel()
+  local sim_start_us = now_us()
   if APP.viper_ctx then
     APP.viper_simulation_step(APP.viper_ctx, accel_x, accel_y)
   else
@@ -1925,6 +2050,11 @@ local function simulation_step()
     particles_to_grid()
     compute_grid_forces(GRID_ITER)
     grid_to_particles()
+  end
+  local sim_us = elapsed_us(sim_start_us, now_us())
+  APP.metrics.sim_total_us = APP.metrics.sim_total_us + sim_us
+  if sim_us > APP.metrics.sim_max_us then
+    APP.metrics.sim_max_us = sim_us
   end
 end
 
@@ -2013,10 +2143,17 @@ local function tick()
     return
   end
 
+  local tick_start_us = now_us()
   simulation_step()
 
   local draw_total_us, draw_api_us, draw_end_us = redraw()
   profile_draw(draw_total_us, draw_api_us, draw_end_us)
+  local tick_us = elapsed_us(tick_start_us, now_us())
+  APP.metrics.tick_count = APP.metrics.tick_count + 1
+  if tick_us > APP.metrics.tick_max_us then
+    APP.metrics.tick_max_us = tick_us
+  end
+  maybe_write_metrics()
 end
 
 function APP.stop(reason)
@@ -2046,11 +2183,11 @@ function APP.stop(reason)
     APP.time_timer = nil
   end
 
-  if imu_registered and app_on_fn then
+  if APP.imu_state.registered and runtime_imu and runtime_imu.off then
     pcall_fn(function()
-      app_on_fn("imu", nil)
+      runtime_imu.off()
     end)
-    imu_registered = false
+    APP.imu_state.registered = false
   end
 
   if rawget(_G, "FLUID_PENDANT_APP") == APP then
@@ -2061,15 +2198,32 @@ end
 
 APP.shutdown = APP.stop
 
-if app_on_fn then
-  local ok = pcall_fn(app_on_fn, "imu", function(name, roll, pitch, gx, gy, gz, ts_ms)
+if runtime_imu and runtime_imu.state then
+  local ok_state, state = pcall_fn(runtime_imu.state)
+  if ok_state and state then
+    APP.imu_state.available = state.available and true or false
+  end
+end
+
+if runtime_imu and runtime_imu.on then
+  local ok, available = pcall_fn(runtime_imu.on, function(sample)
     if rawget(_G, "FLUID_PENDANT_APP") ~= APP then
       return
     end
-    set_accel_from_tilt(roll, pitch)
-  end)
+    if not sample then
+      return
+    end
+    APP.imu_state.events = APP.imu_state.events + 1
+    APP.imu_state.roll = tonumber(sample.roll) or 0
+    APP.imu_state.pitch = tonumber(sample.pitch) or 0
+    APP.imu_state.last_ms = tonumber(sample.timestamp_ms) or 0
+    set_accel_from_tilt(APP.imu_state.roll, APP.imu_state.pitch)
+  end, 40)
   if ok then
-    imu_registered = true
+    APP.imu_state.registered = true
+    APP.imu_state.available = available and true or false
+  else
+    APP.imu_state.errors = APP.imu_state.errors + 1
   end
 end
 

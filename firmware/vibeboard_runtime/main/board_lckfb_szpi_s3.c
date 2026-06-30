@@ -1,6 +1,7 @@
 #include "board_lckfb_szpi_s3.h"
 
 #include <inttypes.h>
+#include <math.h>
 #include <string.h>
 
 #include "driver/i2c.h"
@@ -43,14 +44,26 @@ static bool s_es7210_tdm;
 static uint32_t s_es8311_sample_rate;
 static uint8_t s_pca9557_output = VB_PCA9557_LCD_CS_BIT | VB_PCA9557_DVP_PWDN_BIT;
 static int s_backlight_percent;
+static bool s_imu_ready;
 static vb_board_input_callback_t input_callback;
 static void *input_user_data;
+
+static int board_now_ms(void);
 
 #define VB_BOARD_INPUT_POLL_MS 20
 #define VB_BOARD_TOUCH_SWIPE_MIN_PX 28
 #define VB_BOARD_TOUCH_EVENT_DOWN 101
 #define VB_BOARD_TOUCH_EVENT_MOVE 102
 #define VB_BOARD_TOUCH_EVENT_UP 103
+#define VB_QMI8658_ADDR 0x6A
+#define VB_QMI8658_WHO_AM_I 0x00
+#define VB_QMI8658_CTRL1 0x02
+#define VB_QMI8658_CTRL2 0x03
+#define VB_QMI8658_CTRL3 0x04
+#define VB_QMI8658_CTRL7 0x08
+#define VB_QMI8658_STATUS0 0x2E
+#define VB_QMI8658_AX_L 0x35
+#define VB_QMI8658_RESET 0x60
 
 static esp_err_t i2c_init(void)
 {
@@ -89,6 +102,97 @@ static esp_err_t pca9557_init(void)
     ESP_RETURN_ON_ERROR(pca9557_write(0x01, s_pca9557_output), TAG, "pca output failed");
     ESP_RETURN_ON_ERROR(pca9557_write(0x03, 0xf8), TAG, "pca config failed");
     return ESP_OK;
+}
+
+static esp_err_t qmi8658_read(uint8_t reg_addr, uint8_t *data, size_t len)
+{
+    return i2c_master_write_read_device(
+        VB_I2C_PORT,
+        VB_QMI8658_ADDR,
+        &reg_addr,
+        1,
+        data,
+        len,
+        pdMS_TO_TICKS(100)
+    );
+}
+
+static esp_err_t qmi8658_write(uint8_t reg_addr, uint8_t value)
+{
+    uint8_t write_buf[2] = { reg_addr, value };
+    return i2c_master_write_to_device(
+        VB_I2C_PORT,
+        VB_QMI8658_ADDR,
+        write_buf,
+        sizeof(write_buf),
+        pdMS_TO_TICKS(100)
+    );
+}
+
+static esp_err_t qmi8658_init(void)
+{
+    uint8_t id = 0;
+    ESP_RETURN_ON_ERROR(qmi8658_read(VB_QMI8658_WHO_AM_I, &id, 1), TAG, "qmi8658 whoami failed");
+    ESP_RETURN_ON_FALSE(id == 0x05, ESP_ERR_NOT_FOUND, TAG, "qmi8658 unexpected id=0x%02x", id);
+
+    ESP_RETURN_ON_ERROR(qmi8658_write(VB_QMI8658_RESET, 0xb0), TAG, "qmi8658 reset failed");
+    vTaskDelay(pdMS_TO_TICKS(10));
+    ESP_RETURN_ON_ERROR(qmi8658_write(VB_QMI8658_CTRL1, 0x40), TAG, "qmi8658 ctrl1 failed");
+    ESP_RETURN_ON_ERROR(qmi8658_write(VB_QMI8658_CTRL7, 0x03), TAG, "qmi8658 ctrl7 failed");
+    ESP_RETURN_ON_ERROR(qmi8658_write(VB_QMI8658_CTRL2, 0x95), TAG, "qmi8658 ctrl2 failed");
+    ESP_RETURN_ON_ERROR(qmi8658_write(VB_QMI8658_CTRL3, 0xd5), TAG, "qmi8658 ctrl3 failed");
+    s_imu_ready = true;
+    ESP_LOGI(TAG, "QMI8658 ready");
+    return ESP_OK;
+}
+
+esp_err_t vb_board_imu_read(vb_board_imu_sample_t *sample)
+{
+    if (sample == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!s_imu_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    uint8_t status = 0;
+    ESP_RETURN_ON_ERROR(qmi8658_read(VB_QMI8658_STATUS0, &status, 1), TAG, "qmi8658 status failed");
+    if ((status & 0x03) == 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    uint8_t raw[12] = {0};
+    ESP_RETURN_ON_ERROR(qmi8658_read(VB_QMI8658_AX_L, raw, sizeof(raw)), TAG, "qmi8658 sample failed");
+    int16_t ax = (int16_t)((uint16_t)raw[0] | ((uint16_t)raw[1] << 8));
+    int16_t ay = (int16_t)((uint16_t)raw[2] | ((uint16_t)raw[3] << 8));
+    int16_t az = (int16_t)((uint16_t)raw[4] | ((uint16_t)raw[5] << 8));
+    int16_t gx = (int16_t)((uint16_t)raw[6] | ((uint16_t)raw[7] << 8));
+    int16_t gy = (int16_t)((uint16_t)raw[8] | ((uint16_t)raw[9] << 8));
+    int16_t gz = (int16_t)((uint16_t)raw[10] | ((uint16_t)raw[11] << 8));
+
+    float fax = (float)ax;
+    float fay = (float)ay;
+    float faz = (float)az;
+    float roll_den = sqrtf(fax * fax + faz * faz);
+    float pitch_den = sqrtf(fay * fay + faz * faz);
+    float angle_z_den = faz == 0.0f ? (faz < 0 ? -1.0f : 1.0f) : faz;
+
+    sample->acc_x = ax;
+    sample->acc_y = ay;
+    sample->acc_z = az;
+    sample->gyr_x = gx;
+    sample->gyr_y = gy;
+    sample->gyr_z = gz;
+    sample->roll = roll_den == 0.0f ? 0.0f : atanf(fay / roll_den) * 57.29578f;
+    sample->pitch = pitch_den == 0.0f ? 0.0f : atanf(fax / pitch_den) * 57.29578f;
+    sample->angle_z = atanf(sqrtf(fax * fax + fay * fay) / angle_z_den) * 57.29578f;
+    sample->timestamp_ms = board_now_ms();
+    return ESP_OK;
+}
+
+bool vb_board_imu_available(void)
+{
+    return s_imu_ready;
 }
 
 static esp_err_t pca9557_set_output(uint8_t bit, bool high)
@@ -666,6 +770,14 @@ esp_err_t vb_board_start_storage(vb_board_status_t *status)
 
     ESP_RETURN_ON_ERROR(i2c_init(), TAG, "i2c init failed");
     ESP_RETURN_ON_ERROR(pca9557_init(), TAG, "pca9557 init failed");
+    esp_err_t imu_err = qmi8658_init();
+    if (imu_err == ESP_OK) {
+        status->imu_ok = true;
+    } else {
+        status->imu_ok = false;
+        s_imu_ready = false;
+        ESP_LOGW(TAG, "qmi8658 init failed: %s", esp_err_to_name(imu_err));
+    }
     vb_board_mount_sd(status);
     return ESP_OK;
 }

@@ -13,7 +13,7 @@ const MIGRATED_APP_EXPECTED_CAPABILITIES = new Map([
   ["apps/nixie_clock", ["lvgl", "file", "timer", "network"]],
   ["apps/clock", ["lvgl", "file", "timer", "network"]],
   ["apps/conway_life", ["lvgl", "file", "timer"]],
-  ["apps/fluid_pendant", ["lvgl", "file", "timer"]],
+  ["apps/fluid_pendant", ["lvgl", "file", "timer", "input"]],
   ["apps/2048", ["lvgl", "file", "timer", "input"]],
   ["apps/btc", ["lvgl", "network", "timer", "file"]],
   ["apps/settings", ["lvgl", "timer", "input", "file"]],

@@ -1,0 +1,4 @@
+name = smoke_imu
+entry = main.lua
+description = IMU sensor smoke test
+capabilities = lvgl,timer,input,file

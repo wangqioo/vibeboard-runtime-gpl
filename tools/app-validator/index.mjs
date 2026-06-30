@@ -8,7 +8,7 @@ const CAPABILITY_USAGE_PATTERNS = [
   { capability: "network", pattern: /\b(?:http|net|mqtt|wifi)\s*\.|\bwebsocket\b|\binitntp\s*\(/ },
   { capability: "audio", pattern: /\bi2s\s*\./ },
   { capability: "file", pattern: /\bfile\s*\./ },
-  { capability: "input", pattern: /\b(?:key|touch|gamepad)\s*\./ },
+  { capability: "input", pattern: /\b(?:key|touch|gamepad|imu)\s*\./ },
   { capability: "webui", pattern: /\bapp\s*\.\s*(?:route_base|set_webui|route)\s*\(/ },
   { capability: "module", pattern: /\brequire\s*\(/ }
 ];
@@ -77,6 +77,11 @@ export const SUPPORTED_LUA_API_SYMBOLS = new Set([
   "http.cubicserver.get",
   "http.get",
   "http.post",
+  "imu.off",
+  "imu.on",
+  "imu.push",
+  "imu.read",
+  "imu.state",
   "i2s.read",
   "i2s.start",
   "i2s.status",
@@ -113,6 +118,7 @@ const CHECKED_LUA_API_MODULES = [
   "file",
   "gamepad",
   "http",
+  "imu",
   "i2s",
   "json",
   "key",

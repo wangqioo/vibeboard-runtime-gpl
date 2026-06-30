@@ -10,6 +10,7 @@ idf_component_register(
         "lua_file.c"
         "lua_gamepad.c"
         "lua_http.c"
+        "lua_imu.c"
         "lua_i2s.c"
         "lua_key.c"
         "lua_lvgl.c"

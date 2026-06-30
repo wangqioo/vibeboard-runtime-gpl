@@ -38,6 +38,8 @@ const luaKeySourcePath = join(firmwareRoot, "main/lua_key.c");
 const luaKeyHeaderPath = join(firmwareRoot, "main/lua_key.h");
 const luaGamepadSourcePath = join(firmwareRoot, "main/lua_gamepad.c");
 const luaGamepadHeaderPath = join(firmwareRoot, "main/lua_gamepad.h");
+const luaImuSourcePath = join(firmwareRoot, "main/lua_imu.c");
+const luaImuHeaderPath = join(firmwareRoot, "main/lua_imu.h");
 const luaI2sSourcePath = join(firmwareRoot, "main/lua_i2s.c");
 const luaI2sHeaderPath = join(firmwareRoot, "main/lua_i2s.h");
 const luaNativeModuleSourcePath = join(firmwareRoot, "main/lua_native_module.c");
@@ -103,6 +105,8 @@ const smokeKeyInfoPath = join(repoRoot, "apps/smoke_key/app.info");
 const smokeKeySourcePath = join(repoRoot, "apps/smoke_key/main.lua");
 const smokeTouchInfoPath = join(repoRoot, "apps/smoke_touch/app.info");
 const smokeTouchSourcePath = join(repoRoot, "apps/smoke_touch/main.lua");
+const smokeImuInfoPath = join(repoRoot, "apps/smoke_imu/app.info");
+const smokeImuSourcePath = join(repoRoot, "apps/smoke_imu/main.lua");
 const smokeGamepadInfoPath = join(repoRoot, "apps/smoke_gamepad/app.info");
 const smokeGamepadSourcePath = join(repoRoot, "apps/smoke_gamepad/main.lua");
 const smokeI2sInfoPath = join(repoRoot, "apps/smoke_i2s/app.info");
@@ -1625,6 +1629,42 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cmake, /lua_touch\.c/);
   });
 
+  it("registers a Lua IMU module backed by the board QMI8658 sensor", () => {
+    const boardHeader = readRequired(boardHeaderPath);
+    const boardSource = readRequired(boardSourcePath);
+    const runner = readRequired(runnerSourcePath);
+    const imuHeader = readRequired(luaImuHeaderPath);
+    const imuSource = readRequired(luaImuSourcePath);
+    const validator = readRequired(join(repoRoot, "tools/app-validator/index.mjs"));
+    const cmake = readRequired(cmakePath);
+
+    assert.match(boardHeader, /vb_board_imu_sample_t/);
+    assert.match(boardHeader, /vb_board_imu_available/);
+    assert.match(boardHeader, /vb_board_imu_read/);
+    assert.match(boardSource, /VB_QMI8658_ADDR\s+0x6A/);
+    assert.match(boardSource, /VB_QMI8658_WHO_AM_I/);
+    assert.match(boardSource, /qmi8658_init/);
+    assert.match(boardSource, /qmi8658_write\(VB_QMI8658_CTRL7,\s*0x03\)/);
+    assert.match(boardSource, /qmi8658_write\(VB_QMI8658_CTRL2,\s*0x95\)/);
+    assert.match(boardSource, /qmi8658_write\(VB_QMI8658_CTRL3,\s*0xd5\)/);
+    assert.match(boardSource, /vb_board_imu_read/);
+    assert.match(imuHeader, /vb_lua_imu_state_t/);
+    assert.match(imuHeader, /vb_lua_imu_process_pending/);
+    assert.match(imuSource, /"on",\s*imu_on/);
+    assert.match(imuSource, /"off",\s*imu_off/);
+    assert.match(imuSource, /"read",\s*imu_read/);
+    assert.match(imuSource, /"state",\s*imu_state/);
+    assert.match(imuSource, /"push",\s*imu_push/);
+    assert.match(runner, /#include "lua_imu\.h"/);
+    assert.match(runner, /vb_lua_imu_init\(&runtime\.imu\)/);
+    assert.match(runner, /vb_lua_imu_set_available\(&runtime\.imu,\s*vb_board_imu_available\(\)\)/);
+    assert.match(runner, /vb_lua_imu_register\(L,\s*&runtime\.imu\)/);
+    assert.match(runner, /vb_lua_imu_process_pending\(L,\s*&runtime->imu\)/);
+    assert.match(cmake, /lua_imu\.c/);
+    assert.match(validator, /"imu\.on"/);
+    assert.match(validator, /"imu\.read"/);
+  });
+
   it("registers a sandboxed Lua file module", () => {
     const header = readRequired(luaFileHeaderPath);
     const source = readRequired(luaFileSourcePath);
@@ -2733,6 +2773,21 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /smoke touch event/);
   });
 
+  it("ships an IMU sensor smoke app", () => {
+    const info = readRequired(smokeImuInfoPath);
+    const source = readRequired(smokeImuSourcePath);
+
+    assert.match(info, /name\s*=\s*smoke_imu/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,input,file/);
+    assert.match(source, /imu\.state\(\)/);
+    assert.match(source, /imu\.on\(function\(sample\)/);
+    assert.match(source, /imu\.read\(\)/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /available/);
+    assert.match(source, /roll/);
+    assert.match(source, /pitch/);
+  });
+
   it("ships a gamepad compatibility smoke app", () => {
     const info = readRequired(smokeGamepadInfoPath);
     const source = readRequired(smokeGamepadSourcePath);
@@ -3046,7 +3101,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(info, /name = FluidPendant/);
     assert.match(info, /entry = main\.lua/);
-    assert.match(info, /capabilities = lvgl,file,timer/);
+    assert.match(info, /capabilities = lvgl,file,timer,input/);
     assert.match(source, /FLUID_PENDANT_APP/);
     assert.match(source, /lv_canvas_create/);
     assert.match(source, /lv_canvas_draw_rect/);
@@ -3054,8 +3109,20 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /time_getlocal_fn/);
     assert.match(source, /tmr\.create/);
     assert.match(source, /APP\.init_viper_engine/);
-    assert.match(source, /local\s+ok\s*=\s*pcall_fn\(app_on_fn,\s*"imu"/);
-    assert.match(source, /if ok then\s+imu_registered = true/);
+    assert.match(source, /HAS_VIPER_ACCEL/);
+    assert.match(source, /TICK_MS\s*=\s*HAS_VIPER_ACCEL\s+and\s+25\s+or\s+50/);
+    assert.match(source, /NUMBER_OF_PARTICLES\s*=\s*HAS_VIPER_ACCEL\s+and\s+220\s+or\s+120/);
+    assert.match(source, /GRID_ITER\s*=\s*HAS_VIPER_ACCEL\s+and\s+6\s+or\s+3/);
+    assert.match(source, /runtime_imu/);
+    assert.match(source, /pcall_fn\(runtime_imu\.on/);
+    assert.match(source, /if ok then\s+APP\.imu_state\.registered = true/);
+    assert.match(source, /metrics\.json/);
+    assert.match(source, /metrics_generation/);
+    assert.match(source, /imu_events/);
+    assert.match(source, /tick_max_ms/);
+    assert.match(source, /draw_avg_ms/);
+    assert.doesNotMatch(source, /app_on_fn/);
+    assert.doesNotMatch(source, /app_on_fn,\s*"imu"/);
     assert.ok(font.length > 0);
   });
 

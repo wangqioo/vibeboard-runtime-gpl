@@ -1,6 +1,6 @@
 name = FluidPendant
 entry = main.lua
 description = FLIP-style electronic liquid pendant
-capabilities = lvgl,file,timer
+capabilities = lvgl,file,timer,input
 version = 0.1.0
 kind = app

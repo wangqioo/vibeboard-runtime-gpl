@@ -41,11 +41,25 @@ extern "C" {
 typedef struct {
     bool display_ok;
     bool touch_ok;
+    bool imu_ok;
     bool sd_ok;
     esp_err_t sd_error;
 } vb_board_status_t;
 
 typedef void (*vb_board_input_callback_t)(int code, int event, int timestamp_ms, uint16_t x, uint16_t y, void *user_data);
+
+typedef struct {
+    int16_t acc_x;
+    int16_t acc_y;
+    int16_t acc_z;
+    int16_t gyr_x;
+    int16_t gyr_y;
+    int16_t gyr_z;
+    float roll;
+    float pitch;
+    float angle_z;
+    int timestamp_ms;
+} vb_board_imu_sample_t;
 
 esp_err_t vb_board_start(vb_board_status_t *status);
 esp_err_t vb_board_start_storage(vb_board_status_t *status);
@@ -58,6 +72,8 @@ void vb_board_display_release_takeover(void);
 esp_err_t vb_board_draw_rgb565(uint16_t x, uint16_t y, uint16_t width, uint16_t height, const void *rgb565);
 esp_err_t vb_board_set_backlight_percent(int level);
 esp_err_t vb_board_get_backlight_percent(int *level);
+bool vb_board_imu_available(void);
+esp_err_t vb_board_imu_read(vb_board_imu_sample_t *sample);
 esp_err_t vb_board_input_start(vb_board_input_callback_t callback, void *user_data);
 void vb_board_input_stop(void);
 

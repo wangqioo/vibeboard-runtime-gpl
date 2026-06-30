@@ -15,6 +15,7 @@
 #include "lua_file.h"
 #include "lua_gamepad.h"
 #include "lua_http.h"
+#include "lua_imu.h"
 #include "lua_i2s.h"
 #include "lua_key.h"
 #include "lua_lvgl.h"
@@ -48,6 +49,7 @@ typedef struct {
     vb_lua_key_state_t key;
     vb_lua_touch_state_t touch;
     vb_lua_gamepad_state_t gamepad;
+    vb_lua_imu_state_t imu;
     vb_lua_tmr_state_t tmr;
 } vb_lua_runtime_t;
 
@@ -260,7 +262,11 @@ static int vb_lua_input_poll(lua_State *L)
     if (touch_result != 0) {
         return touch_result;
     }
-    return vb_lua_gamepad_process_pending(L, &runtime->gamepad);
+    int gamepad_result = vb_lua_gamepad_process_pending(L, &runtime->gamepad);
+    if (gamepad_result != 0) {
+        return gamepad_result;
+    }
+    return vb_lua_imu_process_pending(L, &runtime->imu);
 }
 
 static esp_err_t install_input_poll_timer(lua_State *L)
@@ -319,6 +325,7 @@ static void cleanup_lua_runtime(lua_State *L, vb_lua_runtime_t *runtime)
     vb_lua_key_cleanup(L, &runtime->key);
     vb_lua_touch_cleanup(L, &runtime->touch);
     vb_lua_gamepad_cleanup(L, &runtime->gamepad);
+    vb_lua_imu_cleanup(L, &runtime->imu);
     vb_lua_tmr_cleanup(L, &runtime->tmr);
     vb_lua_native_module_cleanup(L);
 }
@@ -487,6 +494,8 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_key_init(&runtime.key);
     vb_lua_touch_init(&runtime.touch);
     vb_lua_gamepad_init(&runtime.gamepad);
+    vb_lua_imu_init(&runtime.imu);
+    vb_lua_imu_set_available(&runtime.imu, vb_board_imu_available());
     vb_lua_tmr_init(&runtime.tmr);
     vb_lua_app_set_stop_flag(&runtime.app, &s_runner_state.stop_requested);
     vb_lua_app_set_registry(&runtime.app, app);
@@ -499,6 +508,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_key_register(L, &runtime.key);
     vb_lua_touch_register(L, &runtime.touch);
     vb_lua_gamepad_register(L, &runtime.gamepad);
+    vb_lua_imu_register(L, &runtime.imu);
     lua_pushlightuserdata(L, &runtime);
     lua_setfield(L, LUA_REGISTRYINDEX, "vb_runner_runtime");
     s_active_runtime = &runtime;
