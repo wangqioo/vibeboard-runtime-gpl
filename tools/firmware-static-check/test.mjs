@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const packageJsonPath = join(repoRoot, "package.json");
+const newAppGuidePath = join(repoRoot, "docs/new-app-development-guide.md");
 const firmwareRoot = join(repoRoot, "firmware/vibeboard_runtime");
 const boardHeaderPath = join(firmwareRoot, "main/board_lckfb_szpi_s3.h");
 const boardSourcePath = join(firmwareRoot, "main/board_lckfb_szpi_s3.c");
@@ -159,6 +160,7 @@ const weatherInfoPath = join(repoRoot, "apps/weather/app.info");
 const weatherSourcePath = join(repoRoot, "apps/weather/main.lua");
 const voiceAiInfoPath = join(repoRoot, "apps/voice_ai/app.info");
 const voiceAiSourcePath = join(repoRoot, "apps/voice_ai/main.lua");
+const voiceAudioHelperPath = join(repoRoot, "apps/lib/voice_audio.lua");
 const voiceAiCharsetPath = join(repoRoot, "apps/voice_ai/font/voice_ui_charset.txt");
 const voiceAiFontSourcePath = join(firmwareRoot, "main/vb_font_voice_ai_13.c");
 const commonCnFontSourcePath = join(firmwareRoot, "main/vb_font_common_cn_13.c");
@@ -1924,6 +1926,66 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(bootSequence[0], /bind_input\(\)\s+start_timers\(\)/);
   });
 
+  it("documents the standard workflow for new runtime apps", () => {
+    const guide = readRequired(newAppGuidePath);
+    const readme = readRequired(join(repoRoot, "README.md"));
+
+    assert.match(readme, /docs\/new-app-development-guide\.md/);
+    assert.match(guide, /# New App Development Guide/);
+    assert.match(guide, /app\.info/);
+    assert.match(guide, /main\.lua/);
+    assert.match(guide, /capabilities/);
+    assert.match(guide, /lvgl/);
+    assert.match(guide, /timer/);
+    assert.match(guide, /input/);
+    assert.match(guide, /network/);
+    assert.match(guide, /file/);
+    assert.match(guide, /audio/);
+    assert.match(guide, /Image Assets/);
+    assert.match(guide, /Fonts/);
+    assert.match(guide, /LV_FONT_COMMON_CN_13/);
+    assert.match(guide, /Runtime Native Interfaces/);
+    assert.match(guide, /i2s\.record_file/);
+    assert.match(guide, /i2s\.play_file/);
+    assert.match(guide, /voice_audio\.record_bridge_pcm/);
+    assert.match(guide, /voice_audio\.post_bridge_chat/);
+    assert.match(guide, /desktop-bridge/);
+    assert.match(guide, /npm run package:app/);
+    assert.match(guide, /npm run upload:app/);
+    assert.match(guide, /npm run launch:app/);
+    assert.match(guide, /metrics\.json/);
+    assert.match(guide, /npm test/);
+    assert.match(guide, /idf\.py build/);
+  });
+
+  it("keeps Voice AI on the shared audio helper contract", () => {
+    const voiceAi = readRequired(voiceAiSourcePath);
+    const helper = readRequired(voiceAudioHelperPath);
+
+    assert.match(voiceAi, /APP_FILE_DIR\s*=\s*"\/sdcard\/apps\/voice_ai"/);
+    assert.match(voiceAi, /dofile\(APP\.APP_FILE_DIR \.\. "\/lib\/voice_audio\.lua"\)/);
+    assert.match(voiceAi, /voice_audio\.record_bridge_pcm/);
+    assert.match(voiceAi, /voice_audio\.post_bridge_chat/);
+    assert.match(voiceAi, /voice_audio\.max_bridge_pcm_bytes/);
+    assert.doesNotMatch(voiceAi, /local function downsample_capture_chunk_to_16k_mono/);
+    assert.doesNotMatch(voiceAi, /local function downsample_capture_file_to_16k_mono/);
+    assert.doesNotMatch(voiceAi, /local function read_voice_capture_file/);
+    assert.doesNotMatch(voiceAi, /local function read_i16_le/);
+    assert.doesNotMatch(voiceAi, /local function i16_to_bytes/);
+
+    assert.match(helper, /local M = \{\}/);
+    assert.match(helper, /function M\.max_bridge_pcm_bytes/);
+    assert.match(helper, /function M\.record_bridge_pcm/);
+    assert.match(helper, /function M\.post_bridge_chat/);
+    assert.match(helper, /function M\.downsample_capture_file_to_16k_mono/);
+    assert.match(helper, /i2s\.record_file/);
+    assert.match(helper, /http\.post/);
+    assert.match(helper, /\["Content-Type"\]\s*=\s*"application\/octet-stream"/);
+    assert.match(helper, /\["X-Audio-Format"\]\s*=\s*"pcm_s16le"/);
+    assert.match(helper, /\["X-Sample-Rate"\]/);
+    assert.match(helper, /return M/);
+  });
+
   it("tracks migrated app runtime API gaps before hardware runs", () => {
     const http = readRequired(luaHttpSourcePath);
     const sjson = readRequired(luaSjsonSourcePath);
@@ -1931,6 +1993,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const widgetSource = readRequired(luaLvglWidgetsSourcePath);
     const weather = readRequired(weatherSourcePath);
     const btc = readRequired(btcSourcePath);
+    const voiceAiInfo = readRequired(voiceAiInfoPath);
     const voiceAi = readRequired(voiceAiSourcePath);
     const voiceAiFontSource = readRequired(voiceAiFontSourcePath);
     const voiceAiSmokeTool = readRequired(voiceAiSmokeToolPath);
@@ -1993,8 +2056,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(voiceAi, /key\.SHORT/);
     assert.match(voiceAi, /key\.EXIT/);
-    assert.match(voiceAi, /http\.post\(bridge_url\("\/api\/chat"\),\s*\{\s*headers\s*=\s*headers/);
-    assert.match(voiceAi, /\["Content-Type"\]\s*=\s*"application\/octet-stream"/);
+    assert.match(voiceAi, /voice_audio\.post_bridge_chat\(APP\.config\.bridge_url,\s*raw/);
+    assert.match(readRequired(voiceAudioHelperPath), /http\.post\(base \.\. "\/api\/chat"/);
+    assert.match(readRequired(voiceAudioHelperPath), /\["Content-Type"\]\s*=\s*"application\/octet-stream"/);
     assert.match(voiceAi, /http\.get\(bridge_url\("\/api\/result\?id="/);
     assert.match(voiceAi, /metrics\.json/);
     assert.match(voiceAi, /submit_count/);
@@ -2028,22 +2092,25 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(voiceAi, /CAPTURE_RATE\s*=\s*48000/);
     assert.match(voiceAi, /CAPTURE_CHANNELS\s*=\s*2/);
     assert.match(voiceAi, /CAPTURE_PATH\s*=\s*"capture\.raw"/);
-    assert.match(voiceAi, /i2s\.record_file\(APP\.I2S_ID,\s*APP\.CAPTURE_PATH/);
-    assert.match(voiceAi, /read_voice_capture_file\(\)/);
-    assert.match(voiceAi, /downsample_capture_file_to_16k_mono/);
+    assert.match(voiceAiInfo, /shared\.libs = voice_audio/);
+    assert.match(voiceAi, /voice_audio\.record_bridge_pcm\(\{/);
+    assert.match(voiceAi, /voice_audio\.post_bridge_chat\(APP\.config\.bridge_url,\s*raw/);
+    assert.match(voiceAi, /voice_audio\.max_bridge_pcm_bytes/);
     assert.doesNotMatch(voiceAi, /i2s\.read\(/);
     assert.doesNotMatch(voiceAi, /downsample_left_48k_stereo_to_16k_mono/);
+    assert.doesNotMatch(voiceAi, /local function downsample_capture_file_to_16k_mono/);
+    assert.doesNotMatch(voiceAi, /local function downsample_capture_chunk_to_16k_mono/);
+    assert.doesNotMatch(voiceAi, /local function read_voice_capture_file/);
     assert.doesNotMatch(voiceAi, /raw_tail/);
     assert.doesNotMatch(voiceAi, /RECORD_POLL_MS/);
-    assert.match(voiceAi, /rate\s*=\s*APP\.CAPTURE_RATE/);
-    assert.match(voiceAi, /channel\s*=\s*i2s\.CHANNEL_STEREO/);
+    assert.match(voiceAi, /capture_rate\s*=\s*APP\.CAPTURE_RATE/);
+    assert.match(voiceAi, /capture_channels\s*=\s*APP\.CAPTURE_CHANNELS/);
     assert.doesNotMatch(voiceAi, /channel\s*=\s*i2s\.CHANNEL_ONLY_LEFT/);
     assert.match(voiceAi, /MAX_RECORD_BYTES\s*=\s*98304/);
     assert.match(voiceAi, /local max_record_bytes[\s\S]*max_record_bytes\s*=\s*function\(\)/);
-    assert.match(voiceAi, /record_stopping = false/);
-    assert.match(voiceAi, /if S\.record_stopping then return end/);
-    assert.match(voiceAi, /S\.record_stopping = true/);
-    assert.match(voiceAi, /S\.record_stopping = false/);
+    assert.doesNotMatch(voiceAi, /record_stopping = false/);
+    assert.doesNotMatch(voiceAi, /if S\.record_stopping then return end/);
+    assert.doesNotMatch(voiceAi, /S\.record_stopping = true/);
     assert.match(voiceAi, /ignore_record_until_ms/);
     assert.match(voiceAi, /if S\.mode == "recording" then\s+return/);
     assert.match(voiceAi, /now < \(S\.ignore_record_until_ms or 0\)/);

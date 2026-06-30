@@ -24,10 +24,11 @@ Copy `config.example.json` to `config.json` on the SD card and adjust the comput
 `sample_rate` describes the PCM format posted to the desktop bridge. On the
 LCKFB SZPI ESP32-S3 board, the app records through the Runtime native
 `i2s.record_file(...)` path first, saving 48 kHz, 16-bit stereo/TDM ES7210
-capture to an app-local raw file. It then converts that file to the bridge
-contract, currently 16 kHz mono PCM, before upload. This matches the verified
-on-device loopback path and keeps microphone timing, codec setup, and I2S
-buffering in firmware instead of in Lua timers.
+capture to an app-local raw file. The shared `voice_audio` helper then converts
+that file to the bridge contract, currently 16 kHz mono PCM, and posts it to
+`/api/chat`. This matches the verified on-device loopback path and keeps
+microphone timing, codec setup, and I2S buffering in firmware instead of in Lua
+timers.
 
 `max_record_ms` is still bounded by the app-side memory guard
 `MAX_RECORD_BYTES = 98304`. With the default 16 kHz, 16-bit, mono PCM format,
@@ -37,10 +38,11 @@ that is about 3.1 seconds of uploaded audio:
 98304 / (16000 * 2) = 3.072 seconds
 ```
 
-The guard is intentional. Voice AI uses file-backed capture but still builds the
-final uploaded 16 kHz mono request body in Lua before posting to the bridge, so
-a longer upload still needs either streaming upload or a firmware-side
-file-to-HTTP helper before raising this limit.
+The guard is intentional. Voice AI uses file-backed capture and the shared
+`voice_audio` helper, but the final uploaded 16 kHz mono request body is still
+built in Lua before posting to the bridge. Longer uploads still need either
+streaming upload or a firmware-side file-to-HTTP helper before raising this
+limit.
 
 ## Controls
 

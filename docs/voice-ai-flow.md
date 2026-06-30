@@ -4,9 +4,9 @@ This document tracks the current device-to-desktop bridge contract for `apps/voi
 
 ## Current Slice
 
-The device app records through the Runtime native `i2s.record_file(...)` path,
-then converts the app-local capture file to the bridge PCM contract and posts
-the raw bytes to a desktop bridge:
+The device app records through the Runtime native `i2s.record_file(...)` path.
+The packaged `voice_audio` helper then converts the app-local capture file to
+the bridge PCM contract and posts the raw bytes to a desktop bridge:
 
 ```text
 POST /api/chat
@@ -27,11 +27,11 @@ guard `MAX_RECORD_BYTES = 98304`. With the current default PCM contract
 ```
 
 This is not a microphone or I2S hardware limit. The app captures to an
-app-local raw file first, but it still constructs the final 16 kHz mono upload
-body in Lua before HTTP upload. The 96 KiB guard keeps Voice AI from exhausting
-or fragmenting memory while GIFs, fonts, LVGL objects, and HTTP upload are
-active. Longer production recordings should use streaming upload or a
-firmware-side file-to-HTTP helper before raising the constant.
+app-local raw file first, but the shared Lua helper still constructs the final
+16 kHz mono upload body before HTTP upload. The 96 KiB guard keeps Voice AI
+from exhausting or fragmenting memory while GIFs, fonts, LVGL objects, and HTTP
+upload are active. Longer production recordings should use streaming upload or
+a firmware-side file-to-HTTP helper before raising the constant.
 
 The synchronous bridge response is:
 
@@ -179,8 +179,9 @@ This is the first confirmed physical end-to-end path:
 
 ```text
 ES7210 microphone -> Runtime native record_file -> app-local raw capture ->
-16 kHz mono PCM upload -> desktop bridge command provider -> Apple Speech ->
-local reply command -> device UI display
+voice_audio helper -> 16 kHz mono PCM upload ->
+desktop bridge command provider -> Apple Speech -> local reply command ->
+device UI display
 ```
 
 Future microphone applications should start from this lane. Lua code should
@@ -193,9 +194,11 @@ adds a tested streaming API.
 For future microphone, speaker, or backend-linked applications, treat the
 2026-07-01 Voice AI path as the baseline:
 
-- Capture through Runtime-owned codec/I2S helpers such as `i2s.record_file`.
+- Capture through Runtime-owned codec/I2S helpers such as `i2s.record_file`, or
+  through `voice_audio.record_bridge_pcm` when the app needs bridge-ready voice
+  PCM.
 - Keep sample-rate conversion, channel selection, codec re-prepare, and playback
-  buffering in firmware or in one shared Runtime helper.
+  buffering in firmware or in one shared Runtime/helper layer.
 - Let Lua own product behavior, UI state, and HTTP request orchestration, not
   low-level microphone timing.
 - Save raw captures on the desktop bridge during bring-up so failed STT runs can

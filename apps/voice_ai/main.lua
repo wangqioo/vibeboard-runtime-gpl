@@ -7,6 +7,7 @@ VOICE_AI_APP = {
   SCREEN_W = 320,
   SCREEN_H = 240,
   APP_DIR = "/sd/apps/voice_ai",
+  APP_FILE_DIR = "/sdcard/apps/voice_ai",
   DEFAULT_BRIDGE_URL = "http://192.168.1.26:8790",
   I2S_ID = 0,
   CAPTURE_RATE = 48000,
@@ -21,6 +22,7 @@ VOICE_AI_APP = {
 }
 
 local APP = VOICE_AI_APP
+local voice_audio = dofile(APP.APP_FILE_DIR .. "/lib/voice_audio.lua")
 local MAIN_STYLE = (rawget(_G, "LV_PART_MAIN") or 0) | (rawget(_G, "LV_STATE_DEFAULT") or 0)
 local ALIGN_LEFT = rawget(_G, "LV_TEXT_ALIGN_LEFT") or 0
 local ALIGN_CENTER = rawget(_G, "LV_TEXT_ALIGN_CENTER") or 1
@@ -85,7 +87,6 @@ APP.state = {
   effective_sample_rate = 0,
   read_ms = 0,
   write_ms = 0,
-  record_stopping = false,
   rx_events = 0,
   chunks = {},
   last_error = "",
@@ -614,7 +615,6 @@ local function clear_recording()
   S.effective_sample_rate = 0
   S.read_ms = 0
   S.write_ms = 0
-  S.record_stopping = false
   S.rx_events = 0
   S.record_started_ms = 0
 end
@@ -625,106 +625,7 @@ local function stop_i2s()
   end
 end
 
-local function read_i16_le(data, index)
-  local lo = string.byte(data, index) or 0
-  local hi = string.byte(data, index + 1) or 0
-  local sample = lo + hi * 256
-  if sample >= 32768 then sample = sample - 65536 end
-  return sample
-end
-
-local function clamp_i16(sample)
-  if sample > 32767 then return 32767 end
-  if sample < -32768 then return -32768 end
-  return math.floor(sample)
-end
-
-local function i16_to_bytes(sample)
-  sample = clamp_i16(sample)
-  if sample < 0 then sample = sample + 65536 end
-  return string.char(sample % 256, math.floor(sample / 256) % 256)
-end
-
 local max_record_bytes
-
-local function downsample_capture_chunk_to_16k_mono(input)
-  if not input or #input == 0 then return "" end
-  local out = {}
-  local frames = APP.DOWNSAMPLE_FRAMES or 3
-  local bytes_per_sample = math.floor((APP.config.sample_bits or 16) / 8)
-  local bytes_per_capture_frame = (APP.CAPTURE_CHANNELS or 2) * bytes_per_sample
-  local bytes_per_output = frames * bytes_per_capture_frame
-  local pos = 1
-  while pos + bytes_per_output - 1 <= #input do
-    local sum = 0
-    for frame = 0, frames - 1 do
-      sum = sum + read_i16_le(input, pos + (frame * bytes_per_capture_frame))
-    end
-    out[#out + 1] = i16_to_bytes(sum / frames)
-    pos = pos + bytes_per_output
-  end
-  return table.concat(out)
-end
-
-local function downsample_capture_file_to_16k_mono(path)
-  if not file or not file.open then
-    return nil, "file.open missing"
-  end
-  local handle = file.open(path, "r")
-  if not handle then
-    return nil, "capture open failed"
-  end
-  local chunks = {}
-  local total = 0
-  local tail = ""
-  while true do
-    local chunk = handle:read(APP.CHUNK_BYTES)
-    if not chunk or #chunk <= 0 then break end
-    S.raw_record_bytes = (S.raw_record_bytes or 0) + #chunk
-    local input = tail .. chunk
-    local frames = APP.DOWNSAMPLE_FRAMES or 3
-    local bytes_per_sample = math.floor((APP.config.sample_bits or 16) / 8)
-    local bytes_per_capture_frame = (APP.CAPTURE_CHANNELS or 2) * bytes_per_sample
-    local bytes_per_output = frames * bytes_per_capture_frame
-    local usable = #input - (#input % bytes_per_output)
-    if usable > 0 then
-      local pcm = downsample_capture_chunk_to_16k_mono(input:sub(1, usable))
-      if pcm and #pcm > 0 then
-        chunks[#chunks + 1] = pcm
-        total = total + #pcm
-        if total >= max_record_bytes() then
-          break
-        end
-      end
-    end
-    if usable < #input then
-      tail = input:sub(usable + 1)
-    else
-      tail = ""
-    end
-  end
-  handle:close()
-  if total == 0 then
-    return nil, "empty capture"
-  end
-  local ok, raw_or_err = pcall(table.concat, chunks)
-  for i = 1, #chunks do
-    chunks[i] = nil
-  end
-  if not ok then
-    return nil, tostring(raw_or_err or "audio concat failed")
-  end
-  local raw = raw_or_err
-  local limit = max_record_bytes()
-  if #raw > limit then
-    raw = raw:sub(1, limit)
-  end
-  return raw, nil
-end
-
-local function read_voice_capture_file()
-  return downsample_capture_file_to_16k_mono(APP.CAPTURE_PATH)
-end
 
 local function stop_timer(timer)
   if not timer then return end
@@ -1110,51 +1011,31 @@ local function submit_audio(raw)
   S.result_polls = 0
   set_mode("sending")
   write_metrics()
-  local headers = {
-    ["Content-Type"] = "application/octet-stream",
-    ["X-Audio-Format"] = "pcm_s16le",
-    ["X-Sample-Rate"] = tostring(APP.config.sample_rate),
-    ["X-Bits"] = tostring(APP.config.sample_bits),
-    ["X-Channels"] = "1",
-    ["X-Reply-Limit"] = tostring(APP.config.reply_limit),
-  }
   local http_start = now_ms()
-  http.post(bridge_url("/api/chat"), { headers = headers, timeout = 35000 }, raw, function(code, body)
+  local ok, err = voice_audio.post_bridge_chat(APP.config.bridge_url, raw, {
+    sample_rate = APP.config.sample_rate,
+    bits = APP.config.sample_bits,
+    channels = 1,
+    reply_limit = APP.config.reply_limit,
+    timeout_ms = 35000,
+  }, function(code, body)
     APP.perf.http_ms = now_ms() - http_start
     handle_bridge_response(code, body)
   end)
-end
-
-local stop_recording_and_send
-max_record_bytes = function()
-  local configured = math.floor(APP.config.sample_rate * (APP.config.sample_bits / 8) * APP.config.max_record_ms / 1000)
-  local hard_limit = tonumber(APP.MAX_RECORD_BYTES) or configured
-  if configured < hard_limit then return configured end
-  return hard_limit
-end
-
-stop_recording_and_send = function()
-  if S.mode ~= "recording" then return end
-  if S.record_stopping then return end
-  S.record_stopping = true
-  stop_i2s()
-  local raw, read_err = read_voice_capture_file()
-  if type(collectgarbage) == "function" then collectgarbage("collect") end
-  if not raw or #raw == 0 then
-    S.last_error = tostring(read_err or "未录到声音")
-    APP.perf.last_error = S.last_error
-    S.record_stopping = false
+  if not ok then
+    S.last_error = tostring(err or "HTTP 不可用")
     set_mode("error")
     write_metrics()
-    return
   end
-  S.record_bytes = #raw
-  S.last_i2s_error = ""
-  S.ignore_record_until_ms = now_ms() + 5000
-  write_metrics()
-  submit_audio(raw)
-  raw = nil
-  if type(collectgarbage) == "function" then collectgarbage("collect") end
+end
+
+max_record_bytes = function()
+  return voice_audio.max_bridge_pcm_bytes({
+    sample_rate = APP.config.sample_rate,
+    bits = APP.config.sample_bits,
+    max_record_ms = APP.config.max_record_ms,
+    max_record_bytes = APP.MAX_RECORD_BYTES,
+  })
 end
 
 local function stop_result_poll()
@@ -1315,40 +1196,43 @@ local function start_recording()
   set_mode("recording")
   write_metrics()
 
-  local target_bytes = APP.CAPTURE_RATE * APP.CAPTURE_CHANNELS * (APP.config.sample_bits / 8)
-  local capture_ms = APP.config.max_record_ms or 3000
-  target_bytes = math.floor(target_bytes * capture_ms / 1000)
-  local max_raw_bytes = math.floor(max_record_bytes() * APP.DOWNSAMPLE_FRAMES * APP.CAPTURE_CHANNELS)
-  if target_bytes > max_raw_bytes then target_bytes = max_raw_bytes end
-
-  local ok, result_or_err = pcall(function()
-    return i2s.record_file(APP.I2S_ID, APP.CAPTURE_PATH, {
-      rate = APP.CAPTURE_RATE,
-      bits = APP.config.sample_bits,
-      channel = i2s.CHANNEL_STEREO,
-      target_bytes = target_bytes,
-      chunk_bytes = APP.CHUNK_BYTES,
-      timeout_ms = APP.IO_TIMEOUT_MS,
-      buffer_count = 2,
-      buffer_len = 128,
-      tdm = true,
-    })
-  end)
-  if not ok then
+  local raw, result = voice_audio.record_bridge_pcm({
+    i2s_id = APP.I2S_ID,
+    capture_path = APP.CAPTURE_PATH,
+    capture_rate = APP.CAPTURE_RATE,
+    capture_bits = APP.config.sample_bits,
+    capture_channels = APP.CAPTURE_CHANNELS,
+    bridge_sample_rate = APP.config.sample_rate,
+    bridge_bits = APP.config.sample_bits,
+    max_record_ms = APP.config.max_record_ms,
+    max_record_bytes = APP.MAX_RECORD_BYTES,
+    downsample_frames = APP.DOWNSAMPLE_FRAMES,
+    chunk_bytes = APP.CHUNK_BYTES,
+    timeout_ms = APP.IO_TIMEOUT_MS,
+    buffer_count = 2,
+    buffer_len = 128,
+    tdm = true,
+  })
+  result = result or {}
+  if not raw or #raw == 0 then
     clear_recording()
-    S.last_i2s_error = tostring(result_or_err or "录音失败")
+    S.last_i2s_error = tostring(result.error or "录音失败")
     S.last_error = S.last_i2s_error
     set_mode("error")
     write_metrics()
   else
-    local result = result_or_err or {}
-    S.raw_record_bytes = tonumber(result.bytes) or target_bytes
-    S.record_elapsed_ms = tonumber(result.elapsed_ms) or 0
+    S.raw_record_bytes = tonumber(result.raw_bytes) or 0
+    S.record_bytes = #raw
+    S.record_elapsed_ms = tonumber(result.record_elapsed_ms) or 0
     S.effective_sample_rate = tonumber(result.effective_sample_rate) or 0
     S.read_ms = tonumber(result.read_ms) or 0
     S.write_ms = tonumber(result.write_ms) or 0
+    S.last_i2s_error = ""
+    S.ignore_record_until_ms = now_ms() + 5000
     write_metrics()
-    stop_recording_and_send()
+    submit_audio(raw)
+    raw = nil
+    if type(collectgarbage) == "function" then collectgarbage("collect") end
   end
 end
 

@@ -228,6 +228,35 @@ describe("packageApp", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("copies declared shared Lua libraries into the app package", () => {
+    const root = makeTempRepo();
+    try {
+      mkdirSync(join(root, "apps/lib"), { recursive: true });
+      writeFileSync(join(root, "apps/lib/voice_audio.lua"), "return { ok = true }\n");
+      const appPath = writeApp(
+        root,
+        "apps/talker",
+        [
+          "name = talker",
+          "entry = main.lua",
+          "description = Shared lib app",
+          "capabilities = audio,network,file",
+          "shared.libs = voice_audio",
+          ""
+        ].join("\n"),
+        "dofile('lib/voice_audio.lua')\n"
+      );
+
+      const result = packageApp({ repoRoot: root, appDir: appPath });
+      const manifest = JSON.parse(readFileSync(join(result.outputPath, "manifest.json"), "utf8"));
+
+      assert.equal(readFileSync(join(result.outputPath, "lib/voice_audio.lua"), "utf8"), "return { ok = true }\n");
+      assert.ok(manifest.files.some((file) => file.path === "lib/voice_audio.lua" && file.sha256));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("packageDemoApps", () => {

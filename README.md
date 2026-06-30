@@ -27,7 +27,7 @@ The runtime has been built, flashed, and verified on real hardware. The latest b
 - LVGL bindings for labels, objects, images, GIFs, canvas BMP backgrounds, common widgets, styles, fonts, and animations.
 - NES native module smoke paths, Voice AI bridge paths, I2S RX/TX smoke paths, and app lifecycle smoke tools.
 
-Recent known-good board evidence includes `app_count=45`, HTTP Runtime status at `http://192.168.1.32:8080/status`, `device:check` passing, and `2048` launch/stop lifecycle smoke returning to idle.
+Recent known-good board evidence includes `app_count=46`, HTTP Runtime status at `http://192.168.1.32:8080/status`, `device:check` passing, and `2048` launch/stop lifecycle smoke returning to idle.
 
 ## Repository Layout
 
@@ -68,7 +68,7 @@ Lua app
 
 Updating Lua or assets does not require reflashing firmware as long as the app only uses APIs already exposed by the Runtime. Driver changes, new Lua modules, new LVGL bindings, launcher/service changes, and native ABI changes still require firmware work.
 
-See [docs/runtime-boundary.md](docs/runtime-boundary.md) for the exact boundary.
+See [docs/new-app-development-guide.md](docs/new-app-development-guide.md) for the standard new-app workflow and [docs/runtime-boundary.md](docs/runtime-boundary.md) for the exact Runtime/app boundary.
 
 ## Quick Start
 

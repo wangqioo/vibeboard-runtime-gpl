@@ -169,6 +169,24 @@ function splitList(value) {
     : [];
 }
 
+function copySharedLuaLibraries(repoRoot, metadata, outputDir) {
+  const libs = splitList(metadata["shared.libs"]);
+  if (libs.length === 0) return;
+
+  const libOutputDir = join(outputDir, "lib");
+  mkdirSync(libOutputDir, { recursive: true });
+  for (const lib of libs) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(lib)) {
+      throw new Error(`Invalid shared Lua library name: ${lib}`);
+    }
+    const sourcePath = join(repoRoot, "apps/lib", `${lib}.lua`);
+    if (!existsSync(sourcePath)) {
+      throw new Error(`Shared Lua library does not exist: apps/lib/${lib}.lua`);
+    }
+    cpSync(sourcePath, join(libOutputDir, `${lib}.lua`));
+  }
+}
+
 function buildManifestCompatibility(metadata, appId, capabilities) {
   return {
     app: {
@@ -230,6 +248,7 @@ export function packageApp({ repoRoot = process.cwd(), appDir }) {
   rmSync(tmpPath, { recursive: true, force: true });
   mkdirSync(dirname(tmpPath), { recursive: true });
   copyAppFiles(absoluteAppDir, tmpPath);
+  copySharedLuaLibraries(absoluteRepoRoot, validation.metadata, tmpPath);
   writeInstallNotes(tmpPath, validation.metadata, appId);
 
   const compatibility = buildManifestCompatibility(validation.metadata, appId, validation.capabilities);
