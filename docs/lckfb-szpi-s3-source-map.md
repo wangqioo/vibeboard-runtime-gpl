@@ -24,6 +24,7 @@ Relevant examples:
 | `/Users/wq/Downloads/szpi-s3-esp/09-wifi_scan_connect` | WiFi scan/connect proof. |
 | `/Users/wq/Downloads/szpi-s3-esp/04-audio_es7210` | Microphone/audio input proof. |
 | `/Users/wq/Downloads/szpi-s3-esp/05-audio_es8311` | Codec/audio output proof. |
+| `/Users/wq/Downloads/szpi-s3-esp/07-lcd_camera` | Camera DVP pin and power-control proof. |
 | `/Users/wq/Downloads/szpi-s3-esp/14-handheld` | Larger integrated demo, useful after single-subsystem proofs. |
 
 Use order:
@@ -159,6 +160,38 @@ Sample rate example constant: 16000
 ```
 
 Audio should be validated later against `04-audio_es7210` and `05-audio_es8311`, not only this shared header.
+
+### Camera
+
+Source: `07-lcd_camera/main/esp32_s3_szp.h`
+
+```text
+XCLK:  GPIO5
+SIOD:  GPIO1
+SIOC:  GPIO2
+D7:    GPIO9
+D6:    GPIO4
+D5:    GPIO6
+D4:    GPIO15
+D3:    GPIO17
+D2:    GPIO8
+D1:    GPIO18
+D0:    GPIO16
+VSYNC: GPIO3
+HREF:  GPIO46
+PCLK:  GPIO7
+DVP_PWDN: PCA9557 bit 2
+XCLK frequency: 24 MHz
+```
+
+Runtime board evidence on 2026-07-01 showed the installed sensor reports:
+
+```text
+Camera PID=0x2145
+Detected GC2145 camera
+```
+
+So the local example is used for wiring and power sequencing, while Runtime should key sensor-specific behavior off the real GC2145 probe result.
 
 ### LVGL Dependencies
 

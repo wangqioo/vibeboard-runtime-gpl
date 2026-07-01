@@ -7,6 +7,7 @@ idf_component_register(
         "launcher_ui.c"
         "runtime_wifi.c"
         "lua_app.c"
+        "lua_camera.c"
         "lua_file.c"
         "lua_gamepad.c"
         "lua_http.c"
@@ -64,6 +65,7 @@ idf_component_register(
         esp_driver_i2s
         esp_lcd
         esp_netif
+        espressif__esp32-camera
         espressif__esp_lvgl_port
         esp_psram
         esp_wifi

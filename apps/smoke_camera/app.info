@@ -1,0 +1,4 @@
+name = smoke_camera
+entry = main.lua
+description = GC2145 camera capture smoke test
+capabilities = lvgl,timer,file,camera

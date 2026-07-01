@@ -7,6 +7,7 @@ const CAPABILITY_USAGE_PATTERNS = [
   { capability: "timer", pattern: /\btmr\s*\.|\bset_interval\s*\(/ },
   { capability: "network", pattern: /\b(?:http|net|mqtt|wifi)\s*\.|\bwebsocket\b|\binitntp\s*\(/ },
   { capability: "audio", pattern: /\bi2s\s*\./ },
+  { capability: "camera", pattern: /\bcamera\s*\./ },
   { capability: "file", pattern: /\bfile\s*\./ },
   { capability: "input", pattern: /\b(?:key|touch|gamepad|imu)\s*\./ },
   { capability: "webui", pattern: /\bapp\s*\.\s*(?:route_base|set_webui|route)\s*\(/ },
@@ -53,6 +54,11 @@ export const SUPPORTED_LUA_API_SYMBOLS = new Set([
   "app.rescan",
   "app.set_webui",
   "app.set_home_exit",
+  "camera.capture",
+  "camera.release",
+  "camera.start",
+  "camera.status",
+  "camera.stop",
   "sys.setbrightness",
   "file.exists",
   "file.getcontents",
@@ -115,6 +121,7 @@ export const SUPPORTED_LUA_API_SYMBOLS = new Set([
 ]);
 const CHECKED_LUA_API_MODULES = [
   "app",
+  "camera",
   "file",
   "gamepad",
   "http",

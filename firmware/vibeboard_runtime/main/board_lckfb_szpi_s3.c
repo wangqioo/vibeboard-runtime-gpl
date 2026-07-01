@@ -12,6 +12,7 @@
 #include "es7210.h"
 #include "es8311.h"
 #include "esp_check.h"
+#include "esp_camera.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
@@ -45,6 +46,7 @@ static uint32_t s_es8311_sample_rate;
 static uint8_t s_pca9557_output = VB_PCA9557_LCD_CS_BIT | VB_PCA9557_DVP_PWDN_BIT;
 static int s_backlight_percent;
 static bool s_imu_ready;
+static bool s_camera_ready;
 static vb_board_input_callback_t input_callback;
 static void *input_user_data;
 
@@ -318,6 +320,127 @@ esp_err_t vb_board_audio_prepare(bool want_rx, bool want_tx, uint32_t sample_rat
         }
     }
     return ESP_OK;
+}
+
+esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *format)
+{
+    framesize_t frame_size = FRAMESIZE_QVGA;
+    if (width == 160 && height == 120) {
+        frame_size = FRAMESIZE_QQVGA;
+    } else if (width != VB_LCD_H_RES || height != VB_LCD_V_RES) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (format != NULL && strcmp(format, "rgb565") != 0) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (s_camera_ready) {
+        return ESP_OK;
+    }
+
+    ESP_RETURN_ON_ERROR(pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, false), TAG, "camera power failed");
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    const camera_config_t config = {
+        .pin_pwdn = GPIO_NUM_NC,
+        .pin_reset = GPIO_NUM_NC,
+        .pin_xclk = VB_CAMERA_XCLK,
+        .pin_sccb_sda = GPIO_NUM_NC,
+        .pin_sccb_scl = VB_CAMERA_SIOC,
+        .pin_d7 = VB_CAMERA_D7,
+        .pin_d6 = VB_CAMERA_D6,
+        .pin_d5 = VB_CAMERA_D5,
+        .pin_d4 = VB_CAMERA_D4,
+        .pin_d3 = VB_CAMERA_D3,
+        .pin_d2 = VB_CAMERA_D2,
+        .pin_d1 = VB_CAMERA_D1,
+        .pin_d0 = VB_CAMERA_D0,
+        .pin_vsync = VB_CAMERA_VSYNC,
+        .pin_href = VB_CAMERA_HREF,
+        .pin_pclk = VB_CAMERA_PCLK,
+        .xclk_freq_hz = VB_CAMERA_XCLK_FREQ_HZ,
+        .ledc_timer = LEDC_TIMER_1,
+        .ledc_channel = LEDC_CHANNEL_1,
+        .pixel_format = PIXFORMAT_RGB565,
+        .frame_size = frame_size,
+        .jpeg_quality = 12,
+        .fb_count = 2,
+        .fb_location = CAMERA_FB_IN_PSRAM,
+        .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
+        .sccb_i2c_port = VB_I2C_PORT,
+    };
+
+    esp_err_t err = esp_camera_init(&config);
+    if (err != ESP_OK) {
+        (void)pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, true);
+        ESP_LOGW(TAG, "camera init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    sensor_t *sensor = esp_camera_sensor_get();
+    if (sensor != NULL && sensor->id.PID == GC2145_PID) {
+        (void)sensor->set_hmirror(sensor, 1);
+    }
+
+    s_camera_ready = true;
+    ESP_LOGI(TAG, "GC2145 camera ready");
+    return ESP_OK;
+}
+
+esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame)
+{
+    if (frame == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(frame, 0, sizeof(*frame));
+    if (!s_camera_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (fb == NULL) {
+        return ESP_FAIL;
+    }
+
+    frame->width = (uint16_t)fb->width;
+    frame->height = (uint16_t)fb->height;
+    frame->len = fb->len;
+    frame->format = fb->format == PIXFORMAT_RGB565 ? "rgb565" : "unknown";
+    frame->buf = fb->buf;
+    frame->driver_frame = fb;
+    return ESP_OK;
+}
+
+esp_err_t vb_board_camera_draw(const vb_board_camera_frame_t *frame)
+{
+    if (frame == NULL || frame->buf == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (frame->width != VB_LCD_H_RES || frame->height != VB_LCD_V_RES || strcmp(frame->format, "rgb565") != 0) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    return vb_board_draw_rgb565(0, 0, frame->width, frame->height, frame->buf);
+}
+
+void vb_board_camera_return(vb_board_camera_frame_t *frame)
+{
+    if (frame == NULL || frame->driver_frame == NULL) {
+        return;
+    }
+    esp_camera_fb_return((camera_fb_t *)frame->driver_frame);
+    memset(frame, 0, sizeof(*frame));
+}
+
+void vb_board_camera_stop(void)
+{
+    if (!s_camera_ready) {
+        return;
+    }
+    esp_camera_deinit();
+    s_camera_ready = false;
+    esp_err_t err = pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, true);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "camera power-down failed: %s", esp_err_to_name(err));
+    }
 }
 
 static esp_err_t backlight_init(void)

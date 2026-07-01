@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 #include "board_lckfb_szpi_s3.h"
 #include "lua_app.h"
+#include "lua_camera.h"
 #include "lua_file.h"
 #include "lua_gamepad.h"
 #include "lua_http.h"
@@ -50,6 +51,7 @@ typedef struct {
     vb_lua_touch_state_t touch;
     vb_lua_gamepad_state_t gamepad;
     vb_lua_imu_state_t imu;
+    vb_lua_camera_state_t camera;
     vb_lua_tmr_state_t tmr;
 } vb_lua_runtime_t;
 
@@ -326,6 +328,7 @@ static void cleanup_lua_runtime(lua_State *L, vb_lua_runtime_t *runtime)
     vb_lua_touch_cleanup(L, &runtime->touch);
     vb_lua_gamepad_cleanup(L, &runtime->gamepad);
     vb_lua_imu_cleanup(L, &runtime->imu);
+    vb_lua_camera_cleanup(L, &runtime->camera);
     vb_lua_tmr_cleanup(L, &runtime->tmr);
     vb_lua_native_module_cleanup(L);
 }
@@ -496,6 +499,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_gamepad_init(&runtime.gamepad);
     vb_lua_imu_init(&runtime.imu);
     vb_lua_imu_set_available(&runtime.imu, vb_board_imu_available());
+    vb_lua_camera_init(&runtime.camera);
     vb_lua_tmr_init(&runtime.tmr);
     vb_lua_app_set_stop_flag(&runtime.app, &s_runner_state.stop_requested);
     vb_lua_app_set_registry(&runtime.app, app);
@@ -509,6 +513,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_touch_register(L, &runtime.touch);
     vb_lua_gamepad_register(L, &runtime.gamepad);
     vb_lua_imu_register(L, &runtime.imu);
+    vb_lua_camera_register(L, &runtime.camera);
     lua_pushlightuserdata(L, &runtime);
     lua_setfield(L, LUA_REGISTRYINDEX, "vb_runner_runtime");
     s_active_runtime = &runtime;

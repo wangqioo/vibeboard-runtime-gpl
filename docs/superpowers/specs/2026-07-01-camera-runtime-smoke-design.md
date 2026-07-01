@@ -4,14 +4,14 @@
 
 Add the first Runtime camera capability for the LCKFB-SZPI-ESP32-S3-VA board.
 
-This slice proves the board camera chain end to end: GC0308 power-up, DVP capture through `esp32-camera`, Lua access through a small `camera` module, and a `smoke_camera` app that can be launched, measured, and stopped on real hardware.
+This slice proves the board camera chain end to end: GC2145 power-up, DVP capture through `esp32-camera`, Lua access through a small `camera` module, and a `smoke_camera` app that can be launched, measured, and stopped on real hardware.
 
 ## Goal
 
 Create the smallest useful camera path:
 
 ```text
-GC0308 camera
+GC2145 camera
   -> board camera driver
   -> Runtime-owned camera module
   -> Lua camera API
@@ -21,7 +21,7 @@ GC0308 camera
 
 The first proof must answer these questions:
 
-- Can the board initialize GC0308 without breaking LCD, touch, SD, WiFi, IMU, or audio?
+- Can the board initialize GC2145 without breaking LCD, touch, SD, WiFi, IMU, or audio?
 - Can Runtime capture at least one frame?
 - Can a Lua app observe frame metadata and keep the app lifecycle responsive?
 - Can the app stop and return to the launcher cleanly?
@@ -76,7 +76,7 @@ This first slice does not implement:
 - OpenCV-style image processing;
 - production camera UI;
 - full upstream `13-human_face_detection` migration;
-- broad camera sensor abstraction beyond this GC0308 board.
+- broad camera sensor abstraction beyond this GC2145 board.
 
 These can be built after single-frame capture and lifecycle cleanup are stable.
 
@@ -144,7 +144,7 @@ First implementation should prefer RGB565 capture and use the existing board dis
 camera frame RGB565 -> vb_board_draw_rgb565(0, 0, 320, 240, frame->buf)
 ```
 
-If RGB565 capture is unstable on GC0308, the smoke app may still pass the first machine-verifiable slice by capturing a smaller JPEG/RGB frame and writing metadata, but that fallback must be documented in metrics as `preview=false` with `preview_error`.
+If RGB565 QVGA capture is unstable on GC2145 because of internal DMA memory pressure, the smoke app may still pass the first machine-verifiable slice by capturing a smaller RGB frame and writing metadata, but that fallback must be documented in metrics as `preview=false` with `preview_error`.
 
 ## App
 
@@ -234,7 +234,7 @@ Camera and LCD share the small-screen visual pipeline. Direct camera preview mus
 
 Camera buffers can be large. RGB565 320x240 is 153600 bytes per frame, so allocation must use PSRAM-capable camera buffers and must release frames promptly.
 
-GC0308 sensor support may require the exact `esp32-camera` sensor path bundled with the LCKFB examples. If the managed component lacks GC0308 support in the installed version, use the local component as a reference but do not copy source without confirming license compatibility.
+The board was originally investigated from LCKFB camera examples, but real hardware probe logs identify the installed sensor as GC2145. Keep the driver path based on runtime sensor ID, not the earlier GC0308 assumption.
 
 ## Success Criteria
 

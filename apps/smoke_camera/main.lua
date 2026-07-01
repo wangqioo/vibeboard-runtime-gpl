@@ -1,0 +1,162 @@
+print("[smoke_camera] start")
+
+local root = lv_scr_act()
+lv_obj_clean(root)
+lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE)
+lv_obj_set_style_bg_color(root, 0x111827)
+
+local title = lv_label_create(root)
+lv_label_set_text(title, "Camera Smoke")
+lv_obj_set_style_text_color(title, 0xf9fafb)
+lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12)
+
+local status_label = lv_label_create(root)
+lv_obj_set_width(status_label, 300)
+lv_obj_set_style_text_color(status_label, 0xd1d5db)
+lv_obj_align(status_label, LV_ALIGN_CENTER, 0, 8)
+
+local metrics = {
+  camera_ready = false,
+  captures = 0,
+  width = 0,
+  height = 0,
+  format = "",
+  frame_bytes = 0,
+  preview = false,
+  capture_error = "",
+  preview_error = "",
+  phase = "boot",
+}
+
+local function json_escape(value)
+  return tostring(value or ""):gsub("\\", "\\\\"):gsub("\"", "\\\""):gsub("\n", "\\n")
+end
+
+local function write_metrics()
+  local body = "{"
+    .. "\"camera_ready\":" .. tostring(metrics.camera_ready) .. ","
+    .. "\"captures\":" .. tostring(metrics.captures) .. ","
+    .. "\"width\":" .. tostring(metrics.width) .. ","
+    .. "\"height\":" .. tostring(metrics.height) .. ","
+    .. "\"format\":\"" .. json_escape(metrics.format) .. "\","
+    .. "\"frame_bytes\":" .. tostring(metrics.frame_bytes) .. ","
+    .. "\"preview\":" .. tostring(metrics.preview) .. ","
+    .. "\"capture_error\":\"" .. json_escape(metrics.capture_error) .. "\","
+    .. "\"preview_error\":\"" .. json_escape(metrics.preview_error) .. "\","
+    .. "\"phase\":\"" .. json_escape(metrics.phase) .. "\""
+    .. "}\n"
+  if file and file.putcontents then
+    file.putcontents("metrics.json", body)
+  elseif file and file.write then
+    file.write("metrics.json", body)
+  end
+end
+
+local function render()
+  local lines = {
+    "ready: " .. tostring(metrics.camera_ready),
+    "captures: " .. tostring(metrics.captures),
+    "size: " .. tostring(metrics.width) .. "x" .. tostring(metrics.height),
+    "format: " .. tostring(metrics.format),
+    "bytes: " .. tostring(metrics.frame_bytes),
+    "preview: " .. tostring(metrics.preview),
+    "phase: " .. tostring(metrics.phase),
+    "capture error: " .. tostring(metrics.capture_error),
+    "preview error: " .. tostring(metrics.preview_error),
+  }
+  lv_label_set_text(status_label, table.concat(lines, "\n"))
+  write_metrics()
+end
+
+local function capture_once()
+  if not metrics.camera_ready then
+    render()
+    return false
+  end
+
+  metrics.phase = "capture"
+  local frame, capture_err = camera.capture()
+  if not frame then
+    metrics.capture_error = tostring(capture_err or "capture failed")
+    render()
+    return false
+  end
+
+  metrics.captures = metrics.captures + 1
+  metrics.width = tonumber(frame.width) or 0
+  metrics.height = tonumber(frame.height) or 0
+  metrics.format = tostring(frame.format or "")
+  metrics.frame_bytes = tonumber(frame.len) or 0
+  metrics.capture_error = ""
+
+  if type(camera.draw) == "function" then
+    local draw_ok, draw_result = pcall(function()
+      return camera.draw(frame)
+    end)
+    if draw_ok and draw_result then
+      metrics.preview = true
+      metrics.preview_error = ""
+    else
+      metrics.preview = false
+      metrics.preview_error = tostring(draw_result or "draw failed")
+    end
+  else
+    metrics.preview = false
+    metrics.preview_error = "camera.draw unavailable"
+  end
+
+  if camera.release then
+    camera.release(frame)
+  end
+  metrics.phase = "captured"
+  render()
+  return true
+end
+
+local ok, loaded_camera = pcall(require, "camera")
+if ok and type(loaded_camera) == "table" then
+  camera = loaded_camera
+end
+
+if type(camera) ~= "table" or type(camera.start) ~= "function" then
+  metrics.phase = "missing"
+  metrics.capture_error = "camera module missing"
+  render()
+  return
+end
+
+metrics.phase = "starting"
+render()
+
+local started, start_err = camera.start({
+  width = 160,
+  height = 120,
+  format = "rgb565",
+})
+if not started then
+  metrics.phase = "start_failed"
+  metrics.capture_error = tostring(start_err or "camera.start failed")
+  render()
+else
+  metrics.camera_ready = true
+  metrics.phase = "started"
+  render()
+  capture_once()
+end
+
+local timer = tmr.create()
+timer:alarm(500, tmr.ALARM_AUTO, function()
+  if app and app.exiting and app.exiting() then
+    if camera and camera.stop then
+      camera.stop()
+    end
+    timer:stop()
+    return
+  end
+  if not metrics.camera_ready then
+    render()
+    return
+  end
+
+  capture_once()
+end)

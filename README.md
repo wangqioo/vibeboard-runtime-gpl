@@ -23,11 +23,11 @@ The runtime has been built, flashed, and verified on real hardware. The latest b
 - `/status`, `/apps`, `/rescan`, `/launch`, `/stop`, staged upload/commit, and app delete.
 - Native `VibeBoard Apps` launcher with touch/BOOT launch and stop/refresh lifecycle controls.
 - Lua/LVGL apps loaded from `/sdcard/apps/<app-id>/main.lua`.
-- Runtime modules for `app`, `file`, `gamepad`, `http`, `i2s`, `json`/`sjson`, `key`, `sys`, `time`, `tmr`, `touch`, and `wifi`.
+- Runtime modules for `app`, `camera`, `file`, `gamepad`, `http`, `i2s`, `json`/`sjson`, `key`, `sys`, `time`, `tmr`, `touch`, and `wifi`.
 - LVGL bindings for labels, objects, images, GIFs, canvas BMP backgrounds, common widgets, styles, fonts, and animations.
 - NES native module smoke paths, Voice AI bridge paths, I2S RX/TX smoke paths, and app lifecycle smoke tools.
 
-Recent known-good board evidence includes `app_count=46`, HTTP Runtime status at `http://192.168.1.32:8080/status`, `device:check` passing, and `2048` launch/stop lifecycle smoke returning to idle.
+Recent known-good board evidence includes `app_count=48`, HTTP Runtime status at `http://192.168.1.32:8080/status`, `device:check` passing, `2048` launch/stop lifecycle smoke returning to idle, and `smoke_camera` capturing one GC2145 RGB565 frame on `/dev/cu.usbmodem112301`.
 
 ## Repository Layout
 
@@ -95,7 +95,9 @@ idf.py build
 Flash firmware:
 
 ```bash
-idf.py -p /dev/cu.usbmodem111301 flash
+# Replace with the verified target port for the board you intend to flash.
+# The 2026-07-01 camera smoke target was /dev/cu.usbmodem112301.
+idf.py -p /dev/cu.usbmodem112301 flash
 ```
 
 Check the board without flashing:
@@ -196,7 +198,7 @@ Smoke and regression apps:
 
 - `smoke`, `smoke_ui`, `smoke_timer`, `smoke_file`, `smoke_assets`, `smoke_visual`
 - `smoke_network`, `smoke_fail`, `smoke_key`, `smoke_touch`
-- `smoke_gamepad`, `smoke_i2s`, `smoke_nes`, `smoke_app_manager`
+- `smoke_gamepad`, `smoke_i2s`, `smoke_nes`, `smoke_app_manager`, `smoke_camera`
 - `smoke_controls`, `smoke_lvgl_widgets`, `smoke_lvgl_style`
 
 See [docs/upstream-map.md](docs/upstream-map.md) for upstream source mapping.
@@ -210,6 +212,7 @@ npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app 2048 --stop
 npm run input:smoke -- --board http://192.168.1.32:8080 --app smoke_key --key LEFT:SHORT
 npm run gamepad:smoke -- --board http://192.168.1.32:8080 --inject-gamepad --require-updates 1
 npm run i2s:smoke -- --board http://192.168.1.32:8080 --require-write --require-tone-writes 8
+npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app smoke_camera --allow-starting --require-metrics camera_ready=true --require-metrics 'captures>=1' --stop
 npm run nes:rom:smoke -- --board http://192.168.1.32:8080 --app smoke_nes --path roms/smoke.nes
 npm run nes:smoke -- --board http://192.168.1.32:8080 --require-rom --require-frame-growth 120
 npm run nesgame:smoke -- --board http://192.168.1.32:8080 --require-frame-growth 120

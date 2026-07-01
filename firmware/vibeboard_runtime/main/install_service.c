@@ -1392,6 +1392,7 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
     config.stack_size = VB_INSTALL_HTTPD_STACK_SIZE;
+    config.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
     config.max_uri_handlers = 16;
     config.uri_match_fn = match_uri_without_query;
 

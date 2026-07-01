@@ -38,6 +38,22 @@ extern "C" {
 #define VB_SD_CMD GPIO_NUM_48
 #define VB_SD_D0 GPIO_NUM_21
 
+#define VB_CAMERA_XCLK GPIO_NUM_5
+#define VB_CAMERA_SIOD GPIO_NUM_1
+#define VB_CAMERA_SIOC GPIO_NUM_2
+#define VB_CAMERA_D7 GPIO_NUM_9
+#define VB_CAMERA_D6 GPIO_NUM_4
+#define VB_CAMERA_D5 GPIO_NUM_6
+#define VB_CAMERA_D4 GPIO_NUM_15
+#define VB_CAMERA_D3 GPIO_NUM_17
+#define VB_CAMERA_D2 GPIO_NUM_8
+#define VB_CAMERA_D1 GPIO_NUM_18
+#define VB_CAMERA_D0 GPIO_NUM_16
+#define VB_CAMERA_VSYNC GPIO_NUM_3
+#define VB_CAMERA_HREF GPIO_NUM_46
+#define VB_CAMERA_PCLK GPIO_NUM_7
+#define VB_CAMERA_XCLK_FREQ_HZ 24000000
+
 typedef struct {
     bool display_ok;
     bool touch_ok;
@@ -61,6 +77,15 @@ typedef struct {
     int timestamp_ms;
 } vb_board_imu_sample_t;
 
+typedef struct {
+    uint16_t width;
+    uint16_t height;
+    size_t len;
+    const char *format;
+    const void *buf;
+    void *driver_frame;
+} vb_board_camera_frame_t;
+
 esp_err_t vb_board_start(vb_board_status_t *status);
 esp_err_t vb_board_start_storage(vb_board_status_t *status);
 esp_err_t vb_board_start_display(vb_board_status_t *status);
@@ -74,6 +99,11 @@ esp_err_t vb_board_set_backlight_percent(int level);
 esp_err_t vb_board_get_backlight_percent(int *level);
 bool vb_board_imu_available(void);
 esp_err_t vb_board_imu_read(vb_board_imu_sample_t *sample);
+esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *format);
+esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame);
+esp_err_t vb_board_camera_draw(const vb_board_camera_frame_t *frame);
+void vb_board_camera_return(vb_board_camera_frame_t *frame);
+void vb_board_camera_stop(void);
 esp_err_t vb_board_input_start(vb_board_input_callback_t callback, void *user_data);
 void vb_board_input_stop(void);
 

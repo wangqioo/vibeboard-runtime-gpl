@@ -62,6 +62,12 @@ This document separates implemented API, build verification, and board verificat
 
 On 2026-06-25 the Voice AI board smoke also recovered from an SD open-file budget issue by raising `VB_SD_MAX_OPEN_FILES` to 16. After flashing the board, `voice_ai` could serve `metrics.json`, `main.lua`, and `app.info` while running, and `npm run voice-ai:smoke` returned `voice-ai smoke ok: audio=1536 chats=0->1 state=running current_app=voice_ai gif=idle font=loaded reply=reply:transcript:2048`. That run verified the board-side command-provider transcript/reply round-trip on the flashed device; the remaining gap is a production STT/provider path plus physical GIF visual QA.
 
+## Camera
+
+| Capability | APIs | Status | Evidence |
+| --- | --- | --- | --- |
+| GC2145 camera capture | `camera.start`, `camera.capture`, `camera.draw`, `camera.release`, `camera.stop`, `camera.status`, `apps/smoke_camera`, `CONFIG_CAMERA_PSRAM_DMA=y`, `CONFIG_SCCB_HARDWARE_I2C_DRIVER_LEGACY=y` | `board-verified capture metrics; preview scaling pending` | Runtime registers a Lua `camera` module backed by the LCKFB DVP camera pins and PCA9557 `DVP_PWDN`. The first board attempts proved the sensor path but failed because WiFi/LVGL left only a 6656-byte largest internal DMA block while RGB capture needed a 7680-byte camera DMA buffer. The fix is to keep the Espressif camera driver on legacy SCCB I2C, enable `CONFIG_CAMERA_PSRAM_DMA=y`, and smoke with 160x120 RGB565. On 2026-07-01, after flashing `/dev/cu.usbmodem112301` (`MAC 10:51:db:80:e2:e8`) and uploading `smoke_camera`, two consecutive `npm run lifecycle:smoke -- --app smoke_camera --allow-starting --require-metrics camera_ready=true --require-metrics 'captures>=1' --stop` runs passed with `metrics={"camera_ready":true,"captures":1,"width":160,"height":120,"format":"rgb565","frame_bytes":38400,"preview":false,"capture_error":"","preview_error":"draw failed","phase":"captured"}` and returned to idle. `smoke_camera` captures its first frame synchronously after `camera.start` so fast lifecycle smoke cannot stop before metrics are useful. Physical full-screen preview is intentionally not claimed yet: current `camera.draw` only supports 320x240 RGB565, while the verified smoke path captures 160x120 to avoid the earlier memory failure. |
+
 ## Audio And Voice AI
 
 | Capability | APIs | Status | Evidence |

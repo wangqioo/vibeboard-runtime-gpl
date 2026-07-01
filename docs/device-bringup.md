@@ -6329,3 +6329,89 @@ curl -fsS http://192.168.1.32:8080/status
 Conclusion: the protected Lua HTTP callback path is flashed, and the first-slice `perf_*` metrics are
 board-readable for `weather`, `photos`, and `voice_ai`. This is a measurement baseline only; async HTTP
 execution, cancellation semantics, and broader resource scheduling remain follow-up performance work.
+
+## 2026-07-01 GC2145 camera Runtime smoke
+
+The camera Runtime slice added an Espressif `esp32-camera` backed Lua `camera` module and a
+machine-readable `apps/smoke_camera` app. The board wiring came from the local LCKFB
+`07-lcd_camera` example, but serial probe logs on the physical board identified the actual sensor as
+GC2145 rather than the earlier GC0308 assumption:
+
+```text
+camera: Camera PID=0x2145 VER=0x00 MIDL=0x00 MIDH=0x00
+camera: Detected GC2145 camera
+```
+
+Two board-level issues were fixed during bring-up:
+
+- `esp32-camera` initially selected the new SCCB I2C driver, which conflicted with the existing
+  legacy I2C stack; Runtime now sets `CONFIG_SCCB_HARDWARE_I2C_DRIVER_LEGACY=y`.
+- RGB capture initially failed after WiFi/LVGL boot because the camera wanted a 7680-byte contiguous
+  internal DMA buffer while the largest free DMA block was 6656 bytes; Runtime now enables
+  `CONFIG_CAMERA_PSRAM_DMA=y` and verifies the first smoke at 160x120 RGB565.
+
+Local and firmware verification:
+
+```text
+node --test tools/firmware-static-check/test.mjs --test-name-pattern "camera|GC2145|smoke_camera"
+# 115 tests, 115 pass
+
+node tools/app-validator/cli.mjs apps/smoke_camera
+# ok apps/smoke_camera (smoke_camera)
+
+idf.py build
+# vibeboard_runtime.bin binary size 0x222d50; 47% free in the 4 MB app partition
+```
+
+Flash target was the intended board, not the second connected board:
+
+```text
+idf.py -p /dev/cu.usbmodem112301 flash
+# Chip is ESP32-S3 (QFN56)
+# MAC: 10:51:db:80:e2:e8
+# Hash of data verified for bootloader, app, and partition table
+```
+
+Runtime recovered with HTTP install service available:
+
+```text
+curl -s --max-time 2 http://192.168.1.32:8080/status
+# sd=true, app_count=48, install=ok, state=idle
+```
+
+`smoke_camera` was packaged, uploaded, and confirmed in `/apps`:
+
+```text
+npm run package:app -- apps/smoke_camera
+# packaged smoke_camera
+
+npm run upload:app -- http://192.168.1.32:8080 dist/apps/smoke_camera smoke_camera
+# uploaded 4 files; latest main.lua 4398 bytes after adding synchronous first-frame capture
+# commit ok; confirmed smoke_camera in /apps
+```
+
+Final board smoke:
+
+```text
+npm run lifecycle:smoke -- --board http://192.168.1.32:8080 \
+  --app smoke_camera --allow-starting --polls 80 --interval-ms 500 \
+  --metrics-polls 80 --metrics-interval-ms 500 \
+  --require-metrics camera_ready=true --require-metrics 'captures>=1' \
+  --stop --stop-polls 40 --stop-interval-ms 500
+
+# lifecycle smoke ok: smoke_camera state=starting current_app=smoke_camera polls=2
+# stop_state=idle stop_current_app= stop_polls=1
+# metrics={"camera_ready":true,"captures":1,"width":160,"height":120,
+# "format":"rgb565","frame_bytes":38400,"preview":false,
+# "capture_error":"","preview_error":"draw failed","phase":"captured"}
+```
+
+A final recheck ran the same lifecycle smoke twice consecutively. Both runs passed with the same
+`camera_ready=true,captures=1,width=160,height=120,frame_bytes=38400,phase=captured` metrics. The app
+now captures its first frame synchronously after `camera.start` so fast smoke tooling cannot stop it
+before the first useful metrics write.
+
+Conclusion: the board camera is now driven enough for Runtime apps to start the sensor, capture a
+GC2145 RGB565 frame, release it, stop cleanly, and report metrics. Full-screen preview remains a
+follow-up because the currently verified capture size is 160x120 while `camera.draw` still only
+accepts the 320x240 LCD-native frame size.
