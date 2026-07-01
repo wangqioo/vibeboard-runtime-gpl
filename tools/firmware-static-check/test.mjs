@@ -3121,9 +3121,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /imu_events/);
     assert.match(source, /tick_max_ms/);
     assert.match(source, /draw_avg_ms/);
-    assert.match(source, /draw_cell_span/);
-    assert.match(source, /queue_span/);
-    assert.match(source, /draw_spans/);
+    assert.doesNotMatch(source, /draw_cell_span/);
+    assert.doesNotMatch(source, /queue_span/);
+    assert.doesNotMatch(source, /draw_spans/);
     assert.doesNotMatch(source, /app_on_fn/);
     assert.doesNotMatch(source, /app_on_fn,\s*"imu"/);
     assert.ok(font.length > 0);
