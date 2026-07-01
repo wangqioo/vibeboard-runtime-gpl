@@ -8,6 +8,7 @@ idf_component_register(
         "runtime_wifi.c"
         "lua_app.c"
         "lua_file.c"
+        "lua_fluid.c"
         "lua_gamepad.c"
         "lua_http.c"
         "lua_imu.c"
