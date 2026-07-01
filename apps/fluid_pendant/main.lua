@@ -166,6 +166,8 @@ local v_restore_count = 0
 local display_cell = {}
 local display_x = {}
 local display_y = {}
+local display_col = {}
+local display_row = {}
 local display_density = {}
 local display_lit = {}
 local display_edge_count = {}
@@ -913,6 +915,7 @@ local profile_state = {
   draw_walk_us = 0,
   draw_last_frame_us = 0,
   draw_max_us = 0,
+  draw_span_count = 0,
   draw_frames = 0,
 }
 
@@ -1030,6 +1033,7 @@ local function write_metrics()
     .. '"draw_max_ms":' .. string_format("%.2f", profile_state.draw_max_us / 1000) .. ","
     .. '"draw_api_avg_ms":' .. string_format("%.2f", (profile_state.draw_frames > 0 and profile_state.draw_api_us / profile_state.draw_frames or 0) / 1000) .. ","
     .. '"draw_end_avg_ms":' .. string_format("%.2f", (profile_state.draw_frames > 0 and profile_state.draw_end_us / profile_state.draw_frames or 0) / 1000) .. ","
+    .. '"draw_spans":' .. tostring(profile_state.draw_span_count) .. ","
     .. '"metrics_error":' .. json_string(APP.metrics.error)
     .. "}\n"
   local ok, err = pcall_fn(runtime_file.putcontents, APP.METRICS_PATH, body)
@@ -1102,6 +1106,7 @@ local function profile_draw(total_us, api_us, end_us)
     profile_state.draw_end_us = 0
     profile_state.draw_walk_us = 0
     profile_state.draw_max_us = 0
+    profile_state.draw_span_count = 0
     profile_state.draw_frames = 0
     APP.metrics.tick_count = 0
     APP.metrics.tick_max_us = 0
@@ -1209,6 +1214,8 @@ local function build_display_lookup()
     for x = 1, CELL_NUM_X - 2 do
       display_count = display_count + 1
       display_cell[display_count] = cell_index(x, y)
+      display_col[display_count] = x
+      display_row[display_count] = y
       display_x[display_count] = MATRIX_X + (x - 1) * DOT_PITCH
       display_y[display_count] = MATRIX_Y + (y - 1) * DOT_PITCH
     end
@@ -1873,6 +1880,18 @@ local function draw_rect(x, y, w, h, color, opa, radius)
   end
 end
 
+local function draw_cell_span(start_i, end_i, lit)
+  local x = display_x[start_i]
+  local y = display_y[start_i]
+  local w = DOT_SIZE + (end_i - start_i) * DOT_PITCH
+  if lit then
+    draw_rect(x, y, w, DOT_SIZE, C.fluid, 255, 4)
+    draw_rect(x + 3, y + 2, w - 6, 2, C.fluid_core, 115, 1)
+  else
+    draw_rect(x, y, w, DOT_SIZE, C.bg, 255, 0)
+  end
+end
+
 local function detect_rect_mode()
   if not lv_canvas_draw_rect_fn or not canvas then
     return
@@ -1924,6 +1943,34 @@ local function redraw()
   local edge_on_threshold = DISPLAY_ON_THRESHOLD + DISPLAY_EDGE_MARGIN
   local edge_off_threshold = DISPLAY_OFF_THRESHOLD - DISPLAY_EDGE_MARGIN
   local edge_confirm_frames = DISPLAY_EDGE_CONFIRM_FRAMES
+  local span_start = 0
+  local span_end = 0
+  local span_lit = false
+  local span_row = 0
+
+  local function flush_span()
+    if span_start == 0 then
+      return
+    end
+    api_start_us = now_us()
+    draw_cell_span(span_start, span_end, span_lit)
+    api_us = api_us + elapsed_us(api_start_us, now_us())
+    profile_state.draw_span_count = profile_state.draw_span_count + 1
+    span_start = 0
+  end
+
+  local function queue_span(i, lit)
+    local row = display_row[i]
+    if span_start ~= 0 and span_lit == lit and span_row == row and display_col[i] == display_col[span_end] + 1 then
+      span_end = i
+      return
+    end
+    flush_span()
+    span_start = i
+    span_end = i
+    span_lit = lit
+    span_row = row
+  end
 
   for i = 1, display_count do
     local cell = display_cell[i]
@@ -1980,22 +2027,13 @@ local function redraw()
 
     if full_redraw then
       if lit then
-        api_start_us = now_us()
-        draw_rect(display_x[i], display_y[i], DOT_SIZE, DOT_SIZE, C.fluid, 255, 4)
-        draw_rect(display_x[i] + 3, display_y[i] + 2, DOT_SIZE - 6, 2, C.fluid_core, 115, 1)
-        api_us = api_us + elapsed_us(api_start_us, now_us())
+        queue_span(i, true)
       end
     elseif lit ~= prev_lit then
-      api_start_us = now_us()
-      if lit then
-        draw_rect(display_x[i], display_y[i], DOT_SIZE, DOT_SIZE, C.fluid, 255, 4)
-        draw_rect(display_x[i] + 3, display_y[i] + 2, DOT_SIZE - 6, 2, C.fluid_core, 115, 1)
-      else
-        draw_rect(display_x[i], display_y[i], DOT_SIZE, DOT_SIZE, C.bg, 255, 0)
-      end
-      api_us = api_us + elapsed_us(api_start_us, now_us())
+      queue_span(i, lit)
     end
   end
+  flush_span()
 
   api_start_us = now_us()
   frame_end(explicit_frame)
