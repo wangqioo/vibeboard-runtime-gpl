@@ -13,7 +13,6 @@
 #include "board_lckfb_szpi_s3.h"
 #include "lua_app.h"
 #include "lua_file.h"
-#include "lua_fluid.h"
 #include "lua_gamepad.h"
 #include "lua_http.h"
 #include "lua_imu.h"
@@ -531,7 +530,6 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_sys_register(L);
     vb_lua_time_register(L);
     vb_lua_i2s_register(L);
-    vb_lua_fluid_register(L);
     vb_lua_native_module_register(L, app);
     vb_lua_lvgl_set_app_dir(app->first_app_dir);
     vb_lua_lvgl_register(L);

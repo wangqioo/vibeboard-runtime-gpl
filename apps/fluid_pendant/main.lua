@@ -46,11 +46,8 @@ local runtime_time = rawget(_G, "time")
 local time_getlocal_fn = runtime_time and runtime_time.getlocal or nil
 local runtime_imu = rawget(_G, "imu")
 local runtime_file = rawget(_G, "file")
-local runtime_fluid_native = rawget(_G, "fluid_native")
 local runtime_viper = rawget(_G, "viper")
-local HAS_NATIVE_FLUID = runtime_fluid_native and runtime_fluid_native.create
 local HAS_VIPER_ACCEL = runtime_viper and runtime_viper.compile_c and runtime_viper.buf
-local HAS_FLUID_ACCEL = HAS_NATIVE_FLUID or HAS_VIPER_ACCEL
 local function clear_root()
   if not lv_scr_act or not lv_obj_clean then
     return
@@ -99,14 +96,14 @@ local DISPLAY_OFF_THRESHOLD = 0.14
 local DISPLAY_EDGE_MARGIN = 0.03
 local DISPLAY_EDGE_CONFIRM_FRAMES = 2
 
-local TICK_MS = HAS_FLUID_ACCEL and 25 or 50
+local TICK_MS = HAS_VIPER_ACCEL and 25 or 50
 local GRAVITY = 16
 local TILT_FULL_SCALE_DEG = 45
 local IMU_X_SIGN = -1
 local IMU_Y_SIGN = 1
 local IMU_FILTER_ALPHA = 0.34
 
-local NUMBER_OF_PARTICLES = HAS_FLUID_ACCEL and 220 or 120
+local NUMBER_OF_PARTICLES = HAS_VIPER_ACCEL and 220 or 120
 local PARTICLE_RADIUS = 0.0155
 local SPACING = 0.045
 local CELL_NUM_X = 26
@@ -116,8 +113,8 @@ local DT = 0.016
 local BOUNCYNESS = -0.9
 local OVER_RELAXATION = 1.8
 local STIFFNESS_COEFFICIENT = 1.0
-local PUSH_ITER = HAS_FLUID_ACCEL and 2 or 1
-local GRID_ITER = HAS_FLUID_ACCEL and 6 or 3
+local PUSH_ITER = HAS_VIPER_ACCEL and 2 or 1
+local GRID_ITER = HAS_VIPER_ACCEL and 6 or 3
 local FLIP_RATIO = 0.9
 
 local FLUID_CELL = 0
@@ -1008,15 +1005,9 @@ local function write_metrics()
   if avg_draw_us > 0 then
     fps = 1000000 / avg_draw_us
   end
-  local engine = "lua"
-  if APP.native_ctx then
-    engine = "native"
-  elseif APP.viper_ctx then
-    engine = "viper"
-  end
   local body = "{"
     .. '"version":' .. json_string(APP.VERSION) .. ","
-    .. '"engine":' .. json_string(engine) .. ","
+    .. '"engine":' .. json_string(APP.viper_ctx and "viper" or "lua") .. ","
     .. '"metrics_generation":' .. tostring(APP.metrics.generation) .. ","
     .. '"tick_ms":' .. tostring(TICK_MS) .. ","
     .. '"particles":' .. tostring(NUMBER_OF_PARTICLES) .. ","
@@ -1270,39 +1261,6 @@ local function init_particles()
       end
     end
   end
-end
-
-function APP.init_native_engine()
-  local fluid_native = rawget(_G, "fluid_native")
-  if not fluid_native or not fluid_native.create then
-    return false
-  end
-
-  init_sim_bounds()
-  init_display_state()
-
-  local ok, ctx_or_err = pcall_fn(fluid_native.create, {
-    particles = NUMBER_OF_PARTICLES,
-    cnx = CELL_NUM_X,
-    cny = CELL_NUM_Y,
-    spacing = SPACING,
-    radius = PARTICLE_RADIUS,
-    dt = DT,
-    bounce = BOUNCYNESS,
-    push_iter = PUSH_ITER,
-  })
-
-  if ok and ctx_or_err then
-    APP.native_ctx = ctx_or_err
-    print("[FluidPendant] native fluid engine enabled")
-    return true
-  end
-
-  APP.native_ctx = nil
-  if print then
-    print("[FluidPendant] native fluid disabled:", tostring(ctx_or_err))
-  end
-  return false
 end
 
 function APP.qnum(v)
@@ -2017,9 +1975,7 @@ local function redraw()
   for i = 1, display_count do
     local cell = display_cell[i]
     local density = particle_density[cell]
-    if APP.native_ctx then
-      density = APP.native_ctx:density(cell)
-    elseif APP.viper_ctx then
+    if APP.viper_ctx then
       density = (APP.viper_ctx.g:get32(CELL_COUNT * 6 + cell - 1) or 0) / FX_Q
     end
     local level = display_density[cell] * (1.0 - DISPLAY_DENSITY_BLEND) + density * DISPLAY_DENSITY_BLEND
@@ -2124,9 +2080,7 @@ end
 local function simulation_step()
   update_accel()
   local sim_start_us = now_us()
-  if APP.native_ctx then
-    APP.native_ctx:step(accel_x, accel_y)
-  elseif APP.viper_ctx then
+  if APP.viper_ctx then
     APP.viper_simulation_step(APP.viper_ctx, accel_x, accel_y)
   else
     integrate_particles(accel_x, accel_y)
@@ -2311,9 +2265,7 @@ if runtime_imu and runtime_imu.on then
   end
 end
 
-if APP.init_native_engine() then
-  init_display_state()
-elseif APP.init_viper_engine() then
+if APP.init_viper_engine() then
   init_display_state()
 else
   init_particles()
@@ -2323,9 +2275,7 @@ init_root()
 
 if init_canvas() then
   detect_rect_mode()
-  if APP.native_ctx then
-    APP.native_ctx:step(accel_x, accel_y)
-  elseif APP.viper_ctx then
+  if APP.viper_ctx then
     APP.viper_particles_to_grid(APP.viper_ctx)
     APP.viper_ctx.cfg:set32(APP.CFG.REST_DENSITY_Q, 0)
     particle_rest_density = 0

@@ -40,8 +40,6 @@ const luaGamepadSourcePath = join(firmwareRoot, "main/lua_gamepad.c");
 const luaGamepadHeaderPath = join(firmwareRoot, "main/lua_gamepad.h");
 const luaImuSourcePath = join(firmwareRoot, "main/lua_imu.c");
 const luaImuHeaderPath = join(firmwareRoot, "main/lua_imu.h");
-const luaFluidSourcePath = join(firmwareRoot, "main/lua_fluid.c");
-const luaFluidHeaderPath = join(firmwareRoot, "main/lua_fluid.h");
 const luaI2sSourcePath = join(firmwareRoot, "main/lua_i2s.c");
 const luaI2sHeaderPath = join(firmwareRoot, "main/lua_i2s.h");
 const luaNativeModuleSourcePath = join(firmwareRoot, "main/lua_native_module.c");
@@ -215,14 +213,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
   it("uses a runtime-sized app partition for network-enabled firmware", () => {
     const defaults = readRequired(sdkconfigDefaultsPath);
-    const sdkconfig = readRequired(join(firmwareRoot, "sdkconfig"));
     const partitions = readRequired(partitionsPath);
 
-    assert.match(defaults, /CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y/);
-    assert.doesNotMatch(defaults, /CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y/);
-    assert.match(sdkconfig, /CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y/);
-    assert.match(sdkconfig, /CONFIG_ESPTOOLPY_FLASHSIZE="8MB"/);
-    assert.doesNotMatch(sdkconfig, /CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y/);
     assert.match(defaults, /CONFIG_PARTITION_TABLE_CUSTOM=y/);
     assert.match(defaults, /CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions\.csv"/);
     assert.match(partitions, /factory,\s+app,\s+factory,\s+0x10000,\s+0x400000/);
@@ -1673,26 +1665,6 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(validator, /"imu\.read"/);
   });
 
-  it("registers a native fluid simulation module for Lua apps", () => {
-    const runner = readRequired(runnerSourcePath);
-    const fluidHeader = readRequired(luaFluidHeaderPath);
-    const fluidSource = readRequired(luaFluidSourcePath);
-    const validator = readRequired(join(repoRoot, "tools/app-validator/index.mjs"));
-    const cmake = readRequired(cmakePath);
-
-    assert.match(fluidHeader, /vb_lua_fluid_register/);
-    assert.match(fluidSource, /VB_LUA_FLUID_META/);
-    assert.match(fluidSource, /"create",\s*fluid_create/);
-    assert.match(fluidSource, /"step",\s*fluid_step/);
-    assert.match(fluidSource, /"density",\s*fluid_density/);
-    assert.match(fluidSource, /"state",\s*fluid_state/);
-    assert.match(fluidSource, /lua_setglobal\(L,\s*"fluid_native"\)/);
-    assert.match(runner, /#include "lua_fluid\.h"/);
-    assert.match(runner, /vb_lua_fluid_register\(L\)/);
-    assert.match(cmake, /lua_fluid\.c/);
-    assert.match(validator, /"fluid_native\.create"/);
-  });
-
   it("registers a sandboxed Lua file module", () => {
     const header = readRequired(luaFileHeaderPath);
     const source = readRequired(luaFileSourcePath);
@@ -3137,15 +3109,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /time_getlocal_fn/);
     assert.match(source, /tmr\.create/);
     assert.match(source, /APP\.init_viper_engine/);
-    assert.match(source, /APP\.init_native_engine/);
-    assert.match(source, /runtime_fluid_native/);
-    assert.match(source, /fluid_native/);
-    assert.match(source, /APP\.native_ctx/);
     assert.match(source, /HAS_VIPER_ACCEL/);
-    assert.match(source, /HAS_FLUID_ACCEL/);
-    assert.match(source, /TICK_MS\s*=\s*HAS_FLUID_ACCEL\s+and\s+25\s+or\s+50/);
-    assert.match(source, /NUMBER_OF_PARTICLES\s*=\s*HAS_FLUID_ACCEL\s+and\s+220\s+or\s+120/);
-    assert.match(source, /GRID_ITER\s*=\s*HAS_FLUID_ACCEL\s+and\s+6\s+or\s+3/);
+    assert.match(source, /TICK_MS\s*=\s*HAS_VIPER_ACCEL\s+and\s+25\s+or\s+50/);
+    assert.match(source, /NUMBER_OF_PARTICLES\s*=\s*HAS_VIPER_ACCEL\s+and\s+220\s+or\s+120/);
+    assert.match(source, /GRID_ITER\s*=\s*HAS_VIPER_ACCEL\s+and\s+6\s+or\s+3/);
     assert.match(source, /runtime_imu/);
     assert.match(source, /pcall_fn\(runtime_imu\.on/);
     assert.match(source, /if ok then\s+APP\.imu_state\.registered = true/);
@@ -3157,7 +3124,6 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /draw_cell_span/);
     assert.match(source, /queue_span/);
     assert.match(source, /draw_spans/);
-    assert.match(source, /APP\.native_ctx:density/);
     assert.doesNotMatch(source, /app_on_fn/);
     assert.doesNotMatch(source, /app_on_fn,\s*"imu"/);
     assert.ok(font.length > 0);

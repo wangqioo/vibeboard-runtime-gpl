@@ -67,7 +67,6 @@ export const SUPPORTED_LUA_API_SYMBOLS = new Set([
   "file.rmdir",
   "file.stat",
   "file.write",
-  "fluid_native.create",
   "gamepad.off",
   "gamepad.on",
   "gamepad.push_state",
@@ -117,7 +116,6 @@ export const SUPPORTED_LUA_API_SYMBOLS = new Set([
 const CHECKED_LUA_API_MODULES = [
   "app",
   "file",
-  "fluid_native",
   "gamepad",
   "http",
   "imu",
