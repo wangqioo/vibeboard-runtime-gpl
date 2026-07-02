@@ -98,9 +98,16 @@ static void vb_board_camera_clear_latest_frame(void);
 #define VB_QMI8658_RESET 0x60
 #define VB_LCD_CMD_NOP 0x00
 #define VB_CAMERA_OVERLAY_BAR_H 48
-#define VB_CAMERA_OVERLAY_BUTTON_W 124
-#define VB_CAMERA_OVERLAY_BUTTON_H 36
-#define VB_CAMERA_OVERLAY_SHUTTER_LABEL "Shutter"
+#define VB_CAMERA_OVERLAY_BUTTON_W 64
+#define VB_CAMERA_OVERLAY_BUTTON_H 40
+#define VB_CAMERA_OVERLAY_THUMB_W 30
+#define VB_CAMERA_OVERLAY_THUMB_H 30
+#define VB_CAMERA_OVERLAY_STATUS_W 30
+#define VB_CAMERA_OVERLAY_STATUS_H 30
+#define VB_CAMERA_OVERLAY_SHUTTER_HIT_X 108
+#define VB_CAMERA_OVERLAY_SHUTTER_HIT_Y (VB_LCD_V_RES - VB_CAMERA_OVERLAY_BAR_H)
+#define VB_CAMERA_OVERLAY_SHUTTER_HIT_W 104
+#define VB_CAMERA_OVERLAY_SHUTTER_HIT_H VB_CAMERA_OVERLAY_BAR_H
 
 void vb_board_camera_reserve_internal_dma(size_t size)
 {
@@ -776,12 +783,12 @@ static esp_err_t vb_board_camera_draw_overlay_rect(uint16_t x, uint16_t y, uint1
 static esp_err_t vb_board_camera_draw_shutter_button(uint16_t x, uint16_t y)
 {
     const uint16_t border = 0xffff;
-    const uint16_t fill = 0x0861;
-    const uint16_t accent = 0x07ff;
+    const uint16_t fill = 0x1082;
+    const uint16_t accent = 0xf800;
     const int center_x = VB_CAMERA_OVERLAY_BUTTON_W / 2;
     const int center_y = VB_CAMERA_OVERLAY_BUTTON_H / 2;
-    const int outer_r = 12;
-    const int inner_r = 7;
+    const int outer_r = 18;
+    const int inner_r = 12;
     uint16_t *rows = s_camera_lcd_rows;
 
     for (uint16_t row = 0; row < VB_CAMERA_OVERLAY_BUTTON_H; row += VB_CAMERA_LCD_STRIPE_ROWS) {
@@ -815,6 +822,16 @@ static esp_err_t vb_board_camera_draw_shutter_button(uint16_t x, uint16_t y)
     return vb_board_lcd_wait_for_queued_color();
 }
 
+static esp_err_t vb_board_camera_draw_latest_thumb(uint16_t x, uint16_t y)
+{
+    return vb_board_camera_draw_overlay_rect(x, y, VB_CAMERA_OVERLAY_THUMB_W, VB_CAMERA_OVERLAY_THUMB_H, 0x39e7);
+}
+
+static esp_err_t vb_board_camera_draw_status_chip(uint16_t x, uint16_t y)
+{
+    return vb_board_camera_draw_overlay_rect(x, y, VB_CAMERA_OVERLAY_STATUS_W, VB_CAMERA_OVERLAY_STATUS_H, 0x39e7);
+}
+
 static esp_err_t vb_board_camera_draw_overlay(void)
 {
     if (!s_camera_overlay_enabled) {
@@ -824,14 +841,18 @@ static esp_err_t vb_board_camera_draw_overlay(void)
         return ESP_OK;
     }
 
-    const char *label = VB_CAMERA_OVERLAY_SHUTTER_LABEL;
-    (void)label;
     const uint16_t bar_y = VB_LCD_V_RES - VB_CAMERA_OVERLAY_BAR_H;
     const uint16_t button_x = (VB_LCD_H_RES - VB_CAMERA_OVERLAY_BUTTON_W) / 2;
     const uint16_t button_y = bar_y + ((VB_CAMERA_OVERLAY_BAR_H - VB_CAMERA_OVERLAY_BUTTON_H) / 2);
+    const uint16_t thumb_x = 18;
+    const uint16_t thumb_top = bar_y + ((VB_CAMERA_OVERLAY_BAR_H - VB_CAMERA_OVERLAY_THUMB_H) / 2);
+    const uint16_t status_x = VB_LCD_H_RES - VB_CAMERA_OVERLAY_STATUS_W - 18;
+    const uint16_t status_y = bar_y + ((VB_CAMERA_OVERLAY_BAR_H - VB_CAMERA_OVERLAY_STATUS_H) / 2);
 
-    ESP_RETURN_ON_ERROR(vb_board_camera_draw_overlay_rect(0, bar_y, VB_LCD_H_RES, VB_CAMERA_OVERLAY_BAR_H, 0x0020), TAG, "camera overlay bar failed");
+    ESP_RETURN_ON_ERROR(vb_board_camera_draw_overlay_rect(0, bar_y, VB_LCD_H_RES, VB_CAMERA_OVERLAY_BAR_H, 0x0000), TAG, "camera overlay bar failed");
+    ESP_RETURN_ON_ERROR(vb_board_camera_draw_latest_thumb(thumb_x, thumb_top), TAG, "camera latest thumb failed");
     ESP_RETURN_ON_ERROR(vb_board_camera_draw_shutter_button(button_x, button_y), TAG, "camera shutter failed");
+    ESP_RETURN_ON_ERROR(vb_board_camera_draw_status_chip(status_x, status_y), TAG, "camera status chip failed");
     s_camera_overlay_dirty = false;
     return ESP_OK;
 }

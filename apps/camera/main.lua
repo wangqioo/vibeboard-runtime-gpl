@@ -8,6 +8,10 @@ end
 APP = {
   PHOTO_DIR = "photos",
   METRICS_PATH = "metrics.json",
+  SHUTTER_HIT_X = 108,
+  SHUTTER_HIT_Y = 192,
+  SHUTTER_HIT_W = 104,
+  SHUTTER_HIT_H = 48,
   MAX_WEB_PHOTOS = 3,
   captures = 0,
   next_index = 1,
@@ -287,6 +291,15 @@ local function request_capture(trigger)
   return true
 end
 
+local function touch_hits_shutter(x, y)
+  local px = tonumber(x) or -1
+  local py = tonumber(y) or -1
+  return px >= APP.SHUTTER_HIT_X
+    and px < APP.SHUTTER_HIT_X + APP.SHUTTER_HIT_W
+    and py >= APP.SHUTTER_HIT_Y
+    and py < APP.SHUTTER_HIT_Y + APP.SHUTTER_HIT_H
+end
+
 local function route_index(_req)
   local photos = list_photos()
   local latest = APP.last_photo
@@ -395,10 +408,10 @@ local function register_input()
     end)
   end
   if touch and touch.on then
-    touch.on(function(evt, _x, _y, _ts_ms)
+    touch.on(function(evt, x, y, _ts_ms)
       APP.touch_events = APP.touch_events + 1
       write_metrics()
-      if evt == touch.UP then
+      if evt == touch.UP and touch_hits_shutter(x, y) then
         request_capture("touch")
       end
     end)
