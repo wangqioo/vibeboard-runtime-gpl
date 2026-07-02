@@ -51,6 +51,9 @@ static bool s_camera_ready;
 static bool s_camera_display_taken;
 static TaskHandle_t s_camera_preview_task;
 static volatile bool s_camera_preview_stop_requested;
+static vb_board_camera_preview_mode_t s_camera_preview_mode = VB_CAMERA_PREVIEW_MODE_STOPPED;
+static uint16_t s_camera_preview_width;
+static uint16_t s_camera_preview_height;
 static DMA_ATTR uint16_t s_camera_lcd_rows[VB_LCD_H_RES * VB_CAMERA_LCD_STRIPE_ROWS];
 static vb_board_input_callback_t input_callback;
 static void *input_user_data;
@@ -74,6 +77,19 @@ static void vb_board_camera_preview_task(void *arg);
 #define VB_QMI8658_AX_L 0x35
 #define VB_QMI8658_RESET 0x60
 #define VB_LCD_CMD_NOP 0x00
+
+static const char *vb_board_camera_preview_mode_name(vb_board_camera_preview_mode_t mode)
+{
+    switch (mode) {
+    case VB_CAMERA_PREVIEW_MODE_QVGA_DIRECT:
+        return "qvga-direct";
+    case VB_CAMERA_PREVIEW_MODE_QQVGA_SCALED:
+        return "qqvga-scaled";
+    case VB_CAMERA_PREVIEW_MODE_STOPPED:
+    default:
+        return "stopped";
+    }
+}
 
 static esp_err_t i2c_init(void)
 {
@@ -551,6 +567,26 @@ esp_err_t vb_board_camera_draw(const vb_board_camera_frame_t *frame)
     return ESP_ERR_NOT_SUPPORTED;
 }
 
+static esp_err_t vb_board_camera_preview_probe_frame(void)
+{
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (fb == NULL) {
+        return ESP_ERR_TIMEOUT;
+    }
+
+    vb_board_camera_frame_t frame = {
+        .width = (uint16_t)fb->width,
+        .height = (uint16_t)fb->height,
+        .len = fb->len,
+        .format = fb->format == PIXFORMAT_RGB565 ? "rgb565" : "unknown",
+        .buf = fb->buf,
+        .driver_frame = fb,
+    };
+    esp_err_t err = vb_board_camera_draw(&frame);
+    esp_camera_fb_return(fb);
+    return err;
+}
+
 static void vb_board_camera_preview_task(void *arg)
 {
     (void)arg;
@@ -591,17 +627,46 @@ static void vb_board_camera_preview_task(void *arg)
     ESP_LOGI(TAG, "camera preview task stopped");
     s_camera_preview_task = NULL;
     s_camera_preview_stop_requested = false;
+    s_camera_preview_mode = VB_CAMERA_PREVIEW_MODE_STOPPED;
+    s_camera_preview_width = 0;
+    s_camera_preview_height = 0;
     vTaskDelete(NULL);
 }
 
-esp_err_t vb_board_camera_preview_start(void)
+static esp_err_t vb_board_camera_preview_start_mode(vb_board_camera_preview_mode_t mode)
 {
     if (s_camera_preview_task != NULL) {
         return ESP_OK;
     }
 
-    ESP_RETURN_ON_ERROR(vb_board_camera_start(VB_LCD_H_RES / 2, VB_LCD_V_RES / 2, "rgb565"), TAG, "camera preview start failed");
-    ESP_RETURN_ON_ERROR(vb_board_camera_take_display(), TAG, "camera preview display takeover failed");
+    uint16_t width = VB_LCD_H_RES / 2;
+    uint16_t height = VB_LCD_V_RES / 2;
+    if (mode == VB_CAMERA_PREVIEW_MODE_QVGA_DIRECT) {
+        width = VB_LCD_H_RES;
+        height = VB_LCD_V_RES;
+    } else if (mode != VB_CAMERA_PREVIEW_MODE_QQVGA_SCALED) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t err = vb_board_camera_start(width, height, "rgb565");
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "camera %s preview start failed: %s", vb_board_camera_preview_mode_name(mode), esp_err_to_name(err));
+        return err;
+    }
+
+    err = vb_board_camera_take_display();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "camera %s preview display takeover failed: %s", vb_board_camera_preview_mode_name(mode), esp_err_to_name(err));
+        vb_board_camera_stop();
+        return err;
+    }
+
+    err = vb_board_camera_preview_probe_frame();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "camera %s preview probe failed: %s", vb_board_camera_preview_mode_name(mode), esp_err_to_name(err));
+        vb_board_camera_stop();
+        return err;
+    }
 
     s_camera_preview_stop_requested = false;
     BaseType_t created = xTaskCreatePinnedToCoreWithCaps(
@@ -616,14 +681,38 @@ esp_err_t vb_board_camera_preview_start(void)
     );
     if (created != pdPASS) {
         s_camera_preview_task = NULL;
+        vb_board_camera_stop();
         return ESP_ERR_NO_MEM;
     }
+    s_camera_preview_mode = mode;
+    s_camera_preview_width = width;
+    s_camera_preview_height = height;
+    ESP_LOGI(TAG, "camera preview mode: %s %ux%u", vb_board_camera_preview_mode_name(mode), width, height);
     return ESP_OK;
+}
+
+esp_err_t vb_board_camera_preview_start(void)
+{
+    if (s_camera_preview_task != NULL) {
+        return ESP_OK;
+    }
+
+    esp_err_t err = vb_board_camera_preview_start_mode(VB_CAMERA_PREVIEW_MODE_QVGA_DIRECT);
+    if (err == ESP_OK) {
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "camera qvga-direct preview unavailable, falling back to qqvga-scaled: %s", esp_err_to_name(err));
+    vb_board_camera_stop();
+    return vb_board_camera_preview_start_mode(VB_CAMERA_PREVIEW_MODE_QQVGA_SCALED);
 }
 
 void vb_board_camera_preview_stop(void)
 {
     if (s_camera_preview_task == NULL) {
+        s_camera_preview_mode = VB_CAMERA_PREVIEW_MODE_STOPPED;
+        s_camera_preview_width = 0;
+        s_camera_preview_height = 0;
         return;
     }
 
@@ -634,6 +723,17 @@ void vb_board_camera_preview_stop(void)
     if (s_camera_preview_task != NULL) {
         ESP_LOGW(TAG, "camera preview task did not stop before timeout");
     }
+}
+
+const char *vb_board_camera_preview_mode(uint16_t *width, uint16_t *height)
+{
+    if (width != NULL) {
+        *width = s_camera_preview_width;
+    }
+    if (height != NULL) {
+        *height = s_camera_preview_height;
+    }
+    return vb_board_camera_preview_mode_name(s_camera_preview_mode);
 }
 
 void vb_board_camera_return(vb_board_camera_frame_t *frame)

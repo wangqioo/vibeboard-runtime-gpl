@@ -164,9 +164,12 @@ static int camera_preview_start(lua_State *L)
         return push_error(L, state, err);
     }
 
+    uint16_t preview_width = 0;
+    uint16_t preview_height = 0;
+    (void)vb_board_camera_preview_mode(&preview_width, &preview_height);
     state->ready = true;
-    state->width = 320;
-    state->height = 240;
+    state->width = preview_width;
+    state->height = preview_height;
     strlcpy(state->format, "rgb565", sizeof(state->format));
     set_error(state, "");
     lua_pushboolean(L, true);
@@ -330,6 +333,15 @@ static int camera_status(lua_State *L)
     lua_setfield(L, -2, "height");
     lua_pushstring(L, state->format);
     lua_setfield(L, -2, "format");
+    uint16_t preview_width = 0;
+    uint16_t preview_height = 0;
+    const char *preview_mode = vb_board_camera_preview_mode(&preview_width, &preview_height);
+    lua_pushstring(L, preview_mode);
+    lua_setfield(L, -2, "preview_mode");
+    lua_pushinteger(L, preview_width);
+    lua_setfield(L, -2, "preview_width");
+    lua_pushinteger(L, preview_height);
+    lua_setfield(L, -2, "preview_height");
     return 1;
 }
 

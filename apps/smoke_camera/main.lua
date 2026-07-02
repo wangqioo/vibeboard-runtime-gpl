@@ -51,6 +51,9 @@ local metrics = {
   saved_bytes = 0,
   save_error = "",
   preview = false,
+  preview_mode = "",
+  preview_width = 0,
+  preview_height = 0,
   capture_error = "",
   preview_error = "",
   phase = "boot",
@@ -84,6 +87,9 @@ local function write_metrics(force)
     .. "\"saved_bytes\":" .. tostring(metrics.saved_bytes) .. ","
     .. "\"save_error\":\"" .. json_escape(metrics.save_error) .. "\","
     .. "\"preview\":" .. tostring(metrics.preview) .. ","
+    .. "\"preview_mode\":\"" .. json_escape(metrics.preview_mode) .. "\","
+    .. "\"preview_width\":" .. tostring(metrics.preview_width) .. ","
+    .. "\"preview_height\":" .. tostring(metrics.preview_height) .. ","
     .. "\"capture_error\":\"" .. json_escape(metrics.capture_error) .. "\","
     .. "\"preview_error\":\"" .. json_escape(metrics.preview_error) .. "\","
     .. "\"phase\":\"" .. json_escape(metrics.phase) .. "\""
@@ -111,6 +117,8 @@ local function render()
     "saved: " .. tostring(metrics.saved_frame),
     "save error: " .. tostring(metrics.save_error),
     "preview: " .. tostring(metrics.preview),
+    "preview mode: " .. tostring(metrics.preview_mode),
+    "preview size: " .. tostring(metrics.preview_width) .. "x" .. tostring(metrics.preview_height),
     "phase: " .. tostring(metrics.phase),
     "capture error: " .. tostring(metrics.capture_error),
     "preview error: " .. tostring(metrics.preview_error),
@@ -192,11 +200,23 @@ local function start_native_preview()
     return camera.preview_start()
   end)
   if preview_ok and preview_result then
+    local status = {}
+    if camera.status then
+      local status_ok, status_result = pcall(function()
+        return camera.status()
+      end)
+      if status_ok and type(status_result) == "table" then
+        status = status_result
+      end
+    end
     metrics.camera_ready = true
-    metrics.width = 320
-    metrics.height = 240
+    metrics.width = tonumber(status.preview_width or status.width) or 320
+    metrics.height = tonumber(status.preview_height or status.height) or 240
     metrics.format = "rgb565"
     metrics.preview = true
+    metrics.preview_mode = tostring(status.preview_mode or "")
+    metrics.preview_width = tonumber(status.preview_width) or metrics.width
+    metrics.preview_height = tonumber(status.preview_height) or metrics.height
     metrics.preview_error = ""
     metrics.phase = "previewing"
     preview_active = true

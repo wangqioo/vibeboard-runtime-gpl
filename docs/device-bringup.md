@@ -6491,3 +6491,40 @@ I board: camera preview task started
 The earlier `EV-VSYNC-OVF` and camera frame timeout logs were absent in the stabilization run. The
 user confirmed on the physical display that the live camera image was now normal. Current stable
 preview quality is 160x120 scaled to full screen; true QVGA preview clarity remains future work.
+
+## 2026-07-02 GC2145 QVGA preview clarity pass
+
+The camera preview was then upgraded from the stable QQVGA scaled path to a QVGA-first path. The
+Runtime still owns the camera and display takeover; Lua still calls `camera.preview_start()`. The
+board layer now tries `qvga-direct` 320x240 RGB565 first, captures and draws one probe frame before
+starting the continuous preview task, and only falls back to `qqvga-scaled` if QVGA initialization,
+the probe frame, or preview task creation fails.
+
+Local verification before flashing:
+
+```text
+node --test tools/firmware-static-check/test.mjs --test-name-pattern camera
+# 115 tests, 115 pass
+
+node tools/app-validator/cli.mjs apps/smoke_camera
+# ok apps/smoke_camera (smoke_camera)
+
+idf.py build
+# vibeboard_runtime.bin binary size 0x2252f0 bytes; 46% free in the 4 MB app partition
+```
+
+The firmware was flashed to the intended board:
+
+```text
+idf.py -p /dev/cu.usbmodem112301 flash
+# MAC: 10:51:db:80:e2:e8
+# Hash of data verified for bootloader, app, and partition table
+```
+
+After reboot, Runtime returned `state=idle,app_count=48,install=ok`. Launching `smoke_camera` returned
+`{"ok":true,"launched":"smoke_camera"}`, and `/status` then showed
+`state=running,current_app=smoke_camera,last_status=ESP_OK`.
+
+Physical result: the user confirmed the camera preview was clearer and had no visible problems:
+no flower screen, flashing, freeze, or instability. This closes the previous QVGA clarity follow-up;
+the QQVGA scaled path remains as fallback.

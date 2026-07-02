@@ -87,6 +87,12 @@ typedef struct {
     void *driver_frame;
 } vb_board_camera_frame_t;
 
+typedef enum {
+    VB_CAMERA_PREVIEW_MODE_STOPPED = 0,
+    VB_CAMERA_PREVIEW_MODE_QVGA_DIRECT,
+    VB_CAMERA_PREVIEW_MODE_QQVGA_SCALED,
+} vb_board_camera_preview_mode_t;
+
 esp_err_t vb_board_start(vb_board_status_t *status);
 esp_err_t vb_board_start_storage(vb_board_status_t *status);
 esp_err_t vb_board_start_display(vb_board_status_t *status);
@@ -103,6 +109,7 @@ esp_err_t vb_board_imu_read(vb_board_imu_sample_t *sample);
 esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *format);
 esp_err_t vb_board_camera_preview_start(void);
 void vb_board_camera_preview_stop(void);
+const char *vb_board_camera_preview_mode(uint16_t *width, uint16_t *height);
 esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame);
 esp_err_t vb_board_camera_draw(const vb_board_camera_frame_t *frame);
 void vb_board_camera_return(vb_board_camera_frame_t *frame);
