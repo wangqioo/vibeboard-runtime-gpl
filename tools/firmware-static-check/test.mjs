@@ -193,6 +193,12 @@ function functionBody(source, name) {
   return match[1];
 }
 
+function luaFunctionBody(source, name) {
+  const match = source.match(new RegExp(`local\\s+function\\s+${name}\\([^)]*\\)([\\s\\S]*?)\\nend`));
+  assert.ok(match, `${name} should exist`);
+  return match[1];
+}
+
 describe("vibeboard runtime firmware static guardrails", () => {
   it("keeps documented LCKFB display pins", () => {
     const header = readRequired(boardHeaderPath);
@@ -241,7 +247,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const allocator = readRequired(join(firmwareRoot, "main/lvgl_runtime_alloc.c"));
 
     assert.match(defaults, /CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=2048/);
-    assert.match(defaults, /CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=49152/);
+    assert.match(defaults, /CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536/);
     assert.match(defaults, /# CONFIG_FATFS_ALLOC_PREFER_EXTRAM is not set/);
     assert.match(defaults, /CONFIG_LV_MEM_CUSTOM_INCLUDE="lvgl_runtime_alloc\.h"/);
     assert.doesNotMatch(defaults, /CONFIG_LV_MEM_CUSTOM_INCLUDE="stdlib\.h"/);
@@ -1733,8 +1739,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(boardHeader, /vb_board_camera_preview_start/);
     assert.match(boardHeader, /vb_board_camera_preview_stop/);
     assert.match(boardHeader, /vb_board_camera_preview_mode/);
+    assert.match(boardHeader, /vb_board_camera_preview_start_low_memory/);
     assert.match(boardHeader, /vb_board_camera_capture/);
     assert.match(boardHeader, /vb_board_camera_draw/);
+    assert.match(boardHeader, /owns_buffer/);
+    assert.match(boardHeader, /vb_board_camera_reserve_internal_dma/);
+    assert.match(boardHeader, /vb_board_camera_release_internal_dma_reserve/);
     assert.match(boardHeader, /vb_board_camera_return/);
     assert.match(boardHeader, /vb_board_camera_stop/);
     assert.match(boardSource, /#include\s+"esp_camera\.h"/);
@@ -1754,13 +1764,35 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(boardSource, /esp_camera_fb_return/);
     assert.match(boardSource, /esp_camera_deinit/);
     assert.match(boardSource, /s_camera_preview_task/);
+    assert.match(boardSource, /s_camera_snapshot_requested/);
+    assert.match(boardSource, /s_camera_snapshot_ready/);
+    assert.match(boardSource, /s_camera_preview_stop_waiter/);
+    assert.match(boardSource, /s_camera_latest_frame_lock/);
+    assert.match(boardSource, /s_camera_latest_frame_buf/);
+    assert.match(boardSource, /s_camera_latest_frame_valid/);
+    assert.match(boardSource, /s_camera_dma_reserve/);
+    assert.match(boardSource, /heap_caps_malloc\(size,\s*MALLOC_CAP_DMA\s*\|\s*MALLOC_CAP_INTERNAL\)/);
+    assert.match(boardSource, /vb_board_camera_release_internal_dma_reserve\(\);/);
+    assert.match(boardSource, /vb_board_camera_clone_latest_frame/);
+    assert.match(boardSource, /vb_board_camera_store_latest_frame/);
+    assert.match(boardSource, /vb_board_camera_clear_latest_frame/);
+    assert.match(boardSource, /vb_board_camera_clone_latest_frame\(frame\)/);
+    assert.match(boardSource, /vb_board_camera_store_latest_frame\(fb\)/);
+    assert.match(boardSource, /for\s*\(int\s+i\s*=\s*0;\s*i\s*<\s*500\s*&&\s*s_camera_snapshot_requested;\s*i\+\+\)/);
+    assert.match(boardSource, /heap_caps_malloc\(len,\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
+    assert.match(boardSource, /heap_caps_malloc\(fb->len,\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
+    assert.match(boardSource, /\.owns_buffer\s*=\s*true/);
     assert.match(boardSource, /vb_board_camera_preview_task/);
     assert.match(boardSource, /VB_CAMERA_PREVIEW_MODE_QVGA_DIRECT/);
     assert.match(boardSource, /VB_CAMERA_PREVIEW_MODE_QQVGA_SCALED/);
     assert.match(boardSource, /xTaskCreatePinnedToCoreWithCaps/);
     assert.match(boardSource, /MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT/);
     assert.match(boardSource, /vb_board_camera_preview_start/);
+    assert.match(boardSource, /vb_board_camera_preview_start_low_memory/);
     assert.match(boardSource, /vb_board_camera_preview_stop/);
+    assert.match(boardSource, /ulTaskNotifyTake\(pdTRUE,\s*pdMS_TO_TICKS\(1000\)\)/);
+    assert.match(boardSource, /xTaskNotifyGive\(stop_waiter\)/);
+    assert.match(boardSource, /if\s*\(s_camera_preview_stop_requested\)\s*\{\s*esp_camera_fb_return\(fb\);\s*break;/);
     assert.match(boardSource, /vb_board_camera_preview_start_mode\(VB_CAMERA_PREVIEW_MODE_QVGA_DIRECT\)/);
     assert.match(boardSource, /vb_board_camera_preview_start_mode\(VB_CAMERA_PREVIEW_MODE_QQVGA_SCALED\)/);
     assert.match(boardSource, /qvga-direct/);
@@ -1777,7 +1809,17 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(boardSource, /vb_board_display_release_takeover\(\)/);
     assert.match(boardSource, /vb_board_lcd_wait_for_queued_color/);
     assert.match(boardSource, /s_camera_direct_draw_disabled/);
-    assert.match(boardSource, /if\s*\(!s_camera_direct_draw_disabled\s*&&\s*frame->width\s*==\s*VB_LCD_H_RES/);
+    assert.match(boardSource, /s_camera_overlay_enabled/);
+    assert.match(boardSource, /s_camera_overlay_dirty/);
+    assert.match(boardSource, /vb_board_camera_overlay_set/);
+    assert.match(boardSource, /vb_board_camera_draw_overlay/);
+    assert.match(boardSource, /if\s*\(!s_camera_overlay_dirty\)\s*\{\s*return\s+ESP_OK;\s*\}/);
+    assert.match(boardSource, /Shutter/);
+    assert.match(boardSource, /vb_board_camera_draw_overlay\(\)/);
+    assert.match(boardSource, /if\s*\(!s_camera_overlay_enabled\s*&&\s*!s_camera_direct_draw_disabled\s*&&\s*frame->width\s*==\s*VB_LCD_H_RES/);
+    assert.match(boardSource, /VB_LCD_V_RES\s*-\s*VB_CAMERA_OVERLAY_BAR_H/);
+    assert.match(boardSource, /draw_height/);
+    assert.match(boardSource, /draw_src_height/);
     assert.match(boardSource, /s_camera_direct_draw_disabled\s*=\s*true/);
     assert.match(boardSource, /vb_board_camera_draw_rgb565_scaled_2x/);
     assert.match(boardSource, /vb_board_camera_draw_rgb565_striped/);
@@ -1798,6 +1840,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cameraSource, /"start",\s*camera_start/);
     assert.match(cameraSource, /"capture",\s*camera_capture/);
     assert.match(cameraSource, /"clone",\s*camera_clone/);
+    assert.match(cameraSource, /"overlay",\s*camera_overlay/);
+    assert.match(cameraSource, /"preview_start_low",\s*camera_preview_start_low/);
+    assert.match(cameraSource, /static\s+bool\s+has_frame/);
+    assert.match(cameraSource, /if\s*\(!has_frame\(&state->held_frame\)\)/);
+    assert.doesNotMatch(cameraSource, /held_frame\.driver_frame\s*==\s*NULL\s*\|\|/);
     assert.match(cameraSource, /owned_frame_buf/);
     assert.match(cameraSource, /heap_caps_malloc\(state->held_frame\.len,\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
     assert.match(cameraSource, /"preview_start",\s*camera_preview_start/);
@@ -1822,6 +1869,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /vb_lua_camera_state_t\s+camera/);
     assert.match(runner, /app_has_capability\([^)]+"camera"/);
     assert.match(runner, /prewarm_camera_if_needed/);
+    assert.match(runner, /VB_CAMERA_APP_DMA_RESERVE_BYTES\s+8192/);
+    assert.match(runner, /if\s*\(strcmp\(entry->id,\s*"camera"\)\s*==\s*0\)\s*\{\s*vb_board_camera_reserve_internal_dma\(VB_CAMERA_APP_DMA_RESERVE_BYTES\);\s*return false;/);
     assert.match(runner, /starting camera preview before Lua task/);
     assert.match(runner, /vb_board_camera_preview_start\(\)/);
     assert.match(runner, /vb_webui_request_t/);
@@ -1878,11 +1927,14 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(info, /capabilities\s*=\s*lvgl,timer,input,file,camera,webui/);
     assert.match(source, /APP\.PHOTO_DIR\s*=\s*"photos"/);
     assert.match(source, /file\.mkdir\(APP\.PHOTO_DIR\)/);
-    assert.match(source, /camera\.preview_start\(\)/);
-    assert.match(source, /camera\.preview_stop\(\)/);
+    assert.match(source, /camera\.preview_start_low/);
+    assert.match(source, /camera\.preview_start/);
+    assert.match(source, /camera\.overlay\(true\)/);
+    assert.match(source, /camera\.stop\(\)/);
     assert.match(source, /camera\.capture\(\)/);
     assert.match(source, /camera\.clone\(frame\)/);
-    assert.match(source, /camera\.stop\(\)/);
+    assert.match(luaFunctionBody(source, "capture_photo"), /camera\.stop\(\)/);
+    assert.match(source, /camera\.overlay\(false\)/);
     assert.match(source, /camera\.save\(cloned,\s*path\)/);
     assert.match(source, /\.bmp/);
     assert.match(source, /camera\.release\(frame\)/);
@@ -1902,6 +1954,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /app\.route\("\/api",\s*dispatch_route\)/);
     assert.match(source, /app\.route\("\/capture",\s*dispatch_route\)/);
     assert.match(source, /\/apps\/file\?app=camera&path=photos\//);
+    assert.doesNotMatch(source, /if app and app\.exiting[\s\S]*stop_camera\(\)/);
     assert.match(source, /if APP\.pending_capture ~= "" and not APP\.capturing then/);
     assert.match(source, /capture_photo\(trigger\)/);
     assert.match(source, /metrics\.json/);

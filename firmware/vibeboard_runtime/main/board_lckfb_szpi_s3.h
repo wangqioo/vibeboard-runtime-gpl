@@ -85,6 +85,7 @@ typedef struct {
     const char *format;
     const void *buf;
     void *driver_frame;
+    bool owns_buffer;
 } vb_board_camera_frame_t;
 
 typedef enum {
@@ -108,8 +109,12 @@ bool vb_board_imu_available(void);
 esp_err_t vb_board_imu_read(vb_board_imu_sample_t *sample);
 esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *format);
 esp_err_t vb_board_camera_preview_start(void);
+esp_err_t vb_board_camera_preview_start_low_memory(void);
 void vb_board_camera_preview_stop(void);
 const char *vb_board_camera_preview_mode(uint16_t *width, uint16_t *height);
+void vb_board_camera_overlay_set(bool enabled);
+void vb_board_camera_reserve_internal_dma(size_t size);
+void vb_board_camera_release_internal_dma_reserve(void);
 esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame);
 esp_err_t vb_board_camera_draw(const vb_board_camera_frame_t *frame);
 void vb_board_camera_return(vb_board_camera_frame_t *frame);

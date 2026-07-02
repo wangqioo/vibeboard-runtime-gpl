@@ -1,6 +1,7 @@
 #include "lua_camera.h"
 
 #include <errno.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +31,18 @@ static void set_error(vb_lua_camera_state_t *state, const char *message)
     strlcpy(state->last_error, message != NULL ? message : "", sizeof(state->last_error));
 }
 
+static void set_save_error(char *dest, size_t dest_size, const char *format, ...)
+{
+    if (dest == NULL || dest_size == 0) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    vsnprintf(dest, dest_size, format, args);
+    va_end(args);
+}
+
 static void release_held_frame(vb_lua_camera_state_t *state)
 {
     if (state == NULL) {
@@ -48,6 +61,11 @@ static void release_owned_frame(vb_lua_camera_state_t *state)
     }
     memset(&state->owned_frame, 0, sizeof(state->owned_frame));
     state->owned_frame_buf = NULL;
+}
+
+static bool has_frame(const vb_board_camera_frame_t *frame)
+{
+    return frame != NULL && frame->buf != NULL && frame->len > 0 && frame->width > 0 && frame->height > 0;
 }
 
 static int push_error(lua_State *L, vb_lua_camera_state_t *state, esp_err_t err)
@@ -150,7 +168,7 @@ static int camera_draw(lua_State *L)
     if (state == NULL) {
         return luaL_error(L, "camera state unavailable");
     }
-    if (state->held_frame.driver_frame == NULL) {
+    if (!has_frame(&state->held_frame)) {
         lua_pushnil(L);
         lua_pushliteral(L, "no held frame");
         set_error(state, "no held frame");
@@ -170,7 +188,7 @@ static int camera_clone(lua_State *L)
     if (state == NULL) {
         return luaL_error(L, "camera state unavailable");
     }
-    if (state->held_frame.driver_frame == NULL || state->held_frame.buf == NULL || state->held_frame.len == 0) {
+    if (!has_frame(&state->held_frame)) {
         lua_pushnil(L);
         lua_pushliteral(L, "no held frame");
         set_error(state, "no held frame");
@@ -222,6 +240,32 @@ static int camera_preview_start(lua_State *L)
     return 1;
 }
 
+static int camera_preview_start_low(lua_State *L)
+{
+    vb_lua_camera_state_t *state = get_state(L);
+    if (state == NULL) {
+        return luaL_error(L, "camera state unavailable");
+    }
+
+    release_held_frame(state);
+    esp_err_t err = vb_board_camera_preview_start_low_memory();
+    if (err != ESP_OK) {
+        state->ready = false;
+        return push_error(L, state, err);
+    }
+
+    uint16_t preview_width = 0;
+    uint16_t preview_height = 0;
+    (void)vb_board_camera_preview_mode(&preview_width, &preview_height);
+    state->ready = true;
+    state->width = preview_width;
+    state->height = preview_height;
+    strlcpy(state->format, "rgb565", sizeof(state->format));
+    set_error(state, "");
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 static int camera_preview_stop(lua_State *L)
 {
     vb_lua_camera_state_t *state = get_state(L);
@@ -230,6 +274,18 @@ static int camera_preview_stop(lua_State *L)
     }
 
     vb_board_camera_preview_stop();
+    lua_pushboolean(L, true);
+    return 1;
+}
+
+static int camera_overlay(lua_State *L)
+{
+    vb_lua_camera_state_t *state = get_state(L);
+    if (state == NULL) {
+        return luaL_error(L, "camera state unavailable");
+    }
+    (void)state;
+    vb_board_camera_overlay_set(lua_toboolean(L, 1));
     lua_pushboolean(L, true);
     return 1;
 }
@@ -316,13 +372,20 @@ static void write_le32(uint8_t *dest, uint32_t value)
     dest[3] = (uint8_t)((value >> 24) & 0xff);
 }
 
-static bool camera_save_bmp_rgb565(FILE *file, const vb_board_camera_frame_t *frame, size_t *written_out)
+static bool camera_save_bmp_rgb565(FILE *file, const vb_board_camera_frame_t *frame, size_t *written_out, char *error, size_t error_size)
 {
     if (file == NULL || frame == NULL || frame->buf == NULL || written_out == NULL ||
         frame->width == 0 || frame->height == 0) {
+        set_save_error(error, error_size, "invalid frame");
         return false;
     }
-    if (frame->len < (size_t)frame->width * frame->height * sizeof(uint16_t)) {
+    size_t expected_len = (size_t)frame->width * frame->height * sizeof(uint16_t);
+    if (frame->len < expected_len) {
+        set_save_error(error, error_size, "short frame: %u x %u needs %u bytes, got %u",
+            frame->width,
+            frame->height,
+            (unsigned)expected_len,
+            (unsigned)frame->len);
         return false;
     }
 
@@ -348,11 +411,13 @@ static bool camera_save_bmp_rgb565(FILE *file, const vb_board_camera_frame_t *fr
     write_le32(&header[42], 2835);
 
     if (fwrite(header, 1, sizeof(header), file) != sizeof(header)) {
+        set_save_error(error, error_size, "bmp header write failed: %s", strerror(errno));
         return false;
     }
 
     uint8_t *row = (uint8_t *)malloc(bmp_row_stride);
     if (row == NULL) {
+        set_save_error(error, error_size, "bmp row malloc failed: %u bytes", (unsigned)bmp_row_stride);
         return false;
     }
 
@@ -370,6 +435,7 @@ static bool camera_save_bmp_rgb565(FILE *file, const vb_board_camera_frame_t *fr
             row[x * 3 + 2] = r;
         }
         if (fwrite(row, 1, bmp_row_stride, file) != bmp_row_stride) {
+            set_save_error(error, error_size, "bmp pixel write failed at row %ld: %s", (long)y, strerror(errno));
             free(row);
             return false;
         }
@@ -377,6 +443,7 @@ static bool camera_save_bmp_rgb565(FILE *file, const vb_board_camera_frame_t *fr
 
     free(row);
     *written_out = file_size;
+    set_save_error(error, error_size, "");
     return true;
 }
 
@@ -387,9 +454,9 @@ static int camera_save(lua_State *L)
         return luaL_error(L, "camera state unavailable");
     }
     const vb_board_camera_frame_t *frame = NULL;
-    if (state->owned_frame.buf != NULL && state->owned_frame.len > 0) {
+    if (has_frame(&state->owned_frame)) {
         frame = &state->owned_frame;
-    } else if (state->held_frame.driver_frame != NULL && state->held_frame.buf != NULL && state->held_frame.len > 0) {
+    } else if (has_frame(&state->held_frame)) {
         frame = &state->held_frame;
     }
     if (frame == NULL) {
@@ -433,17 +500,29 @@ static int camera_save(lua_State *L)
 
     size_t written = 0;
     bool write_ok = false;
+    char save_error[128] = {0};
     if (path_has_suffix_ci(path, ".bmp") && strcmp(frame->format, "rgb565") == 0) {
-        write_ok = camera_save_bmp_rgb565(file, frame, &written);
+        write_ok = camera_save_bmp_rgb565(file, frame, &written, save_error, sizeof(save_error));
     } else {
         written = fwrite(frame->buf, 1, frame->len, file);
         write_ok = written == frame->len;
+        if (!write_ok) {
+            set_save_error(save_error, sizeof(save_error), "raw write short: wrote %u of %u bytes: %s",
+                (unsigned)written,
+                (unsigned)frame->len,
+                strerror(errno));
+        }
     }
     int close_result = fclose(file);
     if (!write_ok || close_result != 0) {
+        if (close_result != 0) {
+            set_save_error(save_error, sizeof(save_error), "close failed: %s", strerror(errno));
+        } else if (save_error[0] == '\0') {
+            set_save_error(save_error, sizeof(save_error), "save failed");
+        }
         lua_pushnil(L);
-        lua_pushliteral(L, "short frame write");
-        set_error(state, "short frame write");
+        lua_pushstring(L, save_error);
+        set_error(state, save_error);
         return 2;
     }
 
@@ -472,7 +551,7 @@ static int camera_stop(lua_State *L)
         return luaL_error(L, "camera state unavailable");
     }
     release_held_frame(state);
-    vb_board_camera_preview_stop();
+    vb_board_camera_overlay_set(false);
     vb_board_camera_stop();
     state->ready = false;
     lua_pushboolean(L, true);
@@ -532,7 +611,9 @@ void vb_lua_camera_register(lua_State *L, vb_lua_camera_state_t *state)
         {"capture", camera_capture},
         {"clone", camera_clone},
         {"draw", camera_draw},
+        {"overlay", camera_overlay},
         {"preview_start", camera_preview_start},
+        {"preview_start_low", camera_preview_start_low},
         {"preview_stop", camera_preview_stop},
         {"save", camera_save},
         {"release", camera_release},

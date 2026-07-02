@@ -23,6 +23,7 @@
 #include "esp_vfs_fat.h"
 #include "esp_lvgl_port.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lua_key.h"
 #include "lvgl.h"
@@ -50,8 +51,23 @@ static bool s_imu_ready;
 static bool s_camera_ready;
 static bool s_camera_display_taken;
 static bool s_camera_direct_draw_disabled;
+static bool s_camera_overlay_enabled;
+static bool s_camera_overlay_dirty;
 static TaskHandle_t s_camera_preview_task;
+static TaskHandle_t s_camera_preview_stop_waiter;
 static volatile bool s_camera_preview_stop_requested;
+static volatile bool s_camera_snapshot_requested;
+static volatile bool s_camera_snapshot_ready;
+static esp_err_t s_camera_snapshot_error;
+static vb_board_camera_frame_t s_camera_snapshot_frame;
+static SemaphoreHandle_t s_camera_latest_frame_lock;
+static void *s_camera_latest_frame_buf;
+static size_t s_camera_latest_frame_capacity;
+static vb_board_camera_frame_t s_camera_latest_frame;
+static bool s_camera_latest_frame_valid;
+static uint32_t s_camera_preview_frame_count;
+static void *s_camera_dma_reserve;
+static size_t s_camera_dma_reserve_size;
 static vb_board_camera_preview_mode_t s_camera_preview_mode = VB_CAMERA_PREVIEW_MODE_STOPPED;
 static uint16_t s_camera_preview_width;
 static uint16_t s_camera_preview_height;
@@ -62,6 +78,9 @@ static void *input_user_data;
 static int board_now_ms(void);
 static esp_err_t vb_board_camera_take_display(void);
 static void vb_board_camera_preview_task(void *arg);
+static esp_err_t vb_board_camera_clone_latest_frame(vb_board_camera_frame_t *frame);
+static esp_err_t vb_board_camera_store_latest_frame(const camera_fb_t *fb);
+static void vb_board_camera_clear_latest_frame(void);
 
 #define VB_BOARD_INPUT_POLL_MS 20
 #define VB_BOARD_TOUCH_SWIPE_MIN_PX 28
@@ -78,6 +97,37 @@ static void vb_board_camera_preview_task(void *arg);
 #define VB_QMI8658_AX_L 0x35
 #define VB_QMI8658_RESET 0x60
 #define VB_LCD_CMD_NOP 0x00
+#define VB_CAMERA_OVERLAY_BAR_H 48
+#define VB_CAMERA_OVERLAY_BUTTON_W 124
+#define VB_CAMERA_OVERLAY_BUTTON_H 36
+#define VB_CAMERA_OVERLAY_SHUTTER_LABEL "Shutter"
+
+void vb_board_camera_reserve_internal_dma(size_t size)
+{
+    if (size == 0 || s_camera_dma_reserve != NULL) {
+        return;
+    }
+    s_camera_dma_reserve = heap_caps_malloc(size, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (s_camera_dma_reserve == NULL) {
+        ESP_LOGW(TAG, "camera DMA reserve %zu bytes failed; largest DMA block=%zu",
+                 size,
+                 heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
+        return;
+    }
+    s_camera_dma_reserve_size = size;
+    ESP_LOGI(TAG, "camera reserved %zu bytes of internal DMA memory", size);
+}
+
+void vb_board_camera_release_internal_dma_reserve(void)
+{
+    if (s_camera_dma_reserve == NULL) {
+        return;
+    }
+    heap_caps_free(s_camera_dma_reserve);
+    ESP_LOGI(TAG, "camera released %zu bytes of internal DMA reserve", s_camera_dma_reserve_size);
+    s_camera_dma_reserve = NULL;
+    s_camera_dma_reserve_size = 0;
+}
 
 static const char *vb_board_camera_preview_mode_name(vb_board_camera_preview_mode_t mode)
 {
@@ -349,6 +399,8 @@ esp_err_t vb_board_audio_prepare(bool want_rx, bool want_tx, uint32_t sample_rat
 
 esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *format)
 {
+    vb_board_camera_release_internal_dma_reserve();
+
     framesize_t frame_size = FRAMESIZE_QVGA;
     if (width == 160 && height == 120) {
         frame_size = FRAMESIZE_QQVGA;
@@ -425,7 +477,25 @@ esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame)
         return ESP_ERR_INVALID_STATE;
     }
     if (s_camera_preview_task != NULL) {
-        return ESP_ERR_INVALID_STATE;
+        esp_err_t latest_err = vb_board_camera_clone_latest_frame(frame);
+        if (latest_err == ESP_OK) {
+            return ESP_OK;
+        }
+        s_camera_snapshot_frame = (vb_board_camera_frame_t){0};
+        s_camera_snapshot_error = ESP_ERR_TIMEOUT;
+        s_camera_snapshot_ready = false;
+        s_camera_snapshot_requested = true;
+        for (int i = 0; i < 500 && s_camera_snapshot_requested; i++) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (!s_camera_snapshot_ready) {
+            s_camera_snapshot_requested = false;
+            return s_camera_snapshot_error;
+        }
+        *frame = s_camera_snapshot_frame;
+        s_camera_snapshot_frame = (vb_board_camera_frame_t){0};
+        s_camera_snapshot_ready = false;
+        return ESP_OK;
     }
 
     camera_fb_t *fb = esp_camera_fb_get();
@@ -439,6 +509,7 @@ esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame)
     frame->format = fb->format == PIXFORMAT_RGB565 ? "rgb565" : "unknown";
     frame->buf = fb->buf;
     frame->driver_frame = fb;
+    frame->owns_buffer = false;
     return ESP_OK;
 }
 
@@ -461,16 +532,132 @@ static esp_err_t vb_board_camera_take_display(void)
     return vb_board_lcd_wait_for_queued_color();
 }
 
+static esp_err_t vb_board_camera_clone_latest_frame(vb_board_camera_frame_t *frame)
+{
+    if (frame == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_camera_latest_frame_lock == NULL || s_camera_latest_frame_buf == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_camera_latest_frame_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    if (!s_camera_latest_frame_valid || s_camera_latest_frame.buf == NULL || s_camera_latest_frame.len == 0) {
+        xSemaphoreGive(s_camera_latest_frame_lock);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const size_t len = s_camera_latest_frame.len;
+    void *copy = heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (copy == NULL) {
+        copy = heap_caps_malloc(len, MALLOC_CAP_8BIT);
+    }
+    if (copy == NULL) {
+        xSemaphoreGive(s_camera_latest_frame_lock);
+        return ESP_ERR_NO_MEM;
+    }
+
+    memcpy(copy, s_camera_latest_frame.buf, len);
+    *frame = (vb_board_camera_frame_t){
+        .width = s_camera_latest_frame.width,
+        .height = s_camera_latest_frame.height,
+        .len = len,
+        .format = s_camera_latest_frame.format,
+        .buf = copy,
+        .driver_frame = NULL,
+        .owns_buffer = true,
+    };
+    xSemaphoreGive(s_camera_latest_frame_lock);
+    return ESP_OK;
+}
+
+static esp_err_t vb_board_camera_store_latest_frame(const camera_fb_t *fb)
+{
+    if (fb == NULL || fb->buf == NULL || fb->len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (s_camera_latest_frame_lock == NULL) {
+        s_camera_latest_frame_lock = xSemaphoreCreateMutex();
+        if (s_camera_latest_frame_lock == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    if (s_camera_latest_frame_capacity < fb->len) {
+        void *new_buf = heap_caps_malloc(fb->len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (new_buf == NULL) {
+            new_buf = heap_caps_malloc(fb->len, MALLOC_CAP_8BIT);
+        }
+        if (new_buf == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+        if (xSemaphoreTake(s_camera_latest_frame_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
+            heap_caps_free(new_buf);
+            return ESP_ERR_TIMEOUT;
+        }
+        if (s_camera_latest_frame_buf != NULL) {
+            heap_caps_free(s_camera_latest_frame_buf);
+        }
+        s_camera_latest_frame_buf = new_buf;
+        s_camera_latest_frame_capacity = fb->len;
+        xSemaphoreGive(s_camera_latest_frame_lock);
+    }
+
+    if (xSemaphoreTake(s_camera_latest_frame_lock, pdMS_TO_TICKS(50)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    memcpy(s_camera_latest_frame_buf, fb->buf, fb->len);
+    s_camera_latest_frame = (vb_board_camera_frame_t){
+        .width = (uint16_t)fb->width,
+        .height = (uint16_t)fb->height,
+        .len = fb->len,
+        .format = fb->format == PIXFORMAT_RGB565 ? "rgb565" : "unknown",
+        .buf = s_camera_latest_frame_buf,
+        .driver_frame = NULL,
+        .owns_buffer = false,
+    };
+    s_camera_latest_frame_valid = true;
+    xSemaphoreGive(s_camera_latest_frame_lock);
+    return ESP_OK;
+}
+
+static void vb_board_camera_clear_latest_frame(void)
+{
+    if (s_camera_latest_frame_lock != NULL) {
+        if (xSemaphoreTake(s_camera_latest_frame_lock, pdMS_TO_TICKS(100)) == pdTRUE) {
+            if (s_camera_latest_frame_buf != NULL) {
+                heap_caps_free(s_camera_latest_frame_buf);
+            }
+            s_camera_latest_frame_buf = NULL;
+            s_camera_latest_frame_capacity = 0;
+            s_camera_latest_frame = (vb_board_camera_frame_t){0};
+            s_camera_latest_frame_valid = false;
+            xSemaphoreGive(s_camera_latest_frame_lock);
+        }
+        return;
+    }
+    if (s_camera_latest_frame_buf != NULL) {
+        heap_caps_free(s_camera_latest_frame_buf);
+    }
+    s_camera_latest_frame_buf = NULL;
+    s_camera_latest_frame_capacity = 0;
+    s_camera_latest_frame = (vb_board_camera_frame_t){0};
+    s_camera_latest_frame_valid = false;
+}
+
 static esp_err_t vb_board_camera_draw_rgb565_scaled_2x(const vb_board_camera_frame_t *frame)
 {
     const uint16_t src_width = frame->width;
     const uint16_t src_height = frame->height;
+    const uint16_t draw_display_height = s_camera_overlay_enabled ? (VB_LCD_V_RES - VB_CAMERA_OVERLAY_BAR_H) : VB_LCD_V_RES;
+    const uint16_t draw_src_height = (uint16_t)(draw_display_height / 2);
 
     const uint16_t *src = (const uint16_t *)frame->buf;
     uint16_t *rows = s_camera_lcd_rows;
     const uint16_t src_rows_per_batch = VB_CAMERA_LCD_STRIPE_ROWS / 2;
 
-    for (uint16_t src_y = 0; src_y < src_height; src_y += src_rows_per_batch) {
+    for (uint16_t src_y = 0; src_y < src_height && src_y < draw_src_height; src_y += src_rows_per_batch) {
         if (src_y > 0) {
             esp_err_t wait_err = vb_board_lcd_wait_for_queued_color();
             if (wait_err != ESP_OK) {
@@ -481,6 +668,9 @@ static esp_err_t vb_board_camera_draw_rgb565_scaled_2x(const vb_board_camera_fra
         uint16_t batch_src_rows = src_rows_per_batch;
         if (src_y + batch_src_rows > src_height) {
             batch_src_rows = src_height - src_y;
+        }
+        if (src_y + batch_src_rows > draw_src_height) {
+            batch_src_rows = draw_src_height - src_y;
         }
 
         for (uint16_t batch_y = 0; batch_y < batch_src_rows; batch_y++) {
@@ -512,7 +702,7 @@ static esp_err_t vb_board_camera_draw_rgb565_scaled_2x(const vb_board_camera_fra
 
 static esp_err_t vb_board_camera_draw_rgb565_striped(const vb_board_camera_frame_t *frame)
 {
-    if (!s_camera_direct_draw_disabled && frame->width == VB_LCD_H_RES && frame->height == VB_LCD_V_RES) {
+    if (!s_camera_overlay_enabled && !s_camera_direct_draw_disabled && frame->width == VB_LCD_H_RES && frame->height == VB_LCD_V_RES) {
         esp_err_t direct_err = vb_board_draw_rgb565(0, 0, VB_LCD_H_RES, VB_LCD_V_RES, frame->buf);
         if (direct_err == ESP_OK) {
             return vb_board_lcd_wait_for_queued_color();
@@ -526,7 +716,8 @@ static esp_err_t vb_board_camera_draw_rgb565_striped(const vb_board_camera_frame
     const uint8_t *src = (const uint8_t *)frame->buf;
     uint16_t *rows = s_camera_lcd_rows;
     const size_t line_bytes = (size_t)VB_LCD_H_RES * sizeof(uint16_t);
-    for (uint16_t y = 0; y < VB_LCD_V_RES; y += stripe_rows) {
+    const uint16_t draw_height = s_camera_overlay_enabled ? (VB_LCD_V_RES - VB_CAMERA_OVERLAY_BAR_H) : VB_LCD_V_RES;
+    for (uint16_t y = 0; y < draw_height; y += stripe_rows) {
         if (y > 0) {
             esp_err_t wait_err = vb_board_lcd_wait_for_queued_color();
             if (wait_err != ESP_OK) {
@@ -534,7 +725,7 @@ static esp_err_t vb_board_camera_draw_rgb565_striped(const vb_board_camera_frame
             }
         }
 
-        const uint16_t stripe_height = (uint16_t)((VB_LCD_V_RES - y) < stripe_rows ? (VB_LCD_V_RES - y) : stripe_rows);
+        const uint16_t stripe_height = (uint16_t)((draw_height - y) < stripe_rows ? (draw_height - y) : stripe_rows);
         memcpy(rows, src + ((size_t)y * line_bytes), line_bytes * stripe_height);
         esp_err_t err = vb_board_draw_rgb565(0, y, VB_LCD_H_RES, stripe_height, rows);
         if (err != ESP_OK) {
@@ -549,6 +740,102 @@ static esp_err_t vb_board_camera_draw_rgb565_striped(const vb_board_camera_frame
     return ESP_OK;
 }
 
+void vb_board_camera_overlay_set(bool enabled)
+{
+    if (enabled) {
+        s_camera_overlay_dirty = true;
+    } else {
+        s_camera_overlay_dirty = false;
+    }
+    s_camera_overlay_enabled = enabled;
+}
+
+static esp_err_t vb_board_camera_draw_overlay_rect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color)
+{
+    if (width == 0 || height == 0) {
+        return ESP_OK;
+    }
+    if ((uint32_t)width * VB_CAMERA_LCD_STRIPE_ROWS > (uint32_t)(VB_LCD_H_RES * VB_CAMERA_LCD_STRIPE_ROWS)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    uint16_t *rows = s_camera_lcd_rows;
+    for (uint16_t row = 0; row < height; row += VB_CAMERA_LCD_STRIPE_ROWS) {
+        const uint16_t stripe_height = (uint16_t)((height - row) < VB_CAMERA_LCD_STRIPE_ROWS ? (height - row) : VB_CAMERA_LCD_STRIPE_ROWS);
+        for (size_t i = 0; i < (size_t)width * stripe_height; i++) {
+            rows[i] = color;
+        }
+        if (row > 0) {
+            ESP_RETURN_ON_ERROR(vb_board_lcd_wait_for_queued_color(), TAG, "camera overlay wait failed");
+        }
+        ESP_RETURN_ON_ERROR(vb_board_draw_rgb565(x, y + row, width, stripe_height, rows), TAG, "camera overlay draw failed");
+    }
+    return vb_board_lcd_wait_for_queued_color();
+}
+
+static esp_err_t vb_board_camera_draw_shutter_button(uint16_t x, uint16_t y)
+{
+    const uint16_t border = 0xffff;
+    const uint16_t fill = 0x0861;
+    const uint16_t accent = 0x07ff;
+    const int center_x = VB_CAMERA_OVERLAY_BUTTON_W / 2;
+    const int center_y = VB_CAMERA_OVERLAY_BUTTON_H / 2;
+    const int outer_r = 12;
+    const int inner_r = 7;
+    uint16_t *rows = s_camera_lcd_rows;
+
+    for (uint16_t row = 0; row < VB_CAMERA_OVERLAY_BUTTON_H; row += VB_CAMERA_LCD_STRIPE_ROWS) {
+        const uint16_t stripe_height = (uint16_t)((VB_CAMERA_OVERLAY_BUTTON_H - row) < VB_CAMERA_LCD_STRIPE_ROWS
+            ? (VB_CAMERA_OVERLAY_BUTTON_H - row)
+            : VB_CAMERA_LCD_STRIPE_ROWS);
+        for (uint16_t local_y = 0; local_y < stripe_height; local_y++) {
+            const uint16_t button_y = row + local_y;
+            for (uint16_t button_x = 0; button_x < VB_CAMERA_OVERLAY_BUTTON_W; button_x++) {
+                uint16_t color = fill;
+                if (button_x < 2 || button_y < 2 || button_x >= VB_CAMERA_OVERLAY_BUTTON_W - 2 || button_y >= VB_CAMERA_OVERLAY_BUTTON_H - 2) {
+                    color = border;
+                }
+
+                int dx = (int)button_x - center_x;
+                int dy = (int)button_y - center_y;
+                int d2 = (dx * dx) + (dy * dy);
+                if (d2 <= outer_r * outer_r && d2 >= inner_r * inner_r) {
+                    color = border;
+                } else if (d2 < inner_r * inner_r) {
+                    color = accent;
+                }
+                rows[(local_y * VB_CAMERA_OVERLAY_BUTTON_W) + button_x] = color;
+            }
+        }
+        if (row > 0) {
+            ESP_RETURN_ON_ERROR(vb_board_lcd_wait_for_queued_color(), TAG, "camera shutter wait failed");
+        }
+        ESP_RETURN_ON_ERROR(vb_board_draw_rgb565(x, y + row, VB_CAMERA_OVERLAY_BUTTON_W, stripe_height, rows), TAG, "camera shutter draw failed");
+    }
+    return vb_board_lcd_wait_for_queued_color();
+}
+
+static esp_err_t vb_board_camera_draw_overlay(void)
+{
+    if (!s_camera_overlay_enabled) {
+        return ESP_OK;
+    }
+    if (!s_camera_overlay_dirty) {
+        return ESP_OK;
+    }
+
+    const char *label = VB_CAMERA_OVERLAY_SHUTTER_LABEL;
+    (void)label;
+    const uint16_t bar_y = VB_LCD_V_RES - VB_CAMERA_OVERLAY_BAR_H;
+    const uint16_t button_x = (VB_LCD_H_RES - VB_CAMERA_OVERLAY_BUTTON_W) / 2;
+    const uint16_t button_y = bar_y + ((VB_CAMERA_OVERLAY_BAR_H - VB_CAMERA_OVERLAY_BUTTON_H) / 2);
+
+    ESP_RETURN_ON_ERROR(vb_board_camera_draw_overlay_rect(0, bar_y, VB_LCD_H_RES, VB_CAMERA_OVERLAY_BAR_H, 0x0020), TAG, "camera overlay bar failed");
+    ESP_RETURN_ON_ERROR(vb_board_camera_draw_shutter_button(button_x, button_y), TAG, "camera shutter failed");
+    s_camera_overlay_dirty = false;
+    return ESP_OK;
+}
+
 esp_err_t vb_board_camera_draw(const vb_board_camera_frame_t *frame)
 {
     if (frame == NULL || frame->buf == NULL) {
@@ -560,13 +847,16 @@ esp_err_t vb_board_camera_draw(const vb_board_camera_frame_t *frame)
 
     ESP_RETURN_ON_ERROR(vb_board_camera_take_display(), TAG, "camera display takeover failed");
 
+    esp_err_t err = ESP_ERR_NOT_SUPPORTED;
     if (frame->width == VB_LCD_H_RES / 2 && frame->height == VB_LCD_V_RES / 2) {
-        return vb_board_camera_draw_rgb565_scaled_2x(frame);
+        err = vb_board_camera_draw_rgb565_scaled_2x(frame);
+    } else if (frame->width == VB_LCD_H_RES && frame->height == VB_LCD_V_RES) {
+        err = vb_board_camera_draw_rgb565_striped(frame);
     }
-    if (frame->width == VB_LCD_H_RES && frame->height == VB_LCD_V_RES) {
-        return vb_board_camera_draw_rgb565_striped(frame);
+    if (err != ESP_OK) {
+        return err;
     }
-    return ESP_ERR_NOT_SUPPORTED;
+    return vb_board_camera_draw_overlay();
 }
 
 static esp_err_t vb_board_camera_preview_probe_frame(void)
@@ -604,6 +894,10 @@ static void vb_board_camera_preview_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
+        if (s_camera_preview_stop_requested) {
+            esp_camera_fb_return(fb);
+            break;
+        }
 
         vb_board_camera_frame_t frame = {
             .width = (uint16_t)fb->width,
@@ -613,6 +907,23 @@ static void vb_board_camera_preview_task(void *arg)
             .buf = fb->buf,
             .driver_frame = fb,
         };
+        s_camera_preview_frame_count++;
+        if (s_camera_snapshot_requested || !s_camera_latest_frame_valid || (s_camera_preview_frame_count % 5) == 0) {
+            esp_err_t cache_err = vb_board_camera_store_latest_frame(fb);
+            if (cache_err != ESP_OK && (failure_count++ % 30) == 0) {
+                ESP_LOGW(TAG, "camera latest frame cache failed: %s", esp_err_to_name(cache_err));
+            }
+        }
+        if (s_camera_snapshot_requested) {
+            if (vb_board_camera_clone_latest_frame(&s_camera_snapshot_frame) == ESP_OK) {
+                s_camera_snapshot_error = ESP_OK;
+                s_camera_snapshot_ready = true;
+            } else {
+                s_camera_snapshot_error = ESP_ERR_INVALID_STATE;
+                s_camera_snapshot_ready = false;
+            }
+            s_camera_snapshot_requested = false;
+        }
         esp_err_t err = vb_board_camera_draw(&frame);
         esp_camera_fb_return(fb);
 
@@ -627,11 +938,18 @@ static void vb_board_camera_preview_task(void *arg)
     }
 
     ESP_LOGI(TAG, "camera preview task stopped");
+    TaskHandle_t stop_waiter = s_camera_preview_stop_waiter;
     s_camera_preview_task = NULL;
     s_camera_preview_stop_requested = false;
+    s_camera_preview_stop_waiter = NULL;
     s_camera_preview_mode = VB_CAMERA_PREVIEW_MODE_STOPPED;
     s_camera_preview_width = 0;
     s_camera_preview_height = 0;
+    s_camera_snapshot_requested = false;
+    s_camera_preview_frame_count = 0;
+    if (stop_waiter != NULL) {
+        xTaskNotifyGive(stop_waiter);
+    }
     vTaskDelete(NULL);
 }
 
@@ -710,8 +1028,18 @@ esp_err_t vb_board_camera_preview_start(void)
     return vb_board_camera_preview_start_mode(VB_CAMERA_PREVIEW_MODE_QQVGA_SCALED);
 }
 
+esp_err_t vb_board_camera_preview_start_low_memory(void)
+{
+    if (s_camera_preview_task != NULL) {
+        return ESP_OK;
+    }
+    return vb_board_camera_preview_start_mode(VB_CAMERA_PREVIEW_MODE_QQVGA_SCALED);
+}
+
 void vb_board_camera_preview_stop(void)
 {
+    s_camera_overlay_enabled = false;
+    s_camera_overlay_dirty = false;
     if (s_camera_preview_task == NULL) {
         s_camera_preview_mode = VB_CAMERA_PREVIEW_MODE_STOPPED;
         s_camera_preview_width = 0;
@@ -720,12 +1048,12 @@ void vb_board_camera_preview_stop(void)
         return;
     }
 
+    s_camera_preview_stop_waiter = xTaskGetCurrentTaskHandle();
     s_camera_preview_stop_requested = true;
-    for (int i = 0; i < 50 && s_camera_preview_task != NULL; i++) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
+    uint32_t notified = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
     if (s_camera_preview_task != NULL) {
-        ESP_LOGW(TAG, "camera preview task did not stop before timeout");
+        ESP_LOGW(TAG, "camera preview task did not stop before timeout notified=%" PRIu32, notified);
+        s_camera_preview_stop_waiter = NULL;
     }
 }
 
@@ -742,17 +1070,26 @@ const char *vb_board_camera_preview_mode(uint16_t *width, uint16_t *height)
 
 void vb_board_camera_return(vb_board_camera_frame_t *frame)
 {
-    if (frame == NULL || frame->driver_frame == NULL) {
+    if (frame == NULL) {
         return;
     }
-    esp_camera_fb_return((camera_fb_t *)frame->driver_frame);
+    if (frame->owns_buffer && frame->buf != NULL) {
+        heap_caps_free((void *)frame->buf);
+    } else if (frame->driver_frame != NULL) {
+        esp_camera_fb_return((camera_fb_t *)frame->driver_frame);
+    }
     memset(frame, 0, sizeof(*frame));
 }
 
 void vb_board_camera_stop(void)
 {
     vb_board_camera_preview_stop();
+    s_camera_overlay_enabled = false;
+    s_camera_overlay_dirty = false;
+    s_camera_snapshot_requested = false;
     s_camera_direct_draw_disabled = false;
+    vb_board_camera_release_internal_dma_reserve();
+    vb_board_camera_clear_latest_frame();
 
     if (s_camera_ready) {
         esp_camera_deinit();

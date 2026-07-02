@@ -91,6 +91,12 @@ local function refresh_preview_status()
   APP.preview_height = tonumber(status.preview_height or status.height) or 0
 end
 
+local function set_overlay(enabled)
+  if camera and type(camera.overlay) == "function" then
+    pcall(function() camera.overlay(enabled) end)
+  end
+end
+
 local function build_ui()
   if not lv_scr_act or not lv_label_create then
     return
@@ -150,30 +156,39 @@ local function photo_url(name)
 end
 
 local function start_preview()
-  if not camera or type(camera.preview_start) ~= "function" then
+  local previous_error = APP.last_error
+  local start_fn = camera and (camera.preview_start_low or camera.preview_start)
+  if not camera or type(start_fn) ~= "function" then
     APP.preview = false
     APP.last_error = "camera.preview_start unavailable"
+    set_overlay(false)
+    build_ui()
     set_status(APP.last_error)
     return false
   end
-  local ok_preview, preview_result, preview_err = pcall(function() return camera.preview_start() end)
+  local ok_preview, preview_result, preview_err = pcall(function() return start_fn() end)
   if ok_preview and preview_result then
     APP.preview = true
-    APP.last_error = ""
+    APP.last_error = previous_error
     refresh_preview_status()
+    if camera and type(camera.overlay) == "function" then
+      pcall(function() camera.overlay(true) end)
+    end
     set_status("preview " .. APP.preview_mode)
     return true
   end
   APP.preview = false
   APP.last_error = text(preview_err or preview_result or "preview failed")
+  set_overlay(false)
+  build_ui()
   set_status(APP.last_error)
   return false
 end
 
 local function stop_camera()
   APP.preview = false
-  if camera and camera.preview_stop then
-    pcall(function() camera.preview_stop() end)
+  if camera and type(camera.overlay) == "function" then
+    pcall(function() camera.overlay(false) end)
   end
   if camera and camera.stop then
     pcall(function() camera.stop() end)
@@ -196,11 +211,6 @@ local function capture_photo(trigger)
   APP.last_trigger = text(trigger)
   APP.last_error = ""
   set_status("capturing")
-
-  if camera.preview_stop then
-    pcall(function() camera.preview_stop() end)
-  end
-  APP.preview = false
 
   local frame, capture_err = camera.capture()
   if not frame then
@@ -225,29 +235,41 @@ local function capture_photo(trigger)
     cloned = clone_result
   end
   camera.release(frame)
-  if camera.stop then
+
+  local paused_preview = APP.preview
+  if paused_preview and camera.stop then
+    set_overlay(false)
+    print("[camera] stopping preview for save")
     pcall(function() camera.stop() end)
+    print("[camera] stopped preview for save")
+    APP.preview = false
   end
 
   local filename = string.format("capture_%06d.bmp", APP.next_index)
   local path = APP.PHOTO_DIR .. "/" .. filename
-  local save_ok, save_result, save_bytes = pcall(function()
+  print("[camera] saving " .. path)
+  local save_ok, save_result, save_detail = pcall(function()
     return camera.save(cloned, path)
   end)
+  print("[camera] save returned")
 
   if save_ok and save_result then
     APP.captures = APP.captures + 1
     APP.next_index = APP.next_index + 1
     APP.last_photo = filename
-    APP.last_bytes = tonumber(save_bytes) or 0
+    APP.last_bytes = tonumber(save_detail) or 0
     APP.last_error = ""
     set_status("saved " .. filename)
   else
-    APP.last_error = text(save_result or "save failed")
+    APP.last_error = text(save_detail or save_result or "save failed")
     set_status(APP.last_error)
   end
 
-  start_preview()
+  if paused_preview or not APP.preview then
+    print("[camera] restarting preview")
+    start_preview()
+    print("[camera] restarted preview")
+  end
   APP.capturing = false
   write_metrics()
   return save_ok and save_result and true or false
@@ -384,7 +406,6 @@ if file and file.mkdir then
   pcall(function() file.mkdir(APP.PHOTO_DIR) end)
 end
 list_photos()
-build_ui()
 register_webui()
 register_input()
 write_metrics()
@@ -393,11 +414,8 @@ start_preview()
 local watchdog = tmr.create()
 watchdog:alarm(500, tmr.ALARM_AUTO, function()
   if app and app.exiting and app.exiting() then
-    APP.running = false
-    stop_camera()
-    if key and key.off then pcall(function() key.off(key.HOME) end) end
-    if app and app.set_home_exit then pcall(function() app.set_home_exit(true) end) end
     watchdog:stop()
+    exit_app()
     return
   end
 
