@@ -1952,6 +1952,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(luaFunctionBody(source, "capture_photo"), /camera\.stop\(\)/);
     assert.match(source, /camera\.overlay\(false\)/);
     assert.match(source, /camera\.save\(cloned,\s*path\)/);
+    assert.match(source, /camera\.release_clone\(cloned\)/);
     assert.match(source, /\.bmp/);
     assert.match(source, /camera\.release\(frame\)/);
     assert.match(source, /camera\.stop\(\)/);

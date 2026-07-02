@@ -252,6 +252,9 @@ local function capture_photo(trigger)
     return camera.save(cloned, path)
   end)
   print("[camera] save returned")
+  if camera.release_clone then
+    pcall(function() camera.release_clone(cloned) end)
+  end
 
   if save_ok and save_result then
     APP.captures = APP.captures + 1

@@ -544,6 +544,18 @@ static int camera_release(lua_State *L)
     return 1;
 }
 
+static int camera_release_clone(lua_State *L)
+{
+    vb_lua_camera_state_t *state = get_state(L);
+    if (state == NULL) {
+        return luaL_error(L, "camera state unavailable");
+    }
+    (void)L;
+    release_owned_frame(state);
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 static int camera_stop(lua_State *L)
 {
     vb_lua_camera_state_t *state = get_state(L);
@@ -617,6 +629,7 @@ void vb_lua_camera_register(lua_State *L, vb_lua_camera_state_t *state)
         {"preview_stop", camera_preview_stop},
         {"save", camera_save},
         {"release", camera_release},
+        {"release_clone", camera_release_clone},
         {"stop", camera_stop},
         {"status", camera_status},
         {NULL, NULL},
