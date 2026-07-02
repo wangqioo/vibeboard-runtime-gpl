@@ -4,3 +4,4 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(vibeboard_runtime)
 
 include("${CMAKE_CURRENT_LIST_DIR}/cmake/patch_esp32_camera_runtime.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/patch_lvgl_bmp_runtime.cmake")

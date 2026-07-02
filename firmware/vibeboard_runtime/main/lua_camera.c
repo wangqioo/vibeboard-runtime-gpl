@@ -11,6 +11,7 @@
 #include "esp_err.h"
 #include "esp_heap_caps.h"
 #include "lauxlib.h"
+#include "lvgl.h"
 
 #define VB_LUA_CAMERA_STATE_REGISTRY_KEY "vb_camera_state"
 #define VB_LUA_FILE_APP_DIR_REGISTRY_KEY "vb_file_app_dir"
@@ -470,9 +471,10 @@ static bool camera_save_bmp_rgb565(FILE *file, const vb_board_camera_frame_t *fr
         const uint16_t *src = pixels + ((size_t)y * width);
         for (uint32_t x = 0; x < width; x++) {
             uint16_t pixel = src[x];
-            uint8_t r = (uint8_t)((((pixel >> 11) & 0x1f) * 255) / 31);
-            uint8_t g = (uint8_t)((((pixel >> 5) & 0x3f) * 255) / 63);
-            uint8_t b = (uint8_t)(((pixel & 0x1f) * 255) / 31);
+            lv_color_t color = { .full = pixel };
+            uint8_t r = (uint8_t)((LV_COLOR_GET_R(color) * 255) / 31);
+            uint8_t g = (uint8_t)((LV_COLOR_GET_G(color) * 255) / 63);
+            uint8_t b = (uint8_t)((LV_COLOR_GET_B(color) * 255) / 31);
             row[x * 3] = b;
             row[x * 3 + 1] = g;
             row[x * 3 + 2] = r;

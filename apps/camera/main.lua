@@ -12,7 +12,19 @@ APP = {
   SHUTTER_HIT_Y = 192,
   SHUTTER_HIT_W = 104,
   SHUTTER_HIT_H = 48,
+  GALLERY_THUMB_HIT_X = 0,
+  GALLERY_THUMB_HIT_Y = 192,
+  GALLERY_THUMB_HIT_W = 78,
+  GALLERY_THUMB_HIT_H = 48,
+  GALLERY_BACK_HIT_X = 108,
+  GALLERY_BACK_HIT_Y = 192,
+  GALLERY_BACK_HIT_W = 104,
+  GALLERY_BACK_HIT_H = 48,
+  CAMERA_PHOTO_W = 160,
+  CAMERA_PHOTO_H = 120,
   MAX_WEB_PHOTOS = 3,
+  mode = "camera",
+  gallery_index = 1,
   captures = 0,
   next_index = 1,
   running = true,
@@ -106,6 +118,27 @@ local function set_status(message)
   write_metrics()
 end
 
+local function set_label(obj, value)
+  if obj and lv_label_set_text then
+    pcall(function() lv_label_set_text(obj, text(value)) end)
+  end
+end
+
+local function style_text(obj, color)
+  if not obj then return end
+  if lv_obj_set_style_text_color then
+    pcall(function() lv_obj_set_style_text_color(obj, color, 0) end)
+  end
+end
+
+local function style_panel(obj, color)
+  if not obj then return end
+  if lv_obj_set_style_bg_color then pcall(function() lv_obj_set_style_bg_color(obj, color, 0) end) end
+  if lv_obj_set_style_bg_opa then pcall(function() lv_obj_set_style_bg_opa(obj, 255, 0) end) end
+  if lv_obj_set_style_border_width then pcall(function() lv_obj_set_style_border_width(obj, 0, 0) end) end
+  if lv_obj_set_style_pad_all then pcall(function() lv_obj_set_style_pad_all(obj, 0, 0) end) end
+end
+
 local function refresh_preview_status()
   if not camera or not camera.status then
     return
@@ -152,6 +185,18 @@ local function build_ui()
   lv_obj_align(APP.ui.footer, LV_ALIGN_BOTTOM_LEFT, 5, -10)
 end
 
+local function clear_lvgl_for_camera_preview()
+  if not lv_scr_act or not lv_obj_clean then
+    return
+  end
+  local root = lv_scr_act()
+  lv_obj_clean(root)
+  if lv_obj_clear_flag and LV_OBJ_FLAG_SCROLLABLE then
+    lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE)
+  end
+  APP.ui = {}
+end
+
 local function list_photos()
   local result = {}
   if APP.preview then
@@ -181,6 +226,14 @@ local function list_photos()
   table.sort(result, function(a, b) return (a.index or 0) > (b.index or 0) end)
   APP.photos = result
   return result
+end
+
+local function refresh_photos_for_gallery()
+  local was_preview = APP.preview
+  APP.preview = false
+  local photos = list_photos()
+  APP.preview = was_preview
+  return photos
 end
 
 local function remember_photo(name, size)
@@ -215,6 +268,26 @@ local function photo_url(name)
   return "/sd/file?path=data/camera/photos/" .. name
 end
 
+local function gallery_photo_src(name)
+  return "S:/data/camera/photos/" .. name
+end
+
+local function try_start_preview()
+  local start_fn = camera and (camera.preview_start_low or camera.preview_start)
+  if not camera or type(start_fn) ~= "function" then
+    return false, nil, "camera.preview_start unavailable"
+  end
+  return pcall(function() return start_fn() end)
+end
+
+local function wrap_gallery_index(index)
+  local count = #APP.photos
+  if count <= 0 then return 0 end
+  while index < 1 do index = index + count end
+  while index > count do index = index - count end
+  return index
+end
+
 local function photos_json(photos)
   local parts = {}
   for _, photo in ipairs(photos) do
@@ -229,19 +302,11 @@ end
 
 local function start_preview()
   local previous_error = APP.last_error
-  local start_fn = camera and (camera.preview_start_low or camera.preview_start)
-  if not camera or type(start_fn) ~= "function" then
-    APP.preview = false
-    APP.last_error = "camera.preview_start unavailable"
-    set_overlay(false)
-    build_ui()
-    set_status(APP.last_error)
-    return false
-  end
-  local ok_preview, preview_result, preview_err = pcall(function() return start_fn() end)
+  local ok_preview, preview_result, preview_err = try_start_preview()
   if ok_preview and preview_result then
     APP.preview = true
     APP.last_error = previous_error
+    clear_lvgl_for_camera_preview()
     refresh_preview_status()
     if camera and type(camera.overlay) == "function" then
       pcall(function() camera.overlay(true) end)
@@ -266,6 +331,117 @@ local function stop_camera()
     pcall(function() camera.stop() end)
   end
   refresh_preview_status()
+  write_metrics()
+end
+
+local function current_gallery_photo()
+  if #APP.photos == 0 then return nil end
+  APP.gallery_index = wrap_gallery_index(APP.gallery_index)
+  return APP.photos[APP.gallery_index]
+end
+
+local function draw_gallery_current()
+  local photo = current_gallery_photo()
+  if not photo then
+    set_label(APP.ui.gallery_title, "No photos")
+    set_label(APP.ui.gallery_info, "Take a photo first")
+    if APP.ui.gallery_image and lv_img_set_src then
+      pcall(function() lv_img_set_src(APP.ui.gallery_image, "") end)
+    end
+    return
+  end
+
+  local name = photo.name
+  set_label(APP.ui.gallery_title, tostring(APP.gallery_index) .. "/" .. tostring(#APP.photos))
+  set_label(APP.ui.gallery_info, name)
+  if APP.ui.gallery_image and lv_img_set_src then
+    pcall(function() lv_img_set_src(APP.ui.gallery_image, gallery_photo_src(name)) end)
+  end
+end
+
+local function center_gallery_image()
+  if not APP.ui.gallery_image then return end
+  local x = math.floor((320 - APP.CAMERA_PHOTO_W) / 2)
+  local y = math.floor((192 - APP.CAMERA_PHOTO_H) / 2)
+  lv_obj_set_pos(APP.ui.gallery_image, x, y)
+  lv_obj_set_size(APP.ui.gallery_image, APP.CAMERA_PHOTO_W, APP.CAMERA_PHOTO_H)
+end
+
+local function show_gallery()
+  if APP.mode == "gallery" then
+    return
+  end
+  APP.mode = "gallery"
+  stop_camera()
+  local photos = refresh_photos_for_gallery()
+  if APP.last_photo ~= "" then
+    for index, photo in ipairs(photos) do
+      if photo.name == APP.last_photo then
+        APP.gallery_index = index
+        break
+      end
+    end
+  else
+    APP.gallery_index = 1
+  end
+
+  local root = lv_scr_act()
+  lv_obj_clean(root)
+  lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE)
+  style_panel(root, 0x030712)
+
+  APP.ui.gallery_image = lv_img_create(root)
+  if APP.ui.gallery_image and APP.ui.gallery_image ~= 0 then
+    center_gallery_image()
+    if lv_img_set_antialias then
+      pcall(function() lv_img_set_antialias(APP.ui.gallery_image, false) end)
+    end
+  end
+
+  APP.ui.gallery_bar = lv_obj_create(root)
+  lv_obj_set_pos(APP.ui.gallery_bar, 0, 192)
+  lv_obj_set_size(APP.ui.gallery_bar, 320, 48)
+  style_panel(APP.ui.gallery_bar, 0x000000)
+
+  APP.ui.gallery_title = lv_label_create(root)
+  lv_obj_set_pos(APP.ui.gallery_title, 12, 198)
+  lv_obj_set_width(APP.ui.gallery_title, 96)
+  style_text(APP.ui.gallery_title, 0xf8fafc)
+
+  APP.ui.gallery_info = lv_label_create(root)
+  lv_obj_set_pos(APP.ui.gallery_info, 108, 198)
+  lv_obj_set_width(APP.ui.gallery_info, 200)
+  style_text(APP.ui.gallery_info, 0xcbd5e1)
+
+  APP.ui.gallery_help = lv_label_create(root)
+  lv_label_set_text(APP.ui.gallery_help, "<  tap sides  >   center/HOME back")
+  lv_obj_set_pos(APP.ui.gallery_help, 12, 220)
+  lv_obj_set_width(APP.ui.gallery_help, 296)
+  style_text(APP.ui.gallery_help, 0x7dd3fc)
+
+  draw_gallery_current()
+  write_metrics()
+end
+
+local function leave_gallery()
+  if APP.mode ~= "gallery" then
+    return
+  end
+  APP.mode = "camera"
+  APP.ui = {}
+  start_preview()
+end
+
+local function move_gallery(delta)
+  if APP.mode ~= "gallery" then
+    return
+  end
+  if #APP.photos == 0 then
+    draw_gallery_current()
+    return
+  end
+  APP.gallery_index = wrap_gallery_index(APP.gallery_index + delta)
+  draw_gallery_current()
   write_metrics()
 end
 
@@ -367,6 +543,24 @@ local function touch_hits_shutter(x, y)
     and px < APP.SHUTTER_HIT_X + APP.SHUTTER_HIT_W
     and py >= APP.SHUTTER_HIT_Y
     and py < APP.SHUTTER_HIT_Y + APP.SHUTTER_HIT_H
+end
+
+local function touch_hits_gallery_thumb(x, y)
+  local px = tonumber(x) or -1
+  local py = tonumber(y) or -1
+  return px >= APP.GALLERY_THUMB_HIT_X
+    and px < APP.GALLERY_THUMB_HIT_X + APP.GALLERY_THUMB_HIT_W
+    and py >= APP.GALLERY_THUMB_HIT_Y
+    and py < APP.GALLERY_THUMB_HIT_Y + APP.GALLERY_THUMB_HIT_H
+end
+
+local function touch_hits_gallery_back(x, y)
+  local px = tonumber(x) or -1
+  local py = tonumber(y) or -1
+  return px >= APP.GALLERY_BACK_HIT_X
+    and px < APP.GALLERY_BACK_HIT_X + APP.GALLERY_BACK_HIT_W
+    and py >= APP.GALLERY_BACK_HIT_Y
+    and py < APP.GALLERY_BACK_HIT_Y + APP.GALLERY_BACK_HIT_H
 end
 
 local function route_index(_req)
@@ -539,10 +733,17 @@ local function register_input()
       print("[camera] key code=" .. tostring(evt_code) .. " event=" .. tostring(evt_type))
       write_metrics()
       if evt_code ~= key.HOME then
+        if APP.mode == "gallery" and evt_type == key.SHORT and evt_code == key.LEFT then
+          move_gallery(-1)
+        elseif APP.mode == "gallery" and evt_type == key.SHORT and evt_code == key.RIGHT then
+          move_gallery(1)
+        end
         return
       end
       if evt_type == key.LONG_START or evt_type == key.EXIT then
         exit_app()
+      elseif APP.mode == "gallery" then
+        leave_gallery()
       else
         request_capture("home")
       end
@@ -552,6 +753,21 @@ local function register_input()
     touch.on(function(evt, x, y, _ts_ms)
       APP.touch_events = APP.touch_events + 1
       write_metrics()
+      if evt == touch.UP and APP.mode == "gallery" then
+        local px = tonumber(x) or 0
+        if touch_hits_gallery_back(x, y) then
+          leave_gallery()
+        elseif px < 106 then
+          move_gallery(-1)
+        elseif px > 214 then
+          move_gallery(1)
+        end
+        return
+      end
+      if evt == touch.UP and touch_hits_gallery_thumb(x, y) then
+        show_gallery()
+        return
+      end
       if evt == touch.UP and touch_hits_shutter(x, y) then
         request_capture("touch")
       end

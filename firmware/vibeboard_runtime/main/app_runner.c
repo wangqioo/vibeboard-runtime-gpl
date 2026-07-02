@@ -35,7 +35,6 @@
 static const char *TAG = "app_runner";
 #define VB_LUA_TASK_STACK_SIZE (48 * 1024)
 #define VB_LUA_TASK_PRIORITY 5
-#define VB_CAMERA_APP_DMA_RESERVE_BYTES 8192
 
 typedef struct {
     volatile vb_app_runner_lifecycle_state_t lifecycle_state;
@@ -118,7 +117,7 @@ static bool prewarm_camera_if_needed(const vb_app_registry_entry_t *entry)
         return false;
     }
     if (strcmp(entry->id, "camera") == 0) {
-        vb_board_camera_reserve_internal_dma(VB_CAMERA_APP_DMA_RESERVE_BYTES);
+        vb_board_camera_reserve_internal_dma(8192);
         return false;
     }
 

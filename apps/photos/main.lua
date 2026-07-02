@@ -6,9 +6,12 @@ PHOTOS_APP = {
   VERSION = "2026-06-25-minimal-image-playlist",
   APP_DIR = "/sd/apps/photos",
   PHOTO_DIR = "photos",
+  CAMERA_PHOTO_DIR = "/sd/data/camera/photos",
   METRICS_PATH = "metrics.json",
   SCREEN_W = 320,
   SCREEN_H = 240,
+  CAMERA_PHOTO_W = 160,
+  CAMERA_PHOTO_H = 120,
   PLAY_MS = 10000,
   photos_ready = false,
   image_count = 0,
@@ -160,28 +163,50 @@ local function sd_to_lv(path)
   return path
 end
 
-local function scan_images()
+local function image_src_for(dir, name)
+  if dir == APP.CAMERA_PHOTO_DIR then
+    return "S:/data/camera/photos/" .. name
+  end
+  return sd_to_lv(APP.APP_DIR .. "/" .. dir .. "/" .. name)
+end
+
+local function scan_images_from(dir, source_name)
   local images = {}
   if not file or not file.listdir then
     APP.last_error = "file.listdir missing"
     return images
   end
 
-  local ok, entries = pcall(function() return file.listdir(APP.PHOTO_DIR) end)
+  local ok, entries = pcall(function() return file.listdir(dir) end)
   if not ok or type(entries) ~= "table" then
-    APP.last_error = "no photos dir"
     return images
   end
 
   for _, entry in ipairs(entries) do
     local name = entry_name(entry)
     if name and not entry_is_dir(entry) and is_image_name(name) then
-      images[#images + 1] = tostring(name)
+      images[#images + 1] = {
+        name = tostring(name),
+        source = source_name,
+        src = image_src_for(dir, tostring(name)),
+      }
     end
   end
 
-  table.sort(images, function(a, b) return a:lower() < b:lower() end)
+  table.sort(images, function(a, b) return a.name:lower() < b.name:lower() end)
   APP.last_error = ""
+  return images
+end
+
+local function scan_images()
+  local images = scan_images_from(APP.CAMERA_PHOTO_DIR, "Camera")
+  local app_images = scan_images_from(APP.PHOTO_DIR, "Photos")
+  for _, image in ipairs(app_images) do
+    images[#images + 1] = image
+  end
+  if #images == 0 and APP.last_error == "" then
+    APP.last_error = "no photos"
+  end
   return images
 end
 
@@ -196,11 +221,20 @@ end
 local function current_image_name()
   if #APP.images == 0 then return "" end
   APP.selected_index = wrap_index(APP.selected_index)
-  return APP.images[APP.selected_index] or ""
+  local entry = APP.images[APP.selected_index]
+  if type(entry) == "table" then return entry.name or "" end
+  return entry or ""
+end
+
+local function current_image_entry()
+  if #APP.images == 0 then return nil end
+  APP.selected_index = wrap_index(APP.selected_index)
+  return APP.images[APP.selected_index]
 end
 
 local function show_current()
   APP.image_count = #APP.images
+  local entry = current_image_entry()
   local name = current_image_name()
   local resource_start = now_ms()
 
@@ -218,14 +252,29 @@ local function show_current()
   end
 
   APP.current_name = name
-  APP.current_src = sd_to_lv(APP.APP_DIR .. "/" .. APP.PHOTO_DIR .. "/" .. name)
+  APP.current_src = type(entry) == "table" and entry.src or sd_to_lv(APP.APP_DIR .. "/" .. APP.PHOTO_DIR .. "/" .. name)
   set_text(APP.ui.title, "Photos")
   set_text(APP.ui.info, tostring(APP.selected_index) .. "/" .. tostring(APP.image_count) .. "  " .. name)
+  center_image_for_entry(entry)
   if APP.ui.image and lv_img_set_src then
     pcall(function() lv_img_set_src(APP.ui.image, APP.current_src) end)
   end
   mark_resource(resource_start)
   write_metrics()
+end
+
+function center_image_for_entry(entry)
+  if not APP.ui.image then return end
+  local w = APP.CAMERA_PHOTO_W
+  local h = APP.CAMERA_PHOTO_H
+  if type(entry) ~= "table" or entry.source ~= "Camera" then
+    w = 128
+    h = 128
+  end
+  local x = math.floor((APP.SCREEN_W - w) / 2)
+  local y = math.floor((APP.SCREEN_H - h) / 2)
+  lv_obj_set_pos(APP.ui.image, x, y)
+  lv_obj_set_size(APP.ui.image, w, h)
 end
 
 local function create_label(parent, text, x, y, width, color)
@@ -258,8 +307,7 @@ local function draw_ui()
 
   APP.ui.image = lv_img_create(root)
   if APP.ui.image and APP.ui.image ~= 0 then
-    lv_obj_set_pos(APP.ui.image, 96, 54)
-    lv_obj_set_size(APP.ui.image, 128, 128)
+    center_image_for_entry(nil)
     if lv_img_set_antialias then
       pcall(function() lv_img_set_antialias(APP.ui.image, true) end)
     end
