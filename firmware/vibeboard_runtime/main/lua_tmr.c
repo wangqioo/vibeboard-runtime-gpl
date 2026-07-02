@@ -243,6 +243,17 @@ void vb_lua_tmr_set_stop_flag(vb_lua_tmr_state_t *state, volatile bool *stop_req
     state->stop_requested = stop_requested;
 }
 
+void vb_lua_tmr_set_poll_callback(vb_lua_tmr_state_t *state,
+                                  int (*poll_cb)(lua_State *L, void *user_data),
+                                  void *user_data)
+{
+    if (state == NULL) {
+        return;
+    }
+    state->poll_cb = poll_cb;
+    state->poll_user_data = user_data;
+}
+
 void vb_lua_tmr_register(lua_State *L, vb_lua_tmr_state_t *state)
 {
     lua_pushlightuserdata(L, state);
@@ -303,9 +314,21 @@ esp_err_t vb_lua_tmr_run_loop(lua_State *L, vb_lua_tmr_state_t *state, char *err
             return ESP_ERR_INVALID_STATE;
         }
 
-        bool has_active_timer = false;
+        bool has_active_timer = state->poll_cb != NULL;
         TickType_t now = xTaskGetTickCount();
         const uint32_t run_generation = state->generation;
+
+        if (state->poll_cb != NULL) {
+            int poll_result = state->poll_cb(L, state->poll_user_data);
+            if (poll_result != 0) {
+                const char *err = lua_tostring(L, -1);
+                ESP_LOGE(TAG, "Lua poll failed: %s", err ? err : "unknown error");
+                if (error != NULL && error_size > 0) {
+                    strlcpy(error, err ? err : "lua poll failed", error_size);
+                }
+                return ESP_FAIL;
+            }
+        }
 
         for (int i = 0; i < VB_LUA_TMR_MAX; i++) {
             vb_lua_timer_t *timer = &state->timers[i];

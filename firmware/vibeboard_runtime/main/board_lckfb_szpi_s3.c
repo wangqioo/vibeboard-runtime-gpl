@@ -49,6 +49,7 @@ static int s_backlight_percent;
 static bool s_imu_ready;
 static bool s_camera_ready;
 static bool s_camera_display_taken;
+static bool s_camera_direct_draw_disabled;
 static TaskHandle_t s_camera_preview_task;
 static volatile bool s_camera_preview_stop_requested;
 static vb_board_camera_preview_mode_t s_camera_preview_mode = VB_CAMERA_PREVIEW_MODE_STOPPED;
@@ -511,11 +512,12 @@ static esp_err_t vb_board_camera_draw_rgb565_scaled_2x(const vb_board_camera_fra
 
 static esp_err_t vb_board_camera_draw_rgb565_striped(const vb_board_camera_frame_t *frame)
 {
-    if (frame->width == VB_LCD_H_RES && frame->height == VB_LCD_V_RES) {
+    if (!s_camera_direct_draw_disabled && frame->width == VB_LCD_H_RES && frame->height == VB_LCD_V_RES) {
         esp_err_t direct_err = vb_board_draw_rgb565(0, 0, VB_LCD_H_RES, VB_LCD_V_RES, frame->buf);
         if (direct_err == ESP_OK) {
             return vb_board_lcd_wait_for_queued_color();
         }
+        s_camera_direct_draw_disabled = true;
         ESP_LOGW(TAG, "camera direct LCD draw failed, falling back to stripes: %s", esp_err_to_name(direct_err));
     }
 
@@ -653,6 +655,7 @@ static esp_err_t vb_board_camera_preview_start_mode(vb_board_camera_preview_mode
         ESP_LOGW(TAG, "camera %s preview start failed: %s", vb_board_camera_preview_mode_name(mode), esp_err_to_name(err));
         return err;
     }
+    s_camera_direct_draw_disabled = false;
 
     err = vb_board_camera_take_display();
     if (err != ESP_OK) {
@@ -713,6 +716,7 @@ void vb_board_camera_preview_stop(void)
         s_camera_preview_mode = VB_CAMERA_PREVIEW_MODE_STOPPED;
         s_camera_preview_width = 0;
         s_camera_preview_height = 0;
+        s_camera_direct_draw_disabled = false;
         return;
     }
 
@@ -748,6 +752,7 @@ void vb_board_camera_return(vb_board_camera_frame_t *frame)
 void vb_board_camera_stop(void)
 {
     vb_board_camera_preview_stop();
+    s_camera_direct_draw_disabled = false;
 
     if (s_camera_ready) {
         esp_camera_deinit();

@@ -18,6 +18,8 @@ typedef struct {
     char format[16];
     char last_error[64];
     vb_board_camera_frame_t held_frame;
+    vb_board_camera_frame_t owned_frame;
+    void *owned_frame_buf;
 } vb_lua_camera_state_t;
 
 void vb_lua_camera_init(vb_lua_camera_state_t *state);

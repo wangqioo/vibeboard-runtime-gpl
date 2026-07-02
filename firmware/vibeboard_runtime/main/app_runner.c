@@ -7,6 +7,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/portmacro.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -56,6 +57,20 @@ typedef struct {
 } vb_lua_runtime_t;
 
 typedef struct {
+    char path[128];
+    char query[192];
+    char method[8];
+    char request_body[512];
+    int status;
+    char type[64];
+    char body[512];
+    esp_err_t result;
+    SemaphoreHandle_t done;
+    StaticSemaphore_t done_buffer;
+    volatile bool timed_out;
+} vb_webui_request_t;
+
+typedef struct {
     char *data;
     size_t size;
 } vb_lua_script_t;
@@ -65,6 +80,9 @@ static portMUX_TYPE s_runner_state_mux = portMUX_INITIALIZER_UNLOCKED;
 static vb_lua_runtime_t *s_active_runtime;
 static SemaphoreHandle_t s_script_reader_mutex;
 static StaticSemaphore_t s_script_reader_mutex_buffer;
+static QueueHandle_t s_webui_queue;
+static StaticQueue_t s_webui_queue_buffer;
+static uint8_t s_webui_queue_storage[sizeof(vb_webui_request_t *)];
 
 static bool app_has_capability(const vb_app_registry_entry_t *entry, const char *capability)
 {
@@ -124,6 +142,19 @@ static bool ensure_script_reader_mutex(void)
 
     s_script_reader_mutex = xSemaphoreCreateMutexStatic(&s_script_reader_mutex_buffer);
     return s_script_reader_mutex != NULL;
+}
+
+static bool ensure_webui_queue(void)
+{
+    if (s_webui_queue != NULL) {
+        return true;
+    }
+
+    s_webui_queue = xQueueCreateStatic(1,
+                                       sizeof(vb_webui_request_t *),
+                                       s_webui_queue_storage,
+                                       &s_webui_queue_buffer);
+    return s_webui_queue != NULL;
 }
 
 static void set_running_if_starting(void)
@@ -228,21 +259,55 @@ esp_err_t vb_app_runner_dispatch_webui(const char *path,
         return ESP_ERR_INVALID_STATE;
     }
 
-    vb_lua_app_webui_response_t response;
-    if (!vb_lua_app_dispatch_webui(L, &runtime->app, path, query, method, request_body, &response)) {
-        return ESP_ERR_NOT_FOUND;
+    if (!ensure_webui_queue()) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    vb_webui_request_t *request = (vb_webui_request_t *)heap_caps_malloc(sizeof(vb_webui_request_t),
+                                                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (request == NULL) {
+        request = (vb_webui_request_t *)heap_caps_malloc(sizeof(vb_webui_request_t), MALLOC_CAP_8BIT);
+    }
+    if (request == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    memset(request, 0, sizeof(*request));
+
+    request->done = xSemaphoreCreateBinaryStatic(&request->done_buffer);
+    if (request->done == NULL) {
+        heap_caps_free(request);
+        return ESP_ERR_NO_MEM;
+    }
+
+    strlcpy(request->path, path ? path : "", sizeof(request->path));
+    strlcpy(request->query, query ? query : "", sizeof(request->query));
+    strlcpy(request->method, method ? method : "GET", sizeof(request->method));
+    strlcpy(request->request_body, request_body ? request_body : "", sizeof(request->request_body));
+    request->result = ESP_ERR_TIMEOUT;
+
+    vb_webui_request_t *request_ptr = request;
+    if (xQueueSend(s_webui_queue, &request_ptr, pdMS_TO_TICKS(50)) != pdTRUE) {
+        heap_caps_free(request);
+        return ESP_ERR_TIMEOUT;
+    }
+
+    if (xSemaphoreTake(request->done, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        request->timed_out = true;
+        return ESP_ERR_TIMEOUT;
     }
 
     if (status != NULL) {
-        *status = response.status;
+        *status = request->status;
     }
     if (type != NULL && type_size > 0) {
-        strlcpy(type, response.type, type_size);
+        strlcpy(type, request->type, type_size);
     }
     if (body != NULL && body_size > 0) {
-        strlcpy(body, response.body, body_size);
+        strlcpy(body, request->body, body_size);
     }
-    return ESP_OK;
+    esp_err_t result = request->result;
+    heap_caps_free(request);
+    return result;
 }
 
 const char *vb_app_runner_state_name(vb_app_runner_lifecycle_state_t state)
@@ -314,30 +379,52 @@ static int vb_lua_input_poll(lua_State *L)
     return vb_lua_imu_process_pending(L, &runtime->imu);
 }
 
-static esp_err_t install_input_poll_timer(lua_State *L)
+static int vb_lua_runner_poll(lua_State *L, void *user_data)
 {
-    lua_getglobal(L, "tmr");
-    lua_getfield(L, -1, "create");
-    lua_remove(L, -2); /* tmr */
-    lua_call(L, 0, 1);
-
-    lua_pushvalue(L, -1);
-    lua_setfield(L, LUA_REGISTRYINDEX, "vb_runner_key_timer");
-
-    lua_getfield(L, -1, "alarm");
-    lua_pushvalue(L, -2);
-    lua_pushinteger(L, 20);
-    lua_getglobal(L, "tmr");
-    lua_getfield(L, -1, "ALARM_AUTO");
-    lua_remove(L, -2); /* tmr */
-    lua_pushcfunction(L, vb_lua_input_poll);
-    if (lua_pcall(L, 4, 1, 0) != LUA_OK) {
-        lua_remove(L, -2); /* timer */
-        return ESP_FAIL;
+    vb_lua_runtime_t *runtime = (vb_lua_runtime_t *)user_data;
+    if (runtime == NULL) {
+        return 0;
     }
-    lua_pop(L, 1);
-    lua_pop(L, 1); /* timer */
-    return ESP_OK;
+
+    int input_result = vb_lua_input_poll(L);
+    if (input_result != 0) {
+        return input_result;
+    }
+
+    if (s_webui_queue == NULL) {
+        return 0;
+    }
+
+    vb_webui_request_t *request = NULL;
+    while (xQueueReceive(s_webui_queue, &request, 0) == pdTRUE) {
+        if (request == NULL) {
+            continue;
+        }
+
+        vb_lua_app_webui_response_t response;
+        if (!vb_lua_app_dispatch_webui(L,
+                                       &runtime->app,
+                                       request->path,
+                                       request->query,
+                                       request->method,
+                                       request->request_body,
+                                       &response)) {
+            request->result = ESP_ERR_NOT_FOUND;
+        } else {
+            request->result = ESP_OK;
+            request->status = response.status;
+            strlcpy(request->type, response.type, sizeof(request->type));
+            strlcpy(request->body, response.body, sizeof(request->body));
+        }
+
+        bool timed_out = request->timed_out;
+        if (timed_out) {
+            heap_caps_free(request);
+        } else if (request->done != NULL) {
+            xSemaphoreGive(request->done);
+        }
+    }
+    return 0;
 }
 
 static void runner_input_cb(int code, int event, int timestamp_ms, uint16_t x, uint16_t y, void *user_data)
@@ -547,6 +634,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     vb_lua_app_set_stop_flag(&runtime.app, &s_runner_state.stop_requested);
     vb_lua_app_set_registry(&runtime.app, app);
     vb_lua_tmr_set_stop_flag(&runtime.tmr, &s_runner_state.stop_requested);
+    vb_lua_tmr_set_poll_callback(&runtime.tmr, vb_lua_runner_poll, &runtime);
 
     lua_pushcfunction(L, vb_lua_print);
     lua_setglobal(L, "print");
@@ -560,13 +648,7 @@ static esp_err_t run_lua_file(const vb_app_registry_result_t *app,
     lua_pushlightuserdata(L, &runtime);
     lua_setfield(L, LUA_REGISTRYINDEX, "vb_runner_runtime");
     s_active_runtime = &runtime;
-    if (install_input_poll_timer(L) != ESP_OK) {
-        const char *err = lua_tostring(L, -1);
-        set_result(result, true, ESP_FAIL, err ? err : "input timer failed");
-        cleanup_lua_runtime(L, &runtime);
-        lua_close(L);
-        return ESP_FAIL;
-    }
+    (void)ensure_webui_queue();
     esp_err_t input_err = vb_board_input_start(runner_input_cb, &runtime);
     if (input_err != ESP_OK) {
         ESP_LOGW(TAG, "board input unavailable: %s", esp_err_to_name(input_err));

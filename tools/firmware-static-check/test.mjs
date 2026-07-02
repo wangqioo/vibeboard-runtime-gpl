@@ -179,6 +179,8 @@ const nesgameSmokeToolPath = join(repoRoot, "tools/nesgame-smoke/index.mjs");
 const nesgameSmokeTestPath = join(repoRoot, "tools/nesgame-smoke/test.mjs");
 const smokeCameraInfoPath = join(repoRoot, "apps/smoke_camera/app.info");
 const smokeCameraSourcePath = join(repoRoot, "apps/smoke_camera/main.lua");
+const cameraAppInfoPath = join(repoRoot, "apps/camera/app.info");
+const cameraAppSourcePath = join(repoRoot, "apps/camera/main.lua");
 
 function readRequired(path) {
   assert.equal(existsSync(path), true, `${path} should exist`);
@@ -186,7 +188,7 @@ function readRequired(path) {
 }
 
 function functionBody(source, name) {
-  const match = source.match(new RegExp(`static int32_t ${name}\\([^)]*\\)\\n\\{([\\s\\S]*?)\\n\\}`));
+  const match = source.match(new RegExp(`(?:static\\s+)?[\\w\\s\\*_]+\\s+${name}\\([^)]*\\)\\n\\{([\\s\\S]*?)\\n\\}`));
   assert.ok(match, `${name} should exist`);
   return match[1];
 }
@@ -375,7 +377,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(header, /VB_APP_KIND_MAX/);
     assert.match(header, /VB_APP_CAPABILITIES_MAX/);
     assert.match(header, /VB_APP_REGISTRY_MAX_APPS/);
-    assert.match(header, /VB_APP_REGISTRY_MAX_APPS\s+48/);
+    assert.match(header, /VB_APP_REGISTRY_MAX_APPS\s+64/);
     assert.match(header, /vb_app_registry_entry_t/);
     assert.match(header, /manifest_schema/);
     assert.match(header, /version/);
@@ -1258,7 +1260,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runnerHeader, /vb_app_runner_dispatch_webui/);
     assert.match(runner, /vb_app_runner_dispatch_webui\(const char \*path/);
     assert.match(runner, /s_active_runtime/);
-    assert.match(runner, /vb_lua_app_dispatch_webui\(.*&runtime->app/);
+    assert.match(runner, /vb_webui_request_t/);
+    assert.match(runner, /s_webui_queue/);
+    assert.match(runner, /xQueueSend\(s_webui_queue/);
+    assert.match(runner, /xSemaphoreTake\(request->done/);
+    assert.match(runner, /vb_lua_tmr_set_poll_callback\(&runtime\.tmr,\s*vb_lua_runner_poll,\s*&runtime\)/);
+    assert.match(runner, /static int vb_lua_runner_poll\(lua_State \*L,\s*void \*user_data\)/);
+    assert.match(runner, /xQueueReceive\(s_webui_queue/);
+    assert.match(runner, /vb_lua_app_dispatch_webui\(L,[\s\S]*&runtime->app/);
+    assert.doesNotMatch(functionBody(runner, "vb_app_runner_dispatch_webui"), /vb_lua_app_dispatch_webui/);
     assert.match(install, /webui_handler/);
     assert.match(install, /register_handler\("\/app\/\*",\s*HTTP_GET,\s*webui_handler\)/);
     assert.match(install, /register_handler\("\/app\/\*",\s*HTTP_POST,\s*webui_handler\)/);
@@ -1766,6 +1776,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(boardSource, /vb_board_display_takeover\(\)/);
     assert.match(boardSource, /vb_board_display_release_takeover\(\)/);
     assert.match(boardSource, /vb_board_lcd_wait_for_queued_color/);
+    assert.match(boardSource, /s_camera_direct_draw_disabled/);
+    assert.match(boardSource, /if\s*\(!s_camera_direct_draw_disabled\s*&&\s*frame->width\s*==\s*VB_LCD_H_RES/);
+    assert.match(boardSource, /s_camera_direct_draw_disabled\s*=\s*true/);
     assert.match(boardSource, /vb_board_camera_draw_rgb565_scaled_2x/);
     assert.match(boardSource, /vb_board_camera_draw_rgb565_striped/);
     assert.match(boardSource, /s_camera_lcd_rows/);
@@ -1784,6 +1797,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cameraHeader, /vb_lua_camera_cleanup/);
     assert.match(cameraSource, /"start",\s*camera_start/);
     assert.match(cameraSource, /"capture",\s*camera_capture/);
+    assert.match(cameraSource, /"clone",\s*camera_clone/);
+    assert.match(cameraSource, /owned_frame_buf/);
+    assert.match(cameraSource, /heap_caps_malloc\(state->held_frame\.len,\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT\)/);
     assert.match(cameraSource, /"preview_start",\s*camera_preview_start/);
     assert.match(cameraSource, /"preview_stop",\s*camera_preview_stop/);
     assert.match(cameraSource, /"save",\s*camera_save/);
@@ -1791,7 +1807,13 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cameraSource, /"stop",\s*camera_stop/);
     assert.match(cameraSource, /"status",\s*camera_status/);
     assert.match(cameraSource, /VB_LUA_FILE_APP_DIR_REGISTRY_KEY\s+"vb_file_app_dir"/);
-    assert.match(cameraSource, /fwrite\([^;]+held_frame\.buf/);
+    assert.match(cameraSource, /fwrite\(frame->buf/);
+    assert.match(cameraSource, /camera_save_bmp_rgb565/);
+    assert.match(cameraSource, /path_has_suffix_ci\(path,\s*"\.bmp"\)/);
+    assert.match(cameraSource, /'B'/);
+    assert.match(cameraSource, /'M'/);
+    assert.match(cameraSource, /bmp_row_stride/);
+    assert.match(cameraSource, /bits per pixel/i);
     assert.match(cameraSource, /vb_board_camera_draw/);
     assert.match(cameraSource, /preview_mode/);
     assert.match(cameraSource, /preview_width/);
@@ -1802,6 +1824,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /prewarm_camera_if_needed/);
     assert.match(runner, /starting camera preview before Lua task/);
     assert.match(runner, /vb_board_camera_preview_start\(\)/);
+    assert.match(runner, /vb_webui_request_t/);
+    assert.match(runner, /s_webui_queue/);
+    assert.match(runner, /vb_lua_tmr_set_poll_callback\(&runtime\.tmr,\s*vb_lua_runner_poll,\s*&runtime\)/);
+    assert.match(runner, /xQueueSend\(s_webui_queue/);
+    assert.match(runner, /xQueueReceive\(s_webui_queue/);
+    assert.doesNotMatch(functionBody(runner, "vb_app_runner_dispatch_webui"), /vb_lua_app_dispatch_webui/);
     assert.match(runner, /vb_lua_camera_init\(&runtime\.camera\)/);
     assert.match(runner, /vb_lua_camera_register\(L,\s*&runtime\.camera\)/);
     assert.match(runner, /vb_lua_camera_cleanup\(L,\s*&runtime->camera\)/);
@@ -1838,6 +1866,46 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(smokeSource, /if preview_active then\s+return\s+end/);
     assert.match(smokeSource, /capture_error/);
     assert.match(smokeSource, /preview_error/);
+  });
+
+  it("ships Camera as a real Runtime capture app", () => {
+    const info = readRequired(cameraAppInfoPath);
+    const source = readRequired(cameraAppSourcePath);
+
+    assert.match(info, /name\s*=\s*camera/);
+    assert.match(info, /entry\s*=\s*main\.lua/);
+    assert.match(info, /allow_webui\s*=\s*true/);
+    assert.match(info, /capabilities\s*=\s*lvgl,timer,input,file,camera,webui/);
+    assert.match(source, /APP\.PHOTO_DIR\s*=\s*"photos"/);
+    assert.match(source, /file\.mkdir\(APP\.PHOTO_DIR\)/);
+    assert.match(source, /camera\.preview_start\(\)/);
+    assert.match(source, /camera\.preview_stop\(\)/);
+    assert.match(source, /camera\.capture\(\)/);
+    assert.match(source, /camera\.clone\(frame\)/);
+    assert.match(source, /camera\.stop\(\)/);
+    assert.match(source, /camera\.save\(cloned,\s*path\)/);
+    assert.match(source, /\.bmp/);
+    assert.match(source, /camera\.release\(frame\)/);
+    assert.match(source, /camera\.stop\(\)/);
+    assert.match(source, /pending_capture/);
+    assert.match(source, /local function request_capture\(trigger\)/);
+    assert.match(source, /request_capture\("web"\)/);
+    assert.match(source, /status\s*=\s*ok_capture and 202 or 409/);
+    assert.match(source, /key\.on\(function\(evt_code,\s*evt_type/);
+    assert.match(source, /evt_code\s*~=\s*key\.HOME/);
+    assert.match(source, /request_capture\("home"\)/);
+    assert.match(source, /touch\.on/);
+    assert.match(source, /request_capture\("touch"\)/);
+    assert.match(source, /app\.set_home_exit\(false\)/);
+    assert.match(source, /app\.set_webui\(true\)/);
+    assert.match(source, /app\.route\("\/",\s*dispatch_route\)/);
+    assert.match(source, /app\.route\("\/api",\s*dispatch_route\)/);
+    assert.match(source, /app\.route\("\/capture",\s*dispatch_route\)/);
+    assert.match(source, /\/apps\/file\?app=camera&path=photos\//);
+    assert.match(source, /if APP\.pending_capture ~= "" and not APP\.capturing then/);
+    assert.match(source, /capture_photo\(trigger\)/);
+    assert.match(source, /metrics\.json/);
+    assert.doesNotMatch(source, /LV_ALIGN_BOTTOM_MID/);
   });
 
   it("registers a sandboxed Lua file module", () => {

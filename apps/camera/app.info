@@ -1,0 +1,5 @@
+name = camera
+entry = main.lua
+allow_webui = true
+description = Runtime camera viewfinder and photo capture
+capabilities = lvgl,timer,input,file,camera,webui

@@ -3,10 +3,12 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "app_registry.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "lauxlib.h"
 
 #define VB_LUA_CAMERA_STATE_REGISTRY_KEY "vb_camera_state"
@@ -34,6 +36,18 @@ static void release_held_frame(vb_lua_camera_state_t *state)
         return;
     }
     vb_board_camera_return(&state->held_frame);
+}
+
+static void release_owned_frame(vb_lua_camera_state_t *state)
+{
+    if (state == NULL) {
+        return;
+    }
+    if (state->owned_frame_buf != NULL) {
+        heap_caps_free(state->owned_frame_buf);
+    }
+    memset(&state->owned_frame, 0, sizeof(state->owned_frame));
+    state->owned_frame_buf = NULL;
 }
 
 static int push_error(lua_State *L, vb_lua_camera_state_t *state, esp_err_t err)
@@ -150,6 +164,38 @@ static int camera_draw(lua_State *L)
     return 1;
 }
 
+static int camera_clone(lua_State *L)
+{
+    vb_lua_camera_state_t *state = get_state(L);
+    if (state == NULL) {
+        return luaL_error(L, "camera state unavailable");
+    }
+    if (state->held_frame.driver_frame == NULL || state->held_frame.buf == NULL || state->held_frame.len == 0) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "no held frame");
+        set_error(state, "no held frame");
+        return 2;
+    }
+
+    void *copy = heap_caps_malloc(state->held_frame.len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (copy == NULL) {
+        copy = heap_caps_malloc(state->held_frame.len, MALLOC_CAP_8BIT);
+    }
+    if (copy == NULL) {
+        return push_error(L, state, ESP_ERR_NO_MEM);
+    }
+
+    memcpy(copy, state->held_frame.buf, state->held_frame.len);
+    release_owned_frame(state);
+    state->owned_frame = state->held_frame;
+    state->owned_frame.buf = copy;
+    state->owned_frame.driver_frame = NULL;
+    state->owned_frame_buf = copy;
+    set_error(state, "");
+    push_frame_table(L, &state->owned_frame);
+    return 1;
+}
+
 static int camera_preview_start(lua_State *L)
 {
     vb_lua_camera_state_t *state = get_state(L);
@@ -228,13 +274,125 @@ static bool build_app_path(char *dest, size_t dest_size, const char *app_dir, co
     return true;
 }
 
+static bool path_has_suffix_ci(const char *path, const char *suffix)
+{
+    if (path == NULL || suffix == NULL) {
+        return false;
+    }
+    size_t path_len = strlen(path);
+    size_t suffix_len = strlen(suffix);
+    if (suffix_len > path_len) {
+        return false;
+    }
+
+    const char *tail = path + path_len - suffix_len;
+    for (size_t i = 0; i < suffix_len; i++) {
+        char lhs = tail[i];
+        char rhs = suffix[i];
+        if (lhs >= 'A' && lhs <= 'Z') {
+            lhs = (char)(lhs - 'A' + 'a');
+        }
+        if (rhs >= 'A' && rhs <= 'Z') {
+            rhs = (char)(rhs - 'A' + 'a');
+        }
+        if (lhs != rhs) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void write_le16(uint8_t *dest, uint16_t value)
+{
+    dest[0] = (uint8_t)(value & 0xff);
+    dest[1] = (uint8_t)((value >> 8) & 0xff);
+}
+
+static void write_le32(uint8_t *dest, uint32_t value)
+{
+    dest[0] = (uint8_t)(value & 0xff);
+    dest[1] = (uint8_t)((value >> 8) & 0xff);
+    dest[2] = (uint8_t)((value >> 16) & 0xff);
+    dest[3] = (uint8_t)((value >> 24) & 0xff);
+}
+
+static bool camera_save_bmp_rgb565(FILE *file, const vb_board_camera_frame_t *frame, size_t *written_out)
+{
+    if (file == NULL || frame == NULL || frame->buf == NULL || written_out == NULL ||
+        frame->width == 0 || frame->height == 0) {
+        return false;
+    }
+    if (frame->len < (size_t)frame->width * frame->height * sizeof(uint16_t)) {
+        return false;
+    }
+
+    const uint32_t width = frame->width;
+    const uint32_t height = frame->height;
+    const uint32_t bmp_header_size = 54;
+    const uint32_t bmp_row_stride = (width * 3 + 3) & ~3U;
+    const uint32_t pixel_bytes = bmp_row_stride * height;
+    const uint32_t file_size = bmp_header_size + pixel_bytes;
+
+    uint8_t header[54] = {0};
+    header[0] = 'B';
+    header[1] = 'M';
+    write_le32(&header[2], file_size);
+    write_le32(&header[10], bmp_header_size);
+    write_le32(&header[14], 40);
+    write_le32(&header[18], width);
+    write_le32(&header[22], height);
+    write_le16(&header[26], 1);
+    write_le16(&header[28], 24); // bits per pixel
+    write_le32(&header[34], pixel_bytes);
+    write_le32(&header[38], 2835);
+    write_le32(&header[42], 2835);
+
+    if (fwrite(header, 1, sizeof(header), file) != sizeof(header)) {
+        return false;
+    }
+
+    uint8_t *row = (uint8_t *)malloc(bmp_row_stride);
+    if (row == NULL) {
+        return false;
+    }
+
+    const uint16_t *pixels = (const uint16_t *)frame->buf;
+    for (int32_t y = (int32_t)height - 1; y >= 0; y--) {
+        memset(row, 0, bmp_row_stride);
+        const uint16_t *src = pixels + ((size_t)y * width);
+        for (uint32_t x = 0; x < width; x++) {
+            uint16_t pixel = src[x];
+            uint8_t r = (uint8_t)((((pixel >> 11) & 0x1f) * 255) / 31);
+            uint8_t g = (uint8_t)((((pixel >> 5) & 0x3f) * 255) / 63);
+            uint8_t b = (uint8_t)(((pixel & 0x1f) * 255) / 31);
+            row[x * 3] = b;
+            row[x * 3 + 1] = g;
+            row[x * 3 + 2] = r;
+        }
+        if (fwrite(row, 1, bmp_row_stride, file) != bmp_row_stride) {
+            free(row);
+            return false;
+        }
+    }
+
+    free(row);
+    *written_out = file_size;
+    return true;
+}
+
 static int camera_save(lua_State *L)
 {
     vb_lua_camera_state_t *state = get_state(L);
     if (state == NULL) {
         return luaL_error(L, "camera state unavailable");
     }
-    if (state->held_frame.driver_frame == NULL || state->held_frame.buf == NULL || state->held_frame.len == 0) {
+    const vb_board_camera_frame_t *frame = NULL;
+    if (state->owned_frame.buf != NULL && state->owned_frame.len > 0) {
+        frame = &state->owned_frame;
+    } else if (state->held_frame.driver_frame != NULL && state->held_frame.buf != NULL && state->held_frame.len > 0) {
+        frame = &state->held_frame;
+    }
+    if (frame == NULL) {
         lua_pushnil(L);
         lua_pushliteral(L, "no held frame");
         set_error(state, "no held frame");
@@ -273,9 +431,16 @@ static int camera_save(lua_State *L)
         return 2;
     }
 
-    size_t written = fwrite(state->held_frame.buf, 1, state->held_frame.len, file);
+    size_t written = 0;
+    bool write_ok = false;
+    if (path_has_suffix_ci(path, ".bmp") && strcmp(frame->format, "rgb565") == 0) {
+        write_ok = camera_save_bmp_rgb565(file, frame, &written);
+    } else {
+        written = fwrite(frame->buf, 1, frame->len, file);
+        write_ok = written == frame->len;
+    }
     int close_result = fclose(file);
-    if (written != state->held_frame.len || close_result != 0) {
+    if (!write_ok || close_result != 0) {
         lua_pushnil(L);
         lua_pushliteral(L, "short frame write");
         set_error(state, "short frame write");
@@ -365,6 +530,7 @@ void vb_lua_camera_register(lua_State *L, vb_lua_camera_state_t *state)
     static const luaL_Reg camera_functions[] = {
         {"start", camera_start},
         {"capture", camera_capture},
+        {"clone", camera_clone},
         {"draw", camera_draw},
         {"preview_start", camera_preview_start},
         {"preview_stop", camera_preview_stop},
@@ -396,6 +562,7 @@ void vb_lua_camera_cleanup(lua_State *L, vb_lua_camera_state_t *state)
         return;
     }
     release_held_frame(state);
+    release_owned_frame(state);
     if (state->ready) {
         vb_board_camera_stop();
     }
