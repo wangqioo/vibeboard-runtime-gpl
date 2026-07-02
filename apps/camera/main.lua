@@ -6,7 +6,7 @@ if ok and type(loaded_camera) == "table" then
 end
 
 APP = {
-  PHOTO_DIR = "photos",
+  PHOTO_DIR = "/sd/data/camera/photos",
   METRICS_PATH = "metrics.json",
   SHUTTER_HIT_X = 108,
   SHUTTER_HIT_Y = 192,
@@ -27,11 +27,12 @@ APP = {
   last_trigger = "",
   routes = {},
   ui = {},
+  photos = {},
   key_events = 0,
   touch_events = 0,
   pending_capture = "",
 }
-APP.PHOTO_DIR = "photos"
+APP.PHOTO_DIR = "/sd/data/camera/photos"
 
 local function text(value)
   if value == nil then return "" end
@@ -48,6 +49,29 @@ local function html_escape(value)
     :gsub("<", "&lt;")
     :gsub(">", "&gt;")
     :gsub("\"", "&quot;")
+end
+
+local function url_decode(value)
+  local raw = text(value):gsub("+", " ")
+  raw = raw:gsub("%%(%x%x)", function(hex)
+    return string.char(tonumber(hex, 16) or 0)
+  end)
+  return raw
+end
+
+local function parse_query(query)
+  local result = {}
+  for pair in text(query):gmatch("[^&]+") do
+    local key, value = pair:match("^([^=]*)=?(.*)$")
+    if key and key ~= "" then
+      result[url_decode(key)] = url_decode(value or "")
+    end
+  end
+  return result
+end
+
+local function is_photo_name(name)
+  return type(name) == "string" and name:match("^capture_%d+%.bmp$") ~= nil
 end
 
 local function write_metrics()
@@ -130,6 +154,9 @@ end
 
 local function list_photos()
   local result = {}
+  if APP.preview then
+    return APP.photos
+  end
   if not file or not file.listdir then
     return result
   end
@@ -152,11 +179,52 @@ local function list_photos()
     end
   end
   table.sort(result, function(a, b) return (a.index or 0) > (b.index or 0) end)
+  APP.photos = result
   return result
 end
 
+local function remember_photo(name, size)
+  if not is_photo_name(name) then
+    return
+  end
+  local index = tonumber(name:match("^capture_(%d+)%.bmp$")) or 0
+  for _, photo in ipairs(APP.photos) do
+    if photo.name == name then
+      photo.size = tonumber(size) or photo.size or 0
+      photo.index = index
+      return
+    end
+  end
+  APP.photos[#APP.photos + 1] = {
+    name = name,
+    size = tonumber(size) or 0,
+    index = index,
+  }
+  table.sort(APP.photos, function(a, b) return (a.index or 0) > (b.index or 0) end)
+end
+
+local function forget_photo(name)
+  for index = #APP.photos, 1, -1 do
+    if APP.photos[index].name == name then
+      table.remove(APP.photos, index)
+    end
+  end
+end
+
 local function photo_url(name)
-  return "/apps/file?app=camera&path=photos/" .. name
+  return "/sd/file?path=data/camera/photos/" .. name
+end
+
+local function photos_json(photos)
+  local parts = {}
+  for _, photo in ipairs(photos) do
+    parts[#parts + 1] = "{"
+      .. "\"name\":\"" .. json_escape(photo.name) .. "\","
+      .. "\"size\":" .. tostring(photo.size or 0) .. ","
+      .. "\"url\":\"" .. json_escape(photo_url(photo.name)) .. "\""
+      .. "}"
+  end
+  return "[" .. table.concat(parts, ",") .. "]"
 end
 
 local function start_preview()
@@ -266,6 +334,7 @@ local function capture_photo(trigger)
     APP.last_photo = filename
     APP.last_bytes = tonumber(save_detail) or 0
     APP.last_error = ""
+    remember_photo(filename, APP.last_bytes)
     set_status("saved " .. filename)
   else
     APP.last_error = text(save_detail or save_result or "save failed")
@@ -302,17 +371,45 @@ end
 
 local function route_index(_req)
   local photos = list_photos()
-  local latest = APP.last_photo
-  if latest == "" and photos[1] then
-    latest = photos[1].name
+  local rows = {}
+  for _, photo in ipairs(photos) do
+    local name = html_escape(photo.name)
+    local url = photo_url(photo.name)
+    rows[#rows + 1] = "<tr><td><a href=\"" .. url .. "\">" .. name .. "</a></td><td>"
+      .. tostring(photo.size or 0) .. "</td><td><form method=\"post\" action=\"/app/delete?name="
+      .. name .. "\"><button type=\"submit\">Delete</button></form></td></tr>"
   end
-  local link = latest ~= "" and ('<a href="' .. photo_url(latest) .. '">' .. html_escape(latest) .. '</a>') or "none"
-  local body = "<html><body><h3>Camera</h3><p>last:" .. link .. "</p><p>captures:"
-    .. tostring(APP.captures) .. "</p><p><a href=\"/app/api\">api</a></p></body></html>"
+  if #rows == 0 then
+    rows[1] = "<tr><td colspan=\"3\">No photos</td></tr>"
+  end
+  local body = "<html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+    .. "<style>body{font-family:sans-serif;margin:20px;background:#0b1220;color:#e5e7eb}"
+    .. "a{color:#7dd3fc}button{padding:8px 12px}table{border-collapse:collapse;width:100%;max-width:720px}"
+    .. "td,th{border-bottom:1px solid #334155;padding:8px;text-align:left}</style></head><body>"
+    .. "<h3>Camera</h3><p>captures:" .. tostring(APP.captures) .. " last:"
+    .. html_escape(APP.last_photo ~= "" and APP.last_photo or "none") .. "</p>"
+    .. "<form method=\"post\" action=\"/app/capture\"><button type=\"submit\">Capture</button></form>"
+    .. "<p><a href=\"/app/photos\">photos json</a> · <a href=\"/app/api\">api</a></p>"
+    .. "<table><thead><tr><th>Photo</th><th>Bytes</th><th></th></tr></thead><tbody>"
+    .. table.concat(rows, "") .. "</tbody></table></body></html>"
   return {
     status = 200,
     type = "text/html; charset=utf-8",
     body = body,
+  }
+end
+
+local function route_photos(_req)
+  local photos = list_photos()
+  return {
+    status = 200,
+    type = "application/json",
+    body = "{"
+      .. "\"ok\":true,"
+      .. "\"count\":" .. tostring(#photos) .. ","
+      .. "\"last\":\"" .. json_escape(APP.last_photo) .. "\","
+      .. "\"photos\":" .. photos_json(photos)
+      .. "}\n",
   }
 end
 
@@ -351,6 +448,46 @@ local function route_capture(_req)
   }
 end
 
+local function route_delete(req)
+  local params = parse_query(req and req.query)
+  local name = text(params.name)
+  if not is_photo_name(name) then
+    return {
+      status = 400,
+      type = "application/json",
+      body = "{\"ok\":false,\"error\":\"invalid photo name\"}\n",
+    }
+  end
+  if not file or type(file.remove) ~= "function" then
+    return {
+      status = 500,
+      type = "application/json",
+      body = "{\"ok\":false,\"error\":\"file.remove unavailable\"}\n",
+    }
+  end
+  local pcall_ok, removed, remove_err = pcall(function()
+    return file.remove(APP.PHOTO_DIR .. "/" .. name)
+  end)
+  local remove_ok = pcall_ok and removed
+  if remove_ok and name == APP.last_photo then
+    APP.last_photo = ""
+    APP.last_bytes = 0
+  end
+  if remove_ok then
+    forget_photo(name)
+  end
+  write_metrics()
+  return {
+    status = remove_ok and 200 or 500,
+    type = "application/json",
+    body = "{"
+      .. "\"ok\":" .. tostring(remove_ok) .. ","
+      .. "\"deleted\":\"" .. json_escape(remove_ok and name or "") .. "\","
+      .. "\"error\":\"" .. json_escape(remove_ok and "" or (remove_err or removed)) .. "\""
+      .. "}\n",
+  }
+end
+
 local function dispatch_route(req)
   local path = text(req and req.path)
   local handler = APP.routes[path] or route_index
@@ -360,14 +497,18 @@ end
 local function register_webui()
   APP.routes["/"] = route_index
   APP.routes["/api"] = route_api
+  APP.routes["/photos"] = route_photos
   APP.routes["/capture"] = route_capture
+  APP.routes["/delete"] = route_delete
   if app and app.set_webui then
     pcall(function() app.set_webui(true) end)
   end
   if app and app.route then
     pcall(function() app.route("/", dispatch_route) end)
     pcall(function() app.route("/api", dispatch_route) end)
+    pcall(function() app.route("/photos", dispatch_route) end)
     pcall(function() app.route("/capture", dispatch_route) end)
+    pcall(function() app.route("/delete", dispatch_route) end)
   end
 end
 
@@ -419,6 +560,8 @@ local function register_input()
 end
 
 if file and file.mkdir then
+  pcall(function() file.mkdir("/sd/data") end)
+  pcall(function() file.mkdir("/sd/data/camera") end)
   pcall(function() file.mkdir(APP.PHOTO_DIR) end)
 end
 list_photos()

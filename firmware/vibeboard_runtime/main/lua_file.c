@@ -19,6 +19,7 @@ static const char *TAG = "lua_file";
 #define VB_LUA_FILE_APP_DIR_REGISTRY_KEY "vb_file_app_dir"
 #define VB_LUA_FILE_HANDLE_META "vb.file"
 #define VB_LUA_FILE_MAX_READ (16 * 1024)
+#define VB_LUA_FILE_DATA_PREFIX "/sd/data/"
 
 typedef struct {
     FILE *file;
@@ -42,6 +43,35 @@ static const char *get_app_dir(lua_State *L)
     const char *app_dir = lua_tostring(L, -1);
     lua_pop(L, 1);
     return app_dir;
+}
+
+static const char *get_app_id_from_dir(const char *app_dir)
+{
+    if (app_dir == NULL || app_dir[0] == '\0') {
+        return NULL;
+    }
+    const char *slash = strrchr(app_dir, '/');
+    return slash != NULL ? slash + 1 : app_dir;
+}
+
+static bool allow_data_write(const char *path, const char *app_dir)
+{
+    if (path == NULL || app_dir == NULL) {
+        return false;
+    }
+    if (strcmp(path, "/sd/data") == 0) {
+        return true;
+    }
+    if (strncmp(path, VB_LUA_FILE_DATA_PREFIX, strlen(VB_LUA_FILE_DATA_PREFIX)) != 0) {
+        return false;
+    }
+    const char *app_id = get_app_id_from_dir(app_dir);
+    if (app_id == NULL || app_id[0] == '\0') {
+        return false;
+    }
+    const char *relative = path + strlen(VB_LUA_FILE_DATA_PREFIX);
+    size_t app_id_len = strlen(app_id);
+    return strncmp(relative, app_id, app_id_len) == 0 && (relative[app_id_len] == '\0' || relative[app_id_len] == '/');
 }
 
 static bool has_traversal(const char *path)
@@ -121,16 +151,16 @@ static bool resolve_path(lua_State *L, int arg, char *resolved, size_t resolved_
     }
 
     if (strncmp(path, "/sd/", 4) == 0) {
-        if (write_access) {
-            log_file_error("resolve", path, "file write only supports app-local paths");
+        if (write_access && !allow_data_write(path, app_dir)) {
+            log_file_error("resolve", path, "file data path escapes app sandbox");
             return luaL_error(L, "file write only supports app-local paths");
         }
         return build_joined_path(resolved, resolved_size, VB_SD_MOUNT_POINT, path + 4);
     }
 
     if (strncmp(path, VB_SD_MOUNT_POINT, strlen(VB_SD_MOUNT_POINT)) == 0) {
-        if (write_access) {
-            log_file_error("resolve", path, "file write only supports app-local paths");
+        if (write_access && !allow_data_write(path, app_dir)) {
+            log_file_error("resolve", path, "file data path escapes app sandbox");
             return luaL_error(L, "file write only supports app-local paths");
         }
         strlcpy(resolved, path, resolved_size);

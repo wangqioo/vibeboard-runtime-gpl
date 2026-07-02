@@ -14,6 +14,7 @@
 
 #define VB_LUA_CAMERA_STATE_REGISTRY_KEY "vb_camera_state"
 #define VB_LUA_FILE_APP_DIR_REGISTRY_KEY "vb_file_app_dir"
+#define VB_LUA_FILE_DATA_PREFIX "/sd/data/"
 
 static vb_lua_camera_state_t *get_state(lua_State *L)
 {
@@ -23,12 +24,54 @@ static vb_lua_camera_state_t *get_state(lua_State *L)
     return state;
 }
 
+static bool build_app_path(char *dest, size_t dest_size, const char *app_dir, const char *path);
+
 static void set_error(vb_lua_camera_state_t *state, const char *message)
 {
     if (state == NULL) {
         return;
     }
     strlcpy(state->last_error, message != NULL ? message : "", sizeof(state->last_error));
+}
+
+static const char *get_app_id_from_dir(const char *app_dir)
+{
+    if (app_dir == NULL || app_dir[0] == '\0') {
+        return NULL;
+    }
+    const char *slash = strrchr(app_dir, '/');
+    return slash != NULL ? slash + 1 : app_dir;
+}
+
+static bool allow_data_write(const char *path, const char *app_dir)
+{
+    if (path == NULL || app_dir == NULL) {
+        return false;
+    }
+    if (strcmp(path, "/sd/data") == 0) {
+        return true;
+    }
+    if (strncmp(path, VB_LUA_FILE_DATA_PREFIX, strlen(VB_LUA_FILE_DATA_PREFIX)) != 0) {
+        return false;
+    }
+    const char *app_id = get_app_id_from_dir(app_dir);
+    if (app_id == NULL || app_id[0] == '\0') {
+        return false;
+    }
+    const char *relative = path + strlen(VB_LUA_FILE_DATA_PREFIX);
+    size_t app_id_len = strlen(app_id);
+    return strncmp(relative, app_id, app_id_len) == 0 && (relative[app_id_len] == '\0' || relative[app_id_len] == '/');
+}
+
+static bool resolve_camera_save_path(char *resolved, size_t resolved_size, const char *app_dir, const char *path)
+{
+    if (strncmp(path, VB_LUA_FILE_DATA_PREFIX, strlen(VB_LUA_FILE_DATA_PREFIX)) == 0) {
+        if (!allow_data_write(path, app_dir)) {
+            return false;
+        }
+        return build_app_path(resolved, resolved_size, VB_SD_MOUNT_POINT, path + 4);
+    }
+    return build_app_path(resolved, resolved_size, app_dir, path);
 }
 
 static void set_save_error(char *dest, size_t dest_size, const char *format, ...)
@@ -475,7 +518,7 @@ static int camera_save(lua_State *L)
         set_error(state, "file app dir unavailable");
         return 2;
     }
-    if (path[0] == '\0' || path[0] == '/' || has_traversal(path)) {
+    if (path[0] == '\0' || has_traversal(path) || (path[0] == '/' && !allow_data_write(path, app_dir))) {
         lua_pushnil(L);
         lua_pushliteral(L, "file path escapes app sandbox");
         set_error(state, "file path escapes app sandbox");
@@ -483,7 +526,7 @@ static int camera_save(lua_State *L)
     }
 
     char resolved[VB_APP_PATH_MAX];
-    if (!build_app_path(resolved, sizeof(resolved), app_dir, path)) {
+    if (!resolve_camera_save_path(resolved, sizeof(resolved), app_dir, path)) {
         lua_pushnil(L);
         lua_pushliteral(L, "file path too long");
         set_error(state, "file path too long");

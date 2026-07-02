@@ -1608,6 +1608,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const installService = readRequired(installServiceSourcePath);
 
     assert.match(installService, /static\s+esp_err_t\s+app_file_handler\(httpd_req_t\s+\*req\)/);
+    assert.match(installService, /static\s+esp_err_t\s+sd_file_handler\(httpd_req_t\s+\*req\)/);
     assert.match(installService, /camera_sd_service_pause_preview/);
     assert.match(installService, /camera_sd_service_resume_preview/);
     assert.match(installService, /#include\s+"freertos\/semphr\.h"/);
@@ -1625,8 +1626,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(installService, /rescan_handler[\s\S]*camera_sd_service_pause_preview\(\)/);
     assert.match(installService, /rescan_handler[\s\S]*camera_sd_service_resume_preview\(camera_guard\)/);
     assert.match(installService, /register_handler\("\/apps\/file",\s*HTTP_GET,\s*app_file_handler\)/);
+    assert.match(installService, /register_handler\("\/sd\/file",\s*HTTP_GET,\s*sd_file_handler\)/);
     assert.match(installService, /get_query_value\(req,\s*"app"/);
     assert.match(installService, /get_query_value\(req,\s*"path"/);
+    assert.match(installService, /static\s+bool\s+is_sd_data_file_path\(const\s+char\s+\*path\)/);
+    assert.match(installService, /is_sd_data_file_path\(path\)/);
     assert.match(installService, /reject_unsafe_path\(app\)/);
     assert.match(installService, /reject_unsafe_path\(path\)/);
     assert.match(installService, /fopen\(full_path,\s*"rb"\)/);
@@ -1956,7 +1960,9 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(info, /entry\s*=\s*main\.lua/);
     assert.match(info, /allow_webui\s*=\s*true/);
     assert.match(info, /capabilities\s*=\s*lvgl,timer,input,file,camera,webui/);
-    assert.match(source, /APP\.PHOTO_DIR\s*=\s*"photos"/);
+    assert.match(source, /APP\.PHOTO_DIR\s*=\s*"\/sd\/data\/camera\/photos"/);
+    assert.match(source, /file\.mkdir\("\/sd\/data"\)/);
+    assert.match(source, /file\.mkdir\("\/sd\/data\/camera"\)/);
     assert.match(source, /file\.mkdir\(APP\.PHOTO_DIR\)/);
     assert.match(source, /camera\.preview_start_low/);
     assert.match(source, /camera\.preview_start/);
@@ -1975,6 +1981,22 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /local function request_capture\(trigger\)/);
     assert.match(source, /request_capture\("web"\)/);
     assert.match(source, /status\s*=\s*ok_capture and 202 or 409/);
+    assert.match(source, /local function parse_query\(query\)/);
+    assert.match(source, /local function is_photo_name\(name\)/);
+    assert.match(source, /name:match\("\^capture_%d\+%\.bmp\$"\)/);
+    assert.match(source, /photos\s*=\s*\{\}/);
+    assert.match(source, /if APP\.preview then\s+return APP\.photos\s+end/);
+    assert.match(source, /local function remember_photo\(name,\s*size\)/);
+    assert.match(source, /local function forget_photo\(name\)/);
+    assert.match(source, /remember_photo\(filename,\s*APP\.last_bytes\)/);
+    assert.match(source, /forget_photo\(name\)/);
+    assert.match(source, /local function photos_json\(photos\)/);
+    assert.match(source, /local function route_photos\(_req\)/);
+    assert.match(source, /local function route_delete\(req\)/);
+    assert.match(source, /file\.remove\(APP\.PHOTO_DIR \.\. "\/" \.\. name\)/);
+    assert.match(source, /local\s+pcall_ok,\s*removed,\s*remove_err\s*=\s*pcall/);
+    assert.match(source, /local\s+remove_ok\s*=\s*pcall_ok and removed/);
+    assert.match(source, /status\s*=\s*remove_ok and 200 or 500/);
     assert.match(source, /key\.on\(function\(evt_code,\s*evt_type/);
     assert.match(source, /evt_code\s*~=\s*key\.HOME/);
     assert.match(source, /request_capture\("home"\)/);
@@ -1990,8 +2012,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /app\.set_webui\(true\)/);
     assert.match(source, /app\.route\("\/",\s*dispatch_route\)/);
     assert.match(source, /app\.route\("\/api",\s*dispatch_route\)/);
+    assert.match(source, /app\.route\("\/photos",\s*dispatch_route\)/);
     assert.match(source, /app\.route\("\/capture",\s*dispatch_route\)/);
-    assert.match(source, /\/apps\/file\?app=camera&path=photos\//);
+    assert.match(source, /app\.route\("\/delete",\s*dispatch_route\)/);
+    assert.match(source, /\/sd\/file\?path=data\/camera\/photos\//);
     assert.doesNotMatch(source, /if app and app\.exiting[\s\S]*stop_camera\(\)/);
     assert.match(source, /if APP\.pending_capture ~= "" and not APP\.capturing then/);
     assert.match(source, /capture_photo\(trigger\)/);
@@ -2026,6 +2050,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /listdir/);
     assert.match(source, /VB_SD_MOUNT_POINT/);
     assert.match(source, /VB_APPS_PATH/);
+    assert.match(source, /VB_LUA_FILE_DATA_PREFIX/);
+    assert.match(source, /file data path escapes app sandbox/);
+    assert.match(source, /allow_data_write/);
+    assert.match(source, /strcmp\(path,\s*"\/sd\/data"\)\s*==\s*0/);
+    assert.match(source, /relative\[app_id_len\]\s*==\s*'\\0'\s*\|\|\s*relative\[app_id_len\]\s*==\s*'\/'/);
+    assert.match(source, /strncmp\(path,\s*VB_LUA_FILE_DATA_PREFIX/);
     assert.match(runner, /vb_lua_file_register\(L,\s*app\)/);
   });
 

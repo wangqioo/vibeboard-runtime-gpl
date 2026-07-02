@@ -63,6 +63,46 @@ typedef struct {
 } vb_camera_sd_service_guard_t;
 
 static void send_json(httpd_req_t *req, const char *json);
+static vb_camera_sd_service_guard_t camera_sd_service_pause_preview(void);
+static void camera_sd_service_resume_preview(vb_camera_sd_service_guard_t guard);
+
+static esp_err_t send_file_response(httpd_req_t *req, const char *full_path)
+{
+    vb_camera_sd_service_guard_t camera_guard = camera_sd_service_pause_preview();
+    FILE *file = fopen(full_path, "rb");
+    if (file == NULL) {
+        camera_sd_service_resume_preview(camera_guard);
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "file not found");
+        return ESP_FAIL;
+    }
+
+    esp_err_t result = ESP_OK;
+    httpd_resp_set_type(req, "application/octet-stream");
+    char buffer[512];
+    while (true) {
+        size_t read = fread(buffer, 1, sizeof(buffer), file);
+        if (read > 0) {
+            esp_err_t err = httpd_resp_send_chunk(req, buffer, read);
+            if (err != ESP_OK) {
+                result = err;
+                break;
+            }
+        }
+        if (read < sizeof(buffer)) {
+            if (ferror(file)) {
+                result = ESP_FAIL;
+                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "read failed");
+            }
+            break;
+        }
+    }
+    fclose(file);
+    if (result == ESP_OK) {
+        result = httpd_resp_send_chunk(req, NULL, 0);
+    }
+    camera_sd_service_resume_preview(camera_guard);
+    return result;
+}
 
 static void http_launch_before_start(void *user_data)
 {
@@ -162,6 +202,11 @@ static bool match_uri_without_query(const char *reference_uri, const char *uri, 
 static bool reject_unsafe_path(const char *path)
 {
     return path == NULL || path[0] == '\0' || path[0] == '/' || strstr(path, "..") != NULL;
+}
+
+static bool is_sd_data_file_path(const char *path)
+{
+    return path != NULL && strncmp(path, "data/", strlen("data/")) == 0;
 }
 
 static esp_err_t mkdir_if_missing(const char *path)
@@ -1040,40 +1085,24 @@ static esp_err_t app_file_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    vb_camera_sd_service_guard_t camera_guard = camera_sd_service_pause_preview();
-    FILE *file = fopen(full_path, "rb");
-    if (file == NULL) {
-        camera_sd_service_resume_preview(camera_guard);
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "file not found");
+    return send_file_response(req, full_path);
+}
+
+static esp_err_t sd_file_handler(httpd_req_t *req)
+{
+    char path[128] = {0};
+    if (get_query_value(req, "path", path, sizeof(path)) != ESP_OK || reject_unsafe_path(path) ||
+        !is_sd_data_file_path(path)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "unsafe or missing path");
         return ESP_FAIL;
     }
 
-    esp_err_t result = ESP_OK;
-    httpd_resp_set_type(req, "application/octet-stream");
-    char buffer[512];
-    while (true) {
-        size_t read = fread(buffer, 1, sizeof(buffer), file);
-        if (read > 0) {
-            esp_err_t err = httpd_resp_send_chunk(req, buffer, read);
-            if (err != ESP_OK) {
-                result = err;
-                break;
-            }
-        }
-        if (read < sizeof(buffer)) {
-            if (ferror(file)) {
-                result = ESP_FAIL;
-                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "read failed");
-            }
-            break;
-        }
+    char full_path[VB_APP_PATH_MAX];
+    if (build_storage_path(full_path, sizeof(full_path), "/sdcard", path, NULL) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
     }
-    fclose(file);
-    if (result == ESP_OK) {
-        result = httpd_resp_send_chunk(req, NULL, 0);
-    }
-    camera_sd_service_resume_preview(camera_guard);
-    return result;
+    return send_file_response(req, full_path);
 }
 
 static esp_err_t rescan_handler(httpd_req_t *req)
@@ -1491,6 +1520,10 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
         return err;
     }
     err = register_handler("/apps/file", HTTP_GET, app_file_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/sd/file", HTTP_GET, sd_file_handler);
     if (err != ESP_OK) {
         return err;
     }
