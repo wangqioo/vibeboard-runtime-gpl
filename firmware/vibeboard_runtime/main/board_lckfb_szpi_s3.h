@@ -31,6 +31,7 @@ extern "C" {
 #define VB_LCD_H_RES 320
 #define VB_LCD_V_RES 240
 #define VB_LCD_DRAW_BUF_HEIGHT 5
+#define VB_CAMERA_LCD_STRIPE_ROWS 8
 
 #define VB_SD_MOUNT_POINT "/sdcard"
 #define VB_SD_MAX_OPEN_FILES 16
@@ -52,7 +53,7 @@ extern "C" {
 #define VB_CAMERA_VSYNC GPIO_NUM_3
 #define VB_CAMERA_HREF GPIO_NUM_46
 #define VB_CAMERA_PCLK GPIO_NUM_7
-#define VB_CAMERA_XCLK_FREQ_HZ 24000000
+#define VB_CAMERA_XCLK_FREQ_HZ 12000000
 
 typedef struct {
     bool display_ok;
@@ -100,6 +101,8 @@ esp_err_t vb_board_get_backlight_percent(int *level);
 bool vb_board_imu_available(void);
 esp_err_t vb_board_imu_read(vb_board_imu_sample_t *sample);
 esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *format);
+esp_err_t vb_board_camera_preview_start(void);
+void vb_board_camera_preview_stop(void);
 esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame);
 esp_err_t vb_board_camera_draw(const vb_board_camera_frame_t *frame);
 void vb_board_camera_return(vb_board_camera_frame_t *frame);

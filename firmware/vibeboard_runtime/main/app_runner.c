@@ -66,6 +66,49 @@ static vb_lua_runtime_t *s_active_runtime;
 static SemaphoreHandle_t s_script_reader_mutex;
 static StaticSemaphore_t s_script_reader_mutex_buffer;
 
+static bool app_has_capability(const vb_app_registry_entry_t *entry, const char *capability)
+{
+    if (entry == NULL || capability == NULL || entry->capabilities[0] == '\0') {
+        return false;
+    }
+
+    const char *cursor = entry->capabilities;
+    const size_t capability_len = strlen(capability);
+    while (*cursor != '\0') {
+        while (*cursor == ' ' || *cursor == ',') {
+            cursor++;
+        }
+        const char *start = cursor;
+        while (*cursor != '\0' && *cursor != ',') {
+            cursor++;
+        }
+        const char *end = cursor;
+        while (end > start && end[-1] == ' ') {
+            end--;
+        }
+        if ((size_t)(end - start) == capability_len && memcmp(start, capability, capability_len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool prewarm_camera_if_needed(const vb_app_registry_entry_t *entry)
+{
+    if (!app_has_capability(entry, "camera")) {
+        return false;
+    }
+
+    ESP_LOGI(TAG, "starting camera preview before Lua task");
+    esp_err_t err = vb_board_camera_preview_start();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "camera preview prestart failed: %s", esp_err_to_name(err));
+        vb_board_camera_stop();
+        return false;
+    }
+    return true;
+}
+
 static bool runner_state_is_active(vb_app_runner_lifecycle_state_t state)
 {
     return state == VB_APP_RUNNER_STATE_STARTING ||
@@ -646,6 +689,7 @@ esp_err_t vb_app_runner_run(const vb_app_registry_result_t *app, vb_app_runner_r
         return err;
     }
 
+    bool camera_prewarmed = prewarm_camera_if_needed(&app->apps[0]);
     BaseType_t created = xTaskCreatePinnedToCoreWithCaps(lua_task,
                                                          "vb_lua",
                                                          VB_LUA_TASK_STACK_SIZE,
@@ -655,6 +699,9 @@ esp_err_t vb_app_runner_run(const vb_app_registry_result_t *app, vb_app_runner_r
                                                          tskNO_AFFINITY,
                                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (created != pdPASS) {
+        if (camera_prewarmed) {
+            vb_board_camera_stop();
+        }
         free_lua_script(&context.script);
         fail_reserved_start(ESP_ERR_NO_MEM);
         set_result(result, false, ESP_ERR_NO_MEM, "lua task failed");
@@ -717,6 +764,8 @@ esp_err_t vb_app_runner_launch_async_from_registry(const vb_app_registry_result_
         return err;
     }
 
+    bool camera_prewarmed = prewarm_camera_if_needed(entry);
+
     BaseType_t created = xTaskCreatePinnedToCoreWithCaps(lua_async_task,
                                                          "vb_lua_launch",
                                                          VB_LUA_TASK_STACK_SIZE,
@@ -726,6 +775,9 @@ esp_err_t vb_app_runner_launch_async_from_registry(const vb_app_registry_result_
                                                          tskNO_AFFINITY,
                                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (created != pdPASS) {
+        if (camera_prewarmed) {
+            vb_board_camera_stop();
+        }
         free_lua_script(&context->script);
         fail_reserved_start(ESP_ERR_NO_MEM);
         free(context);
@@ -767,6 +819,8 @@ esp_err_t vb_app_runner_launch_async_with_options(const vb_app_registry_entry_t 
         options->before_start(options->user_data);
     }
 
+    bool camera_prewarmed = prewarm_camera_if_needed(entry);
+
     BaseType_t created = xTaskCreatePinnedToCoreWithCaps(lua_async_task,
                                                          "vb_lua_launch",
                                                          VB_LUA_TASK_STACK_SIZE,
@@ -776,6 +830,9 @@ esp_err_t vb_app_runner_launch_async_with_options(const vb_app_registry_entry_t 
                                                          tskNO_AFFINITY,
                                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (created != pdPASS) {
+        if (camera_prewarmed) {
+            vb_board_camera_stop();
+        }
         free_lua_script(&context->script);
         fail_reserved_start(ESP_ERR_NO_MEM);
         free(context);

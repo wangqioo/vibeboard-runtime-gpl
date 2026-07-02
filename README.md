@@ -27,7 +27,7 @@ The runtime has been built, flashed, and verified on real hardware. The latest b
 - LVGL bindings for labels, objects, images, GIFs, canvas BMP backgrounds, common widgets, styles, fonts, and animations.
 - NES native module smoke paths, Voice AI bridge paths, I2S RX/TX smoke paths, and app lifecycle smoke tools.
 
-Recent known-good board evidence includes `app_count=48`, HTTP Runtime status at `http://192.168.1.32:8080/status`, `device:check` passing, `2048` launch/stop lifecycle smoke returning to idle, and `smoke_camera` capturing one GC2145 RGB565 frame on `/dev/cu.usbmodem112301`.
+Recent known-good board evidence includes `app_count=48`, HTTP Runtime status at `http://192.168.1.32:8080/status`, `device:check` passing, `2048` launch/stop lifecycle smoke returning to idle, and `smoke_camera` showing a board-confirmed live GC2145 preview through the Runtime camera stack on `/dev/cu.usbmodem112301`.
 
 ## Repository Layout
 
@@ -212,7 +212,7 @@ npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app 2048 --stop
 npm run input:smoke -- --board http://192.168.1.32:8080 --app smoke_key --key LEFT:SHORT
 npm run gamepad:smoke -- --board http://192.168.1.32:8080 --inject-gamepad --require-updates 1
 npm run i2s:smoke -- --board http://192.168.1.32:8080 --require-write --require-tone-writes 8
-npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app smoke_camera --allow-starting --require-metrics camera_ready=true --require-metrics 'captures>=1' --stop
+npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app smoke_camera --allow-starting --require-metrics camera_ready=true --require-metrics 'captures>=1' --require-metrics preview=true --stop
 npm run nes:rom:smoke -- --board http://192.168.1.32:8080 --app smoke_nes --path roms/smoke.nes
 npm run nes:smoke -- --board http://192.168.1.32:8080 --require-rom --require-frame-growth 120
 npm run nesgame:smoke -- --board http://192.168.1.32:8080 --require-frame-growth 120

@@ -6347,8 +6347,9 @@ Two board-level issues were fixed during bring-up:
 - `esp32-camera` initially selected the new SCCB I2C driver, which conflicted with the existing
   legacy I2C stack; Runtime now sets `CONFIG_SCCB_HARDWARE_I2C_DRIVER_LEGACY=y`.
 - RGB capture initially failed after WiFi/LVGL boot because the camera wanted a 7680-byte contiguous
-  internal DMA buffer while the largest free DMA block was 6656 bytes; Runtime now enables
-  `CONFIG_CAMERA_PSRAM_DMA=y` and verifies the first smoke at 160x120 RGB565.
+  internal DMA buffer while the largest free DMA block was 6656 bytes. An intermediate smoke tried
+  camera PSRAM DMA, but the final stable preview configuration keeps `CONFIG_CAMERA_PSRAM_DMA`
+  disabled, reserves internal DMA memory, and moves the `esp32-camera` internal task stack to PSRAM.
 
 Local and firmware verification:
 
@@ -6411,7 +6412,82 @@ A final recheck ran the same lifecycle smoke twice consecutively. Both runs pass
 now captures its first frame synchronously after `camera.start` so fast smoke tooling cannot stop it
 before the first useful metrics write.
 
-Conclusion: the board camera is now driven enough for Runtime apps to start the sensor, capture a
-GC2145 RGB565 frame, release it, stop cleanly, and report metrics. Full-screen preview remains a
-follow-up because the currently verified capture size is 160x120 while `camera.draw` still only
-accepts the 320x240 LCD-native frame size.
+Conclusion for the first slice: the board camera was driven enough for Runtime apps to start the
+sensor, capture a GC2145 RGB565 frame, release it, stop cleanly, and report metrics. Full-screen
+preview still needed a Runtime draw path because the verified capture size was 160x120 while the LCD
+is 320x240.
+
+Preview scaler follow-up on the same day:
+
+```text
+node --test tools/firmware-static-check/test.mjs --test-name-pattern camera
+# 115 tests, 115 pass
+
+node tools/app-validator/cli.mjs apps/smoke_camera
+# ok apps/smoke_camera (smoke_camera)
+
+idf.py build
+# vibeboard_runtime.bin binary size 0x222e00 bytes; 47% free in the 4 MB app partition
+
+idf.py -p /dev/cu.usbmodem112301 flash
+# Serial port /dev/cu.usbmodem112301
+# MAC: 10:51:db:80:e2:e8
+# Hash of data verified for bootloader, app, and partition table
+
+npm run lifecycle:smoke -- --board http://192.168.1.32:8080 \
+  --app smoke_camera --allow-starting --polls 80 --interval-ms 500 \
+  --metrics-polls 80 --metrics-interval-ms 500 \
+  --require-metrics camera_ready=true --require-metrics 'captures>=1' \
+  --require-metrics preview=true \
+  --stop --stop-polls 40 --stop-interval-ms 500
+
+# lifecycle smoke ok: smoke_camera state=starting current_app=smoke_camera polls=2
+# stop_state=idle stop_current_app= stop_polls=1
+# metrics={"camera_ready":true,"captures":2,"width":160,"height":120,
+# "format":"rgb565","frame_bytes":38400,"preview":true,
+# "capture_error":"","preview_error":"","phase":"captured"}
+```
+
+`camera.draw` now accepts the verified 160x120 RGB565 frame and scales it 2x in the board Runtime
+layer before writing 320x240 RGB565 rows to the ST7789 panel. Lua still only calls
+`camera.capture()` and `camera.draw(frame)`; per-pixel image work stays in C. A second no-stop
+lifecycle run left `smoke_camera` running on the device with `preview=true` for physical screen
+inspection.
+
+## 2026-07-02 GC2145 camera live preview stabilization
+
+The physical preview was later moved from a one-frame `camera.capture()` / `camera.draw(frame)` smoke
+to a continuous Runtime-native preview task. The app remains a Lua app and uses the Runtime camera
+module; it does not bypass the app architecture with the LCKFB demo.
+
+The flower-screen/root-cause was not sensor orientation or RGB565 byte order. Under the full Runtime,
+`esp32-camera` created its internal `cam_task` with an internal-RAM stack after WiFi, LVGL, HTTP, and
+Lua were already running. That task creation returned failure (`result=-1 handle=0x0`), but the
+driver did not fail fast. VSYNC/DMA events then had no consumer, producing `EV-VSYNC-OVF` and frame
+timeouts. Runtime now applies a tracked CMake-time patch to the managed `esp32-camera` component so
+clean builds preserve the fix:
+
+- include `freertos/idf_additions.h` for the task-with-caps API;
+- create `cam_task` with `xTaskCreatePinnedToCoreWithCaps(..., MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)`;
+- check task creation with `CAM_CHECK_GOTO(task_created == pdPASS, ...)`;
+- delete that task with `vTaskDeleteWithCaps`;
+- keep the camera event queue at a minimum depth of 4.
+
+The stable board settings are legacy SCCB I2C, GC2145 support, camera task affinity on core 1, 12 MHz
+XCLK, `CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=49152`, external task stacks enabled, and
+`CONFIG_CAMERA_PSRAM_DMA` disabled. The preview path starts QQVGA RGB565 capture, takes over the LCD
+from LVGL, scales 160x120 frames to 320x240 in C, and batches LCD writes into 8-row destination
+stripes so each frame uses far fewer panel transfers than the earlier two-row loop.
+
+Verification on `/dev/cu.usbmodem112301` (`MAC 10:51:db:80:e2:e8`) after flashing the runtime:
+
+```text
+I cam_hal: cam_task create core=1 stack=psram result=1 handle=...
+I cam_hal: cam config ok
+I board: GC2145 camera ready
+I board: camera preview task started
+```
+
+The earlier `EV-VSYNC-OVF` and camera frame timeout logs were absent in the stabilization run. The
+user confirmed on the physical display that the live camera image was now normal. Current stable
+preview quality is 160x120 scaled to full screen; true QVGA preview clarity remains future work.

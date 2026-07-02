@@ -11,6 +11,7 @@
 #include "driver/spi_master.h"
 #include "es7210.h"
 #include "es8311.h"
+#include "esp_attr.h"
 #include "esp_check.h"
 #include "esp_camera.h"
 #include "esp_heap_caps.h"
@@ -47,10 +48,16 @@ static uint8_t s_pca9557_output = VB_PCA9557_LCD_CS_BIT | VB_PCA9557_DVP_PWDN_BI
 static int s_backlight_percent;
 static bool s_imu_ready;
 static bool s_camera_ready;
+static bool s_camera_display_taken;
+static TaskHandle_t s_camera_preview_task;
+static volatile bool s_camera_preview_stop_requested;
+static DMA_ATTR uint16_t s_camera_lcd_rows[VB_LCD_H_RES * VB_CAMERA_LCD_STRIPE_ROWS];
 static vb_board_input_callback_t input_callback;
 static void *input_user_data;
 
 static int board_now_ms(void);
+static esp_err_t vb_board_camera_take_display(void);
+static void vb_board_camera_preview_task(void *arg);
 
 #define VB_BOARD_INPUT_POLL_MS 20
 #define VB_BOARD_TOUCH_SWIPE_MIN_PX 28
@@ -66,6 +73,7 @@ static int board_now_ms(void);
 #define VB_QMI8658_STATUS0 0x2E
 #define VB_QMI8658_AX_L 0x35
 #define VB_QMI8658_RESET 0x60
+#define VB_LCD_CMD_NOP 0x00
 
 static esp_err_t i2c_init(void)
 {
@@ -337,7 +345,11 @@ esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *for
         return ESP_OK;
     }
 
-    ESP_RETURN_ON_ERROR(pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, false), TAG, "camera power failed");
+    esp_err_t err = pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, false);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "camera power failed: %s", esp_err_to_name(err));
+        return err;
+    }
     vTaskDelay(pdMS_TO_TICKS(20));
 
     const camera_config_t config = {
@@ -369,7 +381,7 @@ esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *for
         .sccb_i2c_port = VB_I2C_PORT,
     };
 
-    esp_err_t err = esp_camera_init(&config);
+    err = esp_camera_init(&config);
     if (err != ESP_OK) {
         (void)pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, true);
         ESP_LOGW(TAG, "camera init failed: %s", esp_err_to_name(err));
@@ -395,6 +407,9 @@ esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame)
     if (!s_camera_ready) {
         return ESP_ERR_INVALID_STATE;
     }
+    if (s_camera_preview_task != NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     camera_fb_t *fb = esp_camera_fb_get();
     if (fb == NULL) {
@@ -410,15 +425,215 @@ esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame)
     return ESP_OK;
 }
 
+static esp_err_t vb_board_lcd_wait_for_queued_color(void)
+{
+    if (lcd_io == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    return esp_lcd_panel_io_tx_param(lcd_io, VB_LCD_CMD_NOP, NULL, 0);
+}
+
+static esp_err_t vb_board_camera_take_display(void)
+{
+    if (s_camera_display_taken) {
+        return ESP_OK;
+    }
+
+    ESP_RETURN_ON_ERROR(vb_board_display_takeover(), TAG, "camera display takeover failed");
+    s_camera_display_taken = true;
+    return vb_board_lcd_wait_for_queued_color();
+}
+
+static esp_err_t vb_board_camera_draw_rgb565_scaled_2x(const vb_board_camera_frame_t *frame)
+{
+    const uint16_t src_width = frame->width;
+    const uint16_t src_height = frame->height;
+
+    const uint16_t *src = (const uint16_t *)frame->buf;
+    uint16_t *rows = s_camera_lcd_rows;
+    const uint16_t src_rows_per_batch = VB_CAMERA_LCD_STRIPE_ROWS / 2;
+
+    for (uint16_t src_y = 0; src_y < src_height; src_y += src_rows_per_batch) {
+        if (src_y > 0) {
+            esp_err_t wait_err = vb_board_lcd_wait_for_queued_color();
+            if (wait_err != ESP_OK) {
+                return wait_err;
+            }
+        }
+
+        uint16_t batch_src_rows = src_rows_per_batch;
+        if (src_y + batch_src_rows > src_height) {
+            batch_src_rows = src_height - src_y;
+        }
+
+        for (uint16_t batch_y = 0; batch_y < batch_src_rows; batch_y++) {
+            const uint16_t *src_row = src + ((src_y + batch_y) * src_width);
+            uint16_t *row0 = rows + ((batch_y * 2) * VB_LCD_H_RES);
+            uint16_t *row1 = row0 + VB_LCD_H_RES;
+            for (uint16_t src_x = 0; src_x < src_width; src_x++) {
+                const uint16_t pixel = src_row[src_x];
+                const uint16_t dst_x = src_x * 2;
+                row0[dst_x] = pixel;
+                row0[dst_x + 1] = pixel;
+                row1[dst_x] = pixel;
+                row1[dst_x + 1] = pixel;
+            }
+        }
+
+        esp_err_t err = vb_board_draw_rgb565(0, src_y * 2, VB_LCD_H_RES, batch_src_rows * 2, rows);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+
+    esp_err_t wait_err = vb_board_lcd_wait_for_queued_color();
+    if (wait_err != ESP_OK) {
+        return wait_err;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t vb_board_camera_draw_rgb565_striped(const vb_board_camera_frame_t *frame)
+{
+    if (frame->width == VB_LCD_H_RES && frame->height == VB_LCD_V_RES) {
+        esp_err_t direct_err = vb_board_draw_rgb565(0, 0, VB_LCD_H_RES, VB_LCD_V_RES, frame->buf);
+        if (direct_err == ESP_OK) {
+            return vb_board_lcd_wait_for_queued_color();
+        }
+        ESP_LOGW(TAG, "camera direct LCD draw failed, falling back to stripes: %s", esp_err_to_name(direct_err));
+    }
+
+    const uint16_t stripe_rows = VB_CAMERA_LCD_STRIPE_ROWS;
+
+    const uint8_t *src = (const uint8_t *)frame->buf;
+    uint16_t *rows = s_camera_lcd_rows;
+    const size_t line_bytes = (size_t)VB_LCD_H_RES * sizeof(uint16_t);
+    for (uint16_t y = 0; y < VB_LCD_V_RES; y += stripe_rows) {
+        if (y > 0) {
+            esp_err_t wait_err = vb_board_lcd_wait_for_queued_color();
+            if (wait_err != ESP_OK) {
+                return wait_err;
+            }
+        }
+
+        const uint16_t stripe_height = (uint16_t)((VB_LCD_V_RES - y) < stripe_rows ? (VB_LCD_V_RES - y) : stripe_rows);
+        memcpy(rows, src + ((size_t)y * line_bytes), line_bytes * stripe_height);
+        esp_err_t err = vb_board_draw_rgb565(0, y, VB_LCD_H_RES, stripe_height, rows);
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+
+    esp_err_t wait_err = vb_board_lcd_wait_for_queued_color();
+    if (wait_err != ESP_OK) {
+        return wait_err;
+    }
+    return ESP_OK;
+}
+
 esp_err_t vb_board_camera_draw(const vb_board_camera_frame_t *frame)
 {
     if (frame == NULL || frame->buf == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (frame->width != VB_LCD_H_RES || frame->height != VB_LCD_V_RES || strcmp(frame->format, "rgb565") != 0) {
+    if (strcmp(frame->format, "rgb565") != 0) {
         return ESP_ERR_NOT_SUPPORTED;
     }
-    return vb_board_draw_rgb565(0, 0, frame->width, frame->height, frame->buf);
+
+    ESP_RETURN_ON_ERROR(vb_board_camera_take_display(), TAG, "camera display takeover failed");
+
+    if (frame->width == VB_LCD_H_RES / 2 && frame->height == VB_LCD_V_RES / 2) {
+        return vb_board_camera_draw_rgb565_scaled_2x(frame);
+    }
+    if (frame->width == VB_LCD_H_RES && frame->height == VB_LCD_V_RES) {
+        return vb_board_camera_draw_rgb565_striped(frame);
+    }
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+static void vb_board_camera_preview_task(void *arg)
+{
+    (void)arg;
+    ESP_LOGI(TAG, "camera preview task started");
+    uint32_t failure_count = 0;
+
+    while (!s_camera_preview_stop_requested) {
+        camera_fb_t *fb = esp_camera_fb_get();
+        if (fb == NULL) {
+            if ((failure_count++ % 30) == 0) {
+                ESP_LOGW(TAG, "camera preview frame timeout");
+            }
+            vTaskDelay(pdMS_TO_TICKS(5));
+            continue;
+        }
+
+        vb_board_camera_frame_t frame = {
+            .width = (uint16_t)fb->width,
+            .height = (uint16_t)fb->height,
+            .len = fb->len,
+            .format = fb->format == PIXFORMAT_RGB565 ? "rgb565" : "unknown",
+            .buf = fb->buf,
+            .driver_frame = fb,
+        };
+        esp_err_t err = vb_board_camera_draw(&frame);
+        esp_camera_fb_return(fb);
+
+        if (err != ESP_OK) {
+            if ((failure_count++ % 30) == 0) {
+                ESP_LOGW(TAG, "camera preview draw failed: %s", esp_err_to_name(err));
+            }
+            vTaskDelay(pdMS_TO_TICKS(20));
+        } else {
+            failure_count = 0;
+        }
+    }
+
+    ESP_LOGI(TAG, "camera preview task stopped");
+    s_camera_preview_task = NULL;
+    s_camera_preview_stop_requested = false;
+    vTaskDelete(NULL);
+}
+
+esp_err_t vb_board_camera_preview_start(void)
+{
+    if (s_camera_preview_task != NULL) {
+        return ESP_OK;
+    }
+
+    ESP_RETURN_ON_ERROR(vb_board_camera_start(VB_LCD_H_RES / 2, VB_LCD_V_RES / 2, "rgb565"), TAG, "camera preview start failed");
+    ESP_RETURN_ON_ERROR(vb_board_camera_take_display(), TAG, "camera preview display takeover failed");
+
+    s_camera_preview_stop_requested = false;
+    BaseType_t created = xTaskCreatePinnedToCoreWithCaps(
+        vb_board_camera_preview_task,
+        "camera_preview",
+        4096,
+        NULL,
+        6,
+        &s_camera_preview_task,
+        1,
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+    );
+    if (created != pdPASS) {
+        s_camera_preview_task = NULL;
+        return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
+}
+
+void vb_board_camera_preview_stop(void)
+{
+    if (s_camera_preview_task == NULL) {
+        return;
+    }
+
+    s_camera_preview_stop_requested = true;
+    for (int i = 0; i < 50 && s_camera_preview_task != NULL; i++) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (s_camera_preview_task != NULL) {
+        ESP_LOGW(TAG, "camera preview task did not stop before timeout");
+    }
 }
 
 void vb_board_camera_return(vb_board_camera_frame_t *frame)
@@ -432,14 +647,24 @@ void vb_board_camera_return(vb_board_camera_frame_t *frame)
 
 void vb_board_camera_stop(void)
 {
-    if (!s_camera_ready) {
-        return;
+    vb_board_camera_preview_stop();
+
+    if (s_camera_ready) {
+        esp_camera_deinit();
+        s_camera_ready = false;
+        esp_err_t err = pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, true);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "camera power-down failed: %s", esp_err_to_name(err));
+        }
     }
-    esp_camera_deinit();
-    s_camera_ready = false;
-    esp_err_t err = pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, true);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "camera power-down failed: %s", esp_err_to_name(err));
+
+    if (s_camera_display_taken) {
+        esp_err_t wait_err = vb_board_lcd_wait_for_queued_color();
+        if (wait_err != ESP_OK) {
+            ESP_LOGW(TAG, "camera display wait before release failed: %s", esp_err_to_name(wait_err));
+        }
+        vb_board_display_release_takeover();
+        s_camera_display_taken = false;
     }
 }
 
