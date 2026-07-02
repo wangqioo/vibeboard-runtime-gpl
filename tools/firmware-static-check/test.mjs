@@ -1608,6 +1608,22 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const installService = readRequired(installServiceSourcePath);
 
     assert.match(installService, /static\s+esp_err_t\s+app_file_handler\(httpd_req_t\s+\*req\)/);
+    assert.match(installService, /camera_sd_service_pause_preview/);
+    assert.match(installService, /camera_sd_service_resume_preview/);
+    assert.match(installService, /#include\s+"freertos\/semphr\.h"/);
+    assert.match(installService, /s_camera_sd_service_lock/);
+    assert.match(installService, /xSemaphoreCreateMutex\(\)/);
+    assert.match(installService, /xSemaphoreTake\(s_camera_sd_service_lock,\s*portMAX_DELAY\)/);
+    assert.match(installService, /xSemaphoreGive\(s_camera_sd_service_lock\)/);
+    assert.match(installService, /vb_camera_sd_service_guard_t/);
+    assert.match(installService, /#include\s+"board_lckfb_szpi_s3\.h"/);
+    assert.match(installService, /vb_board_camera_preview_mode\(&preview_width,\s*&preview_height\)/);
+    assert.match(installService, /vb_board_camera_stop\(\)/);
+    assert.match(installService, /vb_board_camera_preview_start_low_memory\(\)/);
+    assert.match(installService, /vb_camera_sd_service_guard_t\s+camera_guard\s*=\s*camera_sd_service_pause_preview\(\)/);
+    assert.match(installService, /camera_sd_service_resume_preview\(camera_guard\)/);
+    assert.match(installService, /rescan_handler[\s\S]*camera_sd_service_pause_preview\(\)/);
+    assert.match(installService, /rescan_handler[\s\S]*camera_sd_service_resume_preview\(camera_guard\)/);
     assert.match(installService, /register_handler\("\/apps\/file",\s*HTTP_GET,\s*app_file_handler\)/);
     assert.match(installService, /get_query_value\(req,\s*"app"/);
     assert.match(installService, /get_query_value\(req,\s*"path"/);

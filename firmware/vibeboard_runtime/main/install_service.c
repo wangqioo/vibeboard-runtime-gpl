@@ -11,6 +11,7 @@
 
 #include "app_registry.h"
 #include "app_runner.h"
+#include "board_lckfb_szpi_s3.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_event.h"
@@ -20,6 +21,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "launcher_ui.h"
 #include "lua_gamepad.h"
@@ -48,11 +50,17 @@ static const char *TAG = "install_service";
 static httpd_handle_t s_server;
 static bool s_netif_ready;
 static vb_install_service_context_t *s_context;
+static SemaphoreHandle_t s_camera_sd_service_lock;
 
 typedef struct {
     vb_app_registry_result_t registry;
     int selected_index;
 } vb_launch_deferred_job_t;
+
+typedef struct {
+    bool lock_taken;
+    bool resume_preview;
+} vb_camera_sd_service_guard_t;
 
 static void send_json(httpd_req_t *req, const char *json);
 
@@ -460,6 +468,46 @@ static esp_err_t validate_stage_manifest(const char *stage_path)
 static esp_err_t build_app_path(char *dest, size_t dest_size, const char *app, const char *path)
 {
     return build_storage_path(dest, dest_size, VB_APPS_PATH, app, path);
+}
+
+static vb_camera_sd_service_guard_t camera_sd_service_pause_preview(void)
+{
+    vb_camera_sd_service_guard_t guard = {0};
+    if (s_camera_sd_service_lock != NULL) {
+        xSemaphoreTake(s_camera_sd_service_lock, portMAX_DELAY);
+        guard.lock_taken = true;
+    }
+
+    if (!vb_app_runner_is_running() || strcmp(vb_app_runner_current_id(), "camera") != 0) {
+        return guard;
+    }
+
+    uint16_t preview_width = 0;
+    uint16_t preview_height = 0;
+    const char *mode = vb_board_camera_preview_mode(&preview_width, &preview_height);
+    if (mode == NULL || strcmp(mode, "stopped") == 0 || preview_width == 0 || preview_height == 0) {
+        return guard;
+    }
+
+    ESP_LOGI(TAG, "stopping camera before SD service read");
+    vb_board_camera_stop();
+    guard.resume_preview = true;
+    return guard;
+}
+
+static void camera_sd_service_resume_preview(vb_camera_sd_service_guard_t guard)
+{
+    if (guard.resume_preview) {
+        ESP_LOGI(TAG, "resuming camera preview after SD service read");
+        esp_err_t err = vb_board_camera_preview_start_low_memory();
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "camera preview resume failed after SD service read: %s", esp_err_to_name(err));
+        }
+        vb_board_camera_overlay_set(true);
+    }
+    if (guard.lock_taken && s_camera_sd_service_lock != NULL) {
+        xSemaphoreGive(s_camera_sd_service_lock);
+    }
 }
 
 static esp_err_t build_stage_path(char *dest, size_t dest_size, const char *stage, const char *path)
@@ -992,12 +1040,15 @@ static esp_err_t app_file_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    vb_camera_sd_service_guard_t camera_guard = camera_sd_service_pause_preview();
     FILE *file = fopen(full_path, "rb");
     if (file == NULL) {
+        camera_sd_service_resume_preview(camera_guard);
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "file not found");
         return ESP_FAIL;
     }
 
+    esp_err_t result = ESP_OK;
     httpd_resp_set_type(req, "application/octet-stream");
     char buffer[512];
     while (true) {
@@ -1005,21 +1056,24 @@ static esp_err_t app_file_handler(httpd_req_t *req)
         if (read > 0) {
             esp_err_t err = httpd_resp_send_chunk(req, buffer, read);
             if (err != ESP_OK) {
-                fclose(file);
-                return err;
+                result = err;
+                break;
             }
         }
         if (read < sizeof(buffer)) {
             if (ferror(file)) {
-                fclose(file);
+                result = ESP_FAIL;
                 httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "read failed");
-                return ESP_FAIL;
             }
             break;
         }
     }
     fclose(file);
-    return httpd_resp_send_chunk(req, NULL, 0);
+    if (result == ESP_OK) {
+        result = httpd_resp_send_chunk(req, NULL, 0);
+    }
+    camera_sd_service_resume_preview(camera_guard);
+    return result;
 }
 
 static esp_err_t rescan_handler(httpd_req_t *req)
@@ -1029,8 +1083,10 @@ static esp_err_t rescan_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    vb_camera_sd_service_guard_t camera_guard = camera_sd_service_pause_preview();
     esp_err_t err = vb_app_registry_scan(s_context->registry);
     if (err != ESP_OK) {
+        camera_sd_service_resume_preview(camera_guard);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(err));
         return ESP_FAIL;
     }
@@ -1042,6 +1098,7 @@ static esp_err_t rescan_handler(httpd_req_t *req)
     char body[96];
     snprintf(body, sizeof(body), "{\"ok\":true,\"app_count\":%d}\n", app_count);
     send_json(req, body);
+    camera_sd_service_resume_preview(camera_guard);
     return ESP_OK;
 }
 
@@ -1387,6 +1444,12 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     esp_err_t err = ensure_netif_ready();
     if (err != ESP_OK) {
         return err;
+    }
+    if (s_camera_sd_service_lock == NULL) {
+        s_camera_sd_service_lock = xSemaphoreCreateMutex();
+        if (s_camera_sd_service_lock == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
     }
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
