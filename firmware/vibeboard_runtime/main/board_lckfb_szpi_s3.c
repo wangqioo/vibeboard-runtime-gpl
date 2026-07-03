@@ -406,8 +406,6 @@ esp_err_t vb_board_audio_prepare(bool want_rx, bool want_tx, uint32_t sample_rat
 
 esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *format)
 {
-    vb_board_camera_release_internal_dma_reserve();
-
     framesize_t frame_size = FRAMESIZE_QVGA;
     if (width == 160 && height == 120) {
         frame_size = FRAMESIZE_QQVGA;
@@ -421,8 +419,14 @@ esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *for
         return ESP_OK;
     }
 
+    (void)esp_camera_set_psram_mode(false);
+    if (width == 160 && height == 120) {
+        vb_board_camera_reserve_internal_dma(1536);
+    }
+
     esp_err_t err = pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, false);
     if (err != ESP_OK) {
+        vb_board_camera_release_internal_dma_reserve();
         ESP_LOGW(TAG, "camera power failed: %s", esp_err_to_name(err));
         return err;
     }
@@ -457,6 +461,7 @@ esp_err_t vb_board_camera_start(uint16_t width, uint16_t height, const char *for
         .sccb_i2c_port = VB_I2C_PORT,
     };
 
+    vb_board_camera_release_internal_dma_reserve();
     err = esp_camera_init(&config);
     if (err != ESP_OK) {
         (void)pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, true);
@@ -1102,7 +1107,7 @@ void vb_board_camera_return(vb_board_camera_frame_t *frame)
     memset(frame, 0, sizeof(*frame));
 }
 
-void vb_board_camera_stop(void)
+void vb_board_camera_standby(void)
 {
     vb_board_camera_preview_stop();
     s_camera_overlay_enabled = false;
@@ -1112,15 +1117,6 @@ void vb_board_camera_stop(void)
     vb_board_camera_release_internal_dma_reserve();
     vb_board_camera_clear_latest_frame();
 
-    if (s_camera_ready) {
-        esp_camera_deinit();
-        s_camera_ready = false;
-        esp_err_t err = pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, true);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "camera power-down failed: %s", esp_err_to_name(err));
-        }
-    }
-
     if (s_camera_display_taken) {
         esp_err_t wait_err = vb_board_lcd_wait_for_queued_color();
         if (wait_err != ESP_OK) {
@@ -1128,6 +1124,20 @@ void vb_board_camera_stop(void)
         }
         vb_board_display_release_takeover();
         s_camera_display_taken = false;
+    }
+}
+
+void vb_board_camera_stop(void)
+{
+    vb_board_camera_standby();
+
+    if (s_camera_ready) {
+        esp_camera_deinit();
+        s_camera_ready = false;
+        esp_err_t err = pca9557_set_output(VB_PCA9557_DVP_PWDN_BIT, true);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "camera power-down failed: %s", esp_err_to_name(err));
+        }
     }
 }
 

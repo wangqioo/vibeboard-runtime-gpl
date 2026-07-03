@@ -20,9 +20,13 @@ APP = {
   GALLERY_BACK_HIT_Y = 192,
   GALLERY_BACK_HIT_W = 104,
   GALLERY_BACK_HIT_H = 48,
+  GALLERY_DELETE_HIT_X = 242,
+  GALLERY_DELETE_HIT_Y = 192,
+  GALLERY_DELETE_HIT_W = 78,
+  GALLERY_DELETE_HIT_H = 48,
   CAMERA_PHOTO_W = 160,
   CAMERA_PHOTO_H = 120,
-  MAX_WEB_PHOTOS = 3,
+  MAX_WEB_PHOTOS = 1,
   mode = "camera",
   gallery_index = 1,
   captures = 0,
@@ -43,6 +47,7 @@ APP = {
   key_events = 0,
   touch_events = 0,
   pending_capture = "",
+  pending_delete = "",
 }
 APP.PHOTO_DIR = "/sd/data/camera/photos"
 
@@ -105,6 +110,7 @@ local function write_metrics()
     .. "\"key_events\":" .. tostring(APP.key_events) .. ","
     .. "\"touch_events\":" .. tostring(APP.touch_events) .. ","
     .. "\"pending_capture\":\"" .. json_escape(APP.pending_capture) .. "\","
+    .. "\"pending_delete\":\"" .. json_escape(APP.pending_delete) .. "\","
     .. "\"last_error\":\"" .. json_escape(APP.last_error) .. "\""
     .. "}\n"
   pcall(function() file.putcontents(APP.METRICS_PATH, body) end)
@@ -268,6 +274,14 @@ local function photo_url(name)
   return "/sd/file?path=data/camera/photos/" .. name
 end
 
+local function download_url(name)
+  return photo_url(name)
+end
+
+local function delete_url(name)
+  return "/app/delete?name=" .. name
+end
+
 local function gallery_photo_src(name)
   return "S:/data/camera/photos/" .. name
 end
@@ -288,13 +302,19 @@ local function wrap_gallery_index(index)
   return index
 end
 
-local function photos_json(photos)
+local function photos_json(photos, limit)
   local parts = {}
-  for _, photo in ipairs(photos) do
+  local max_items = tonumber(limit) or #photos
+  for index, photo in ipairs(photos) do
+    if index > max_items then
+      break
+    end
     parts[#parts + 1] = "{"
       .. "\"name\":\"" .. json_escape(photo.name) .. "\","
       .. "\"size\":" .. tostring(photo.size or 0) .. ","
-      .. "\"url\":\"" .. json_escape(photo_url(photo.name)) .. "\""
+      .. "\"url\":\"" .. json_escape(photo_url(photo.name)) .. "\","
+      .. "\"download_url\":\"" .. json_escape(download_url(photo.name)) .. "\","
+      .. "\"delete_url\":\"" .. json_escape(delete_url(photo.name)) .. "\""
       .. "}"
   end
   return "[" .. table.concat(parts, ",") .. "]"
@@ -324,14 +344,49 @@ end
 
 local function stop_camera()
   APP.preview = false
-  if camera and type(camera.overlay) == "function" then
-    pcall(function() camera.overlay(false) end)
-  end
+  set_overlay(false)
   if camera and camera.stop then
     pcall(function() camera.stop() end)
   end
   refresh_preview_status()
   write_metrics()
+end
+
+local function standby_for_runtime_stop()
+  stop_camera()
+end
+
+local function delete_photo_by_name(name)
+  if not is_photo_name(name) then
+    return false, "invalid photo name"
+  end
+  if not file or type(file.remove) ~= "function" then
+    return false, "file.remove unavailable"
+  end
+  local was_preview = APP.preview
+  if was_preview and camera and camera.stop then
+    set_overlay(false)
+    pcall(function() camera.stop() end)
+    APP.preview = false
+  end
+  local removed, remove_err = file.remove(APP.PHOTO_DIR .. "/" .. name)
+  local remove_ok = removed == true
+  if remove_ok and name == APP.last_photo then
+    APP.last_photo = ""
+    APP.last_bytes = 0
+  end
+  if remove_ok then
+    forget_photo(name)
+    APP.gallery_index = wrap_gallery_index(APP.gallery_index)
+    APP.last_error = ""
+  else
+    APP.last_error = text(remove_err or removed or "delete failed")
+  end
+  write_metrics()
+  if was_preview then
+    start_preview()
+  end
+  return remove_ok, APP.last_error
 end
 
 local function current_gallery_photo()
@@ -345,6 +400,7 @@ local function draw_gallery_current()
   if not photo then
     set_label(APP.ui.gallery_title, "No photos")
     set_label(APP.ui.gallery_info, "Take a photo first")
+    set_label(APP.ui.gallery_delete, "")
     if APP.ui.gallery_image and lv_img_set_src then
       pcall(function() lv_img_set_src(APP.ui.gallery_image, "") end)
     end
@@ -354,6 +410,7 @@ local function draw_gallery_current()
   local name = photo.name
   set_label(APP.ui.gallery_title, tostring(APP.gallery_index) .. "/" .. tostring(#APP.photos))
   set_label(APP.ui.gallery_info, name)
+  set_label(APP.ui.gallery_delete, "Delete")
   if APP.ui.gallery_image and lv_img_set_src then
     pcall(function() lv_img_set_src(APP.ui.gallery_image, gallery_photo_src(name)) end)
   end
@@ -410,11 +467,16 @@ local function show_gallery()
 
   APP.ui.gallery_info = lv_label_create(root)
   lv_obj_set_pos(APP.ui.gallery_info, 108, 198)
-  lv_obj_set_width(APP.ui.gallery_info, 200)
+  lv_obj_set_width(APP.ui.gallery_info, 128)
   style_text(APP.ui.gallery_info, 0xcbd5e1)
 
+  APP.ui.gallery_delete = lv_label_create(root)
+  lv_obj_set_pos(APP.ui.gallery_delete, 246, 198)
+  lv_obj_set_width(APP.ui.gallery_delete, 70)
+  style_text(APP.ui.gallery_delete, 0xfca5a5)
+
   APP.ui.gallery_help = lv_label_create(root)
-  lv_label_set_text(APP.ui.gallery_help, "<  tap sides  >   center/HOME back")
+  lv_label_set_text(APP.ui.gallery_help, "<  sides  >   center back   right delete")
   lv_obj_set_pos(APP.ui.gallery_help, 12, 220)
   lv_obj_set_width(APP.ui.gallery_help, 296)
   style_text(APP.ui.gallery_help, 0x7dd3fc)
@@ -443,6 +505,22 @@ local function move_gallery(delta)
   APP.gallery_index = wrap_gallery_index(APP.gallery_index + delta)
   draw_gallery_current()
   write_metrics()
+end
+
+local function delete_current_gallery_photo()
+  if APP.mode ~= "gallery" then
+    return
+  end
+  local photo = current_gallery_photo()
+  if not photo then
+    draw_gallery_current()
+    return
+  end
+  local remove_ok, remove_err = delete_photo_by_name(photo.name)
+  if not remove_ok then
+    set_label(APP.ui.gallery_info, remove_err or "delete failed")
+  end
+  draw_gallery_current()
 end
 
 local function capture_photo(trigger)
@@ -536,6 +614,18 @@ local function request_capture(trigger)
   return true
 end
 
+local function request_delete(name)
+  if APP.pending_delete ~= "" then
+    return false, "delete busy"
+  end
+  if not is_photo_name(name) then
+    return false, "invalid photo name"
+  end
+  APP.pending_delete = name
+  set_status("queued delete")
+  return true
+end
+
 local function touch_hits_shutter(x, y)
   local px = tonumber(x) or -1
   local py = tonumber(y) or -1
@@ -563,29 +653,30 @@ local function touch_hits_gallery_back(x, y)
     and py < APP.GALLERY_BACK_HIT_Y + APP.GALLERY_BACK_HIT_H
 end
 
+local function touch_hits_gallery_delete(x, y)
+  local px = tonumber(x) or -1
+  local py = tonumber(y) or -1
+  return px >= APP.GALLERY_DELETE_HIT_X
+    and px < APP.GALLERY_DELETE_HIT_X + APP.GALLERY_DELETE_HIT_W
+    and py >= APP.GALLERY_DELETE_HIT_Y
+    and py < APP.GALLERY_DELETE_HIT_Y + APP.GALLERY_DELETE_HIT_H
+end
+
 local function route_index(_req)
   local photos = list_photos()
-  local rows = {}
-  for _, photo in ipairs(photos) do
-    local name = html_escape(photo.name)
-    local url = photo_url(photo.name)
-    rows[#rows + 1] = "<tr><td><a href=\"" .. url .. "\">" .. name .. "</a></td><td>"
-      .. tostring(photo.size or 0) .. "</td><td><form method=\"post\" action=\"/app/delete?name="
-      .. name .. "\"><button type=\"submit\">Delete</button></form></td></tr>"
+  local actions = "<p>No photos</p>"
+  if #photos > 0 then
+    local first = photos[1]
+    local name = html_escape(first.name)
+    actions = "<p>" .. name .. " (" .. tostring(first.size or 0) .. "B)</p>"
+      .. "<p><a href=\"" .. download_url(first.name) .. "\">Download</a></p>"
+      .. "<form method=\"post\" action=\"" .. delete_url(first.name) .. "\"><button>Delete</button></form>"
   end
-  if #rows == 0 then
-    rows[1] = "<tr><td colspan=\"3\">No photos</td></tr>"
-  end
-  local body = "<html><head><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-    .. "<style>body{font-family:sans-serif;margin:20px;background:#0b1220;color:#e5e7eb}"
-    .. "a{color:#7dd3fc}button{padding:8px 12px}table{border-collapse:collapse;width:100%;max-width:720px}"
-    .. "td,th{border-bottom:1px solid #334155;padding:8px;text-align:left}</style></head><body>"
-    .. "<h3>Camera</h3><p>captures:" .. tostring(APP.captures) .. " last:"
-    .. html_escape(APP.last_photo ~= "" and APP.last_photo or "none") .. "</p>"
-    .. "<form method=\"post\" action=\"/app/capture\"><button type=\"submit\">Capture</button></form>"
-    .. "<p><a href=\"/app/photos\">photos json</a> · <a href=\"/app/api\">api</a></p>"
-    .. "<table><thead><tr><th>Photo</th><th>Bytes</th><th></th></tr></thead><tbody>"
-    .. table.concat(rows, "") .. "</tbody></table></body></html>"
+  local body = "<html><body><h3>Camera</h3><p>" .. tostring(#photos)
+    .. " photos, last " .. html_escape(APP.last_photo ~= "" and APP.last_photo or "none") .. "</p>"
+    .. "<form method=\"post\" action=\"/app/capture\"><button>Capture</button></form>"
+    .. actions
+    .. "<p><a href=\"/app/photos\">JSON</a> <a href=\"/app/api\">API</a></p></body></html>"
   return {
     status = 200,
     type = "text/html; charset=utf-8",
@@ -595,14 +686,16 @@ end
 
 local function route_photos(_req)
   local photos = list_photos()
+  local shown = math.min(#photos, APP.MAX_WEB_PHOTOS)
   return {
     status = 200,
     type = "application/json",
     body = "{"
       .. "\"ok\":true,"
       .. "\"count\":" .. tostring(#photos) .. ","
+      .. "\"shown\":" .. tostring(shown) .. ","
       .. "\"last\":\"" .. json_escape(APP.last_photo) .. "\","
-      .. "\"photos\":" .. photos_json(photos)
+      .. "\"photos\":" .. photos_json(photos, shown)
       .. "}\n",
   }
 end
@@ -621,23 +714,28 @@ local function route_api(_req)
       .. "\"key_events\":" .. tostring(APP.key_events) .. ","
       .. "\"touch_events\":" .. tostring(APP.touch_events) .. ","
       .. "\"pending\":\"" .. json_escape(APP.pending_capture) .. "\","
+      .. "\"pending_delete\":\"" .. json_escape(APP.pending_delete) .. "\","
       .. "\"error\":\"" .. json_escape(APP.last_error) .. "\""
       .. "}\n",
   }
 end
 
 local function route_capture(_req)
-  local ok_capture, capture_err = request_capture("web")
+  local before_photo = APP.last_photo
+  local queued, queue_err = request_capture("web")
   return {
-    status = ok_capture and 202 or 409,
+    status = queued and 202 or 409,
     type = "application/json",
     body = "{"
-      .. "\"ok\":" .. tostring(ok_capture) .. ","
+      .. "\"ok\":" .. tostring(queued) .. ","
+      .. "\"queued\":" .. tostring(queued) .. ","
+      .. "\"saved\":false,"
       .. "\"captures\":" .. tostring(APP.captures) .. ","
       .. "\"last\":\"" .. json_escape(APP.last_photo) .. "\","
+      .. "\"before\":\"" .. json_escape(before_photo) .. "\","
       .. "\"bytes\":" .. tostring(APP.last_bytes) .. ","
       .. "\"pending\":\"" .. json_escape(APP.pending_capture) .. "\","
-      .. "\"error\":\"" .. json_escape(capture_err or APP.last_error) .. "\""
+      .. "\"error\":\"" .. json_escape(queue_err or APP.last_error) .. "\""
       .. "}\n",
   }
 end
@@ -659,25 +757,16 @@ local function route_delete(req)
       body = "{\"ok\":false,\"error\":\"file.remove unavailable\"}\n",
     }
   end
-  local pcall_ok, removed, remove_err = pcall(function()
-    return file.remove(APP.PHOTO_DIR .. "/" .. name)
-  end)
-  local remove_ok = pcall_ok and removed
-  if remove_ok and name == APP.last_photo then
-    APP.last_photo = ""
-    APP.last_bytes = 0
-  end
-  if remove_ok then
-    forget_photo(name)
-  end
-  write_metrics()
+  local queued, queue_err = request_delete(name)
   return {
-    status = remove_ok and 200 or 500,
+    status = queued and 202 or 409,
     type = "application/json",
     body = "{"
-      .. "\"ok\":" .. tostring(remove_ok) .. ","
-      .. "\"deleted\":\"" .. json_escape(remove_ok and name or "") .. "\","
-      .. "\"error\":\"" .. json_escape(remove_ok and "" or (remove_err or removed)) .. "\""
+      .. "\"ok\":" .. tostring(queued) .. ","
+      .. "\"queued\":" .. tostring(queued) .. ","
+      .. "\"deleted\":\"\","
+      .. "\"pending_delete\":\"" .. json_escape(APP.pending_delete) .. "\","
+      .. "\"error\":\"" .. json_escape(queued and "" or queue_err) .. "\""
       .. "}\n",
   }
 end
@@ -708,7 +797,7 @@ end
 
 local function exit_app()
   APP.running = false
-  stop_camera()
+  standby_for_runtime_stop()
   if key and key.off then
     pcall(function() key.off(key.HOME) end)
   end
@@ -720,6 +809,20 @@ local function exit_app()
   end
   if app and app.exit then
     pcall(function() app.exit("camera exit") end)
+  end
+end
+
+local function handle_runtime_stop()
+  APP.running = false
+  standby_for_runtime_stop()
+  if key and key.off then
+    pcall(function() key.off(key.HOME) end)
+  end
+  if app and app.set_home_exit then
+    pcall(function() app.set_home_exit(true) end)
+  end
+  if app and app.set_webui then
+    pcall(function() app.set_webui(false) end)
   end
 end
 
@@ -755,7 +858,9 @@ local function register_input()
       write_metrics()
       if evt == touch.UP and APP.mode == "gallery" then
         local px = tonumber(x) or 0
-        if touch_hits_gallery_back(x, y) then
+        if touch_hits_gallery_delete(x, y) then
+          delete_current_gallery_photo()
+        elseif touch_hits_gallery_back(x, y) then
           leave_gallery()
         elseif px < 106 then
           move_gallery(-1)
@@ -790,7 +895,7 @@ local watchdog = tmr.create()
 watchdog:alarm(500, tmr.ALARM_AUTO, function()
   if app and app.exiting and app.exiting() then
     watchdog:stop()
-    exit_app()
+    handle_runtime_stop()
     return
   end
 
@@ -798,6 +903,12 @@ watchdog:alarm(500, tmr.ALARM_AUTO, function()
     local trigger = APP.pending_capture
     APP.pending_capture = ""
     capture_photo(trigger)
+  end
+
+  if APP.pending_delete ~= "" and not APP.capturing then
+    local name = APP.pending_delete
+    APP.pending_delete = ""
+    delete_photo_by_name(name)
   end
 end)
 

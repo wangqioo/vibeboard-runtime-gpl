@@ -370,7 +370,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const header = readRequired(boardHeaderPath);
     const source = readRequired(boardSourcePath);
 
-    assert.match(header, /VB_SD_MAX_OPEN_FILES\s+16/);
+    assert.match(header, /VB_SD_MAX_OPEN_FILES\s+32/);
     assert.match(source, /\.max_files\s*=\s*VB_SD_MAX_OPEN_FILES/);
   });
 
@@ -482,7 +482,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /VB_INSTALL_HTTPD_STACK_SIZE\s+8192/);
     assert.match(source, /config\.stack_size\s*=\s*VB_INSTALL_HTTPD_STACK_SIZE/);
     assert.match(source, /config\.task_caps\s*=\s*MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT/);
-    assert.match(source, /config\.max_uri_handlers\s*=\s*16/);
+    assert.match(source, /config\.max_uri_handlers\s*=\s*(?:2[0-9]|[3-9][0-9])/);
     assert.match(source, /status_handler/);
     assert.match(source, /apps_handler/);
     assert.match(source, /runtime_config_handler/);
@@ -1620,8 +1620,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(installService, /vb_camera_sd_service_guard_t/);
     assert.match(installService, /#include\s+"board_lckfb_szpi_s3\.h"/);
     assert.match(installService, /vb_board_camera_preview_mode\(&preview_width,\s*&preview_height\)/);
-    assert.match(installService, /vb_board_camera_stop\(\)/);
+    assert.match(installService, /vb_board_camera_standby\(\)/);
     assert.match(installService, /vb_board_camera_preview_start_low_memory\(\)/);
+    assert.match(installService, /launch using cached app registry after scan failed/);
+    assert.match(functionBody(installService, "launch_handler"), /scan_err != ESP_ERR_NOT_FOUND \|\| s_context->registry->stored_app_count == 0/);
     assert.match(installService, /vb_camera_sd_service_guard_t\s+camera_guard\s*=\s*camera_sd_service_pause_preview\(\)/);
     assert.match(installService, /camera_sd_service_resume_preview\(camera_guard\)/);
     assert.match(installService, /rescan_handler[\s\S]*camera_sd_service_pause_preview\(\)/);
@@ -1716,6 +1718,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const validator = readRequired(join(repoRoot, "tools/app-validator/index.mjs"));
     const projectCmake = readRequired(projectCmakePath);
     const cmake = readRequired(cmakePath);
+    const installService = readRequired(installServiceSourcePath);
     const cameraPatch = readRequired(esp32CameraPatchPath);
     const manifest = readRequired(join(firmwareRoot, "main/idf_component.yml"));
     const sdkconfigDefaults = readRequired(sdkconfigDefaultsPath);
@@ -1735,11 +1738,17 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(sdkconfigDefaults, /CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=y/);
     assert.match(projectCmake, /patch_esp32_camera_runtime\.cmake/);
     assert.match(cameraPatch, /managed_components\/espressif__esp32-camera\/driver\/cam_hal\.c/);
+    assert.match(cameraPatch, /managed_components\/espressif__esp32-camera\/target\/esp32s3\/ll_cam\.c/);
     assert.match(cameraPatch, /queue_size\s*<\s*4/);
     assert.match(cameraPatch, /#include \\"freertos\/idf_additions\.h\\"/);
     assert.match(cameraPatch, /xTaskCreatePinnedToCoreWithCaps\(cam_task/);
     assert.match(cameraPatch, /MALLOC_CAP_SPIRAM\s*\|\s*MALLOC_CAP_8BIT/);
     assert.match(cameraPatch, /vTaskDeleteWithCaps\(cam_obj->task_handle\)/);
+    assert.match(cameraPatch, /Runtime low-memory RGB path/);
+    assert.match(cameraPatch, /under 1536 bytes/);
+    assert.match(cameraPatch, /runtime_node_max\s*=\s*640 \/ cam->dma_bytes_per_item/);
+    assert.match(cameraPatch, /runtime_dma_half_buffer_limit/);
+    assert.match(cameraPatch, /dma_half_buffer_max\s*=\s*runtime_dma_half_buffer_limit/);
     assert.match(cmake, /lua_camera\.c/);
     assert.match(cmake, /espressif__esp32-camera/);
     assert.match(boardHeader, /VB_CAMERA_XCLK\s+GPIO_NUM_5/);
@@ -1767,6 +1776,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(boardHeader, /vb_board_camera_reserve_internal_dma/);
     assert.match(boardHeader, /vb_board_camera_release_internal_dma_reserve/);
     assert.match(boardHeader, /vb_board_camera_return/);
+    assert.match(boardHeader, /vb_board_camera_standby/);
     assert.match(boardHeader, /vb_board_camera_stop/);
     assert.match(boardSource, /#include\s+"esp_camera\.h"/);
     assert.match(boardSource, /VB_PCA9557_DVP_PWDN_BIT/);
@@ -1905,7 +1915,17 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(runner, /vb_lua_camera_state_t\s+camera/);
     assert.match(runner, /app_has_capability\([^)]+"camera"/);
     assert.match(runner, /prewarm_camera_if_needed/);
-    assert.match(runner, /if\s*\(strcmp\(entry->id,\s*"camera"\)\s*==\s*0\)\s*\{\s*vb_board_camera_reserve_internal_dma\(8192\);\s*return false;/);
+    assert.match(functionBody(runner, "preload_lua_file"), /attempt\s*<\s*3/);
+    assert.match(functionBody(runner, "preload_lua_file"), /vTaskDelay\(pdMS_TO_TICKS\(20\)\)/);
+    assert.match(runner, /if\s*\(strcmp\(entry->id,\s*"camera"\)\s*==\s*0\)\s*\{\s*return false;/);
+    assert.doesNotMatch(functionBody(runner, "prewarm_camera_if_needed"), /vb_board_camera_reserve_internal_dma/);
+    assert.match(functionBody(boardSource, "vb_board_camera_start"), /vb_board_camera_reserve_internal_dma\(1536\)/);
+    assert.match(functionBody(boardSource, "vb_board_camera_start"), /vb_board_camera_release_internal_dma_reserve\(\);\s*err = esp_camera_init\(&config\)/);
+    assert.match(boardSource, /void\s+vb_board_camera_standby\(void\)/);
+    assert.doesNotMatch(functionBody(boardSource, "vb_board_camera_standby"), /esp_camera_deinit/);
+    assert.match(functionBody(boardSource, "vb_board_camera_stop"), /vb_board_camera_standby\(\)/);
+    assert.match(functionBody(boardSource, "vb_board_camera_stop"), /esp_camera_deinit\(\)/);
+    assert.doesNotMatch(runner, /starting low-memory camera preview before Lua task/);
     assert.match(runner, /starting camera preview before Lua task/);
     assert.match(runner, /vb_board_camera_preview_start\(\)/);
     assert.match(runner, /vb_webui_request_t/);
@@ -1916,6 +1936,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(functionBody(runner, "vb_app_runner_dispatch_webui"), /vb_lua_app_dispatch_webui/);
     assert.match(runner, /vb_lua_camera_init\(&runtime\.camera\)/);
     assert.match(runner, /vb_lua_camera_register\(L,\s*&runtime\.camera\)/);
+    assert.match(functionBody(cameraSource, "vb_lua_camera_cleanup"), /vb_board_camera_stop\(\)/);
+    assert.match(installService, /vb_board_camera_standby\(\)/);
     assert.match(runner, /vb_lua_camera_cleanup\(L,\s*&runtime->camera\)/);
     assert.match(validator, /"camera\.start"/);
     assert.match(validator, /"camera\.preview_start"/);
@@ -1937,6 +1959,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(smokeSource, /camera\.release/);
     assert.match(smokeSource, /camera\.stop/);
     assert.match(boardSource, /GC2145 camera ready/);
+    assert.match(functionBody(boardSource, "vb_board_camera_start"), /esp_camera_set_psram_mode\(false\)/);
     assert.match(smokeSource, /camera_ready/);
     assert.match(smokeSource, /captures/);
     assert.match(smokeSource, /frame_bytes/);
@@ -1978,7 +2001,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /camera\.capture\(\)/);
     assert.match(source, /camera\.clone\(frame\)/);
     assert.match(luaFunctionBody(source, "capture_photo"), /camera\.stop\(\)/);
-    assert.match(source, /camera\.overlay\(false\)/);
+    assert.match(source, /local function set_overlay\(enabled\)/);
+    assert.match(luaFunctionBody(source, "capture_photo"), /set_overlay\(false\)/);
     assert.match(source, /camera\.save\(cloned,\s*path\)/);
     assert.match(source, /camera\.release_clone\(cloned\)/);
     assert.match(source, /\.bmp/);
@@ -1992,8 +2016,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(luaCamera, /LV_COLOR_GET_G\(color\)/);
     assert.match(luaCamera, /LV_COLOR_GET_B\(color\)/);
     assert.match(source, /local function request_capture\(trigger\)/);
-    assert.match(source, /request_capture\("web"\)/);
-    assert.match(source, /status\s*=\s*ok_capture and 202 or 409/);
+    assert.match(luaFunctionBody(source, "route_capture"), /request_capture\("web"\)/);
+    assert.doesNotMatch(luaFunctionBody(source, "route_capture"), /capture_photo\("web"\)/);
+    assert.match(luaFunctionBody(source, "route_capture"), /status\s*=\s*queued and 202 or 409/);
+    assert.match(luaFunctionBody(source, "route_capture"), /\\"queued\\":/);
     assert.match(source, /local function parse_query\(query\)/);
     assert.match(source, /local function is_photo_name\(name\)/);
     assert.match(source, /name:match\("\^capture_%d\+%\.bmp\$"\)/);
@@ -2003,13 +2029,37 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /local function forget_photo\(name\)/);
     assert.match(source, /remember_photo\(filename,\s*APP\.last_bytes\)/);
     assert.match(source, /forget_photo\(name\)/);
-    assert.match(source, /local function photos_json\(photos\)/);
+    assert.match(source, /local function delete_photo_by_name\(name\)/);
+    assert.match(luaFunctionBody(source, "delete_photo_by_name"), /local was_preview = APP\.preview/);
+    assert.match(luaFunctionBody(source, "delete_photo_by_name"), /camera\.stop\(\)/);
+    assert.match(luaFunctionBody(source, "delete_photo_by_name"), /file\.remove\(APP\.PHOTO_DIR \.\. "\/" \.\. name\)/);
+    assert.match(luaFunctionBody(source, "delete_photo_by_name"), /forget_photo\(name\)/);
+    assert.match(luaFunctionBody(source, "delete_photo_by_name"), /APP\.gallery_index\s*=\s*wrap_gallery_index\(APP\.gallery_index\)/);
+    assert.match(luaFunctionBody(source, "delete_photo_by_name"), /if was_preview then\s+start_preview\(\)\s+end/);
+    assert.match(source, /pending_delete/);
+    assert.match(source, /local function request_delete\(name\)/);
+    assert.match(source, /local function standby_for_runtime_stop\(\)/);
+    assert.match(luaFunctionBody(source, "stop_camera"), /set_overlay\(false\)/);
+    assert.match(luaFunctionBody(source, "stop_camera"), /camera\.stop\(\)/);
+    assert.match(luaFunctionBody(source, "standby_for_runtime_stop"), /stop_camera\(\)/);
+    assert.match(source, /local function handle_runtime_stop\(\)/);
+    assert.match(luaFunctionBody(source, "handle_runtime_stop"), /standby_for_runtime_stop\(\)/);
+    assert.doesNotMatch(luaFunctionBody(source, "handle_runtime_stop"), /app\.exit/);
+    assert.match(source, /if app and app\.exiting and app\.exiting\(\) then[\s\S]*handle_runtime_stop\(\)[\s\S]*return/);
+    assert.match(source, /MAX_WEB_PHOTOS\s*=\s*1/);
+    assert.match(source, /local function photos_json\(photos,\s*limit\)/);
+    assert.match(luaFunctionBody(source, "photos_json"), /if index > max_items then/);
+    assert.match(luaFunctionBody(source, "photos_json"), /delete_url/);
+    assert.match(luaFunctionBody(source, "photos_json"), /json_escape\(delete_url\(photo\.name\)\)/);
     assert.match(source, /local function route_photos\(_req\)/);
+    assert.match(luaFunctionBody(source, "route_photos"), /shown = math\.min\(#photos,\s*APP\.MAX_WEB_PHOTOS\)/);
+    assert.match(luaFunctionBody(source, "route_photos"), /photos_json\(photos,\s*shown\)/);
     assert.match(source, /local function route_delete\(req\)/);
-    assert.match(source, /file\.remove\(APP\.PHOTO_DIR \.\. "\/" \.\. name\)/);
-    assert.match(source, /local\s+pcall_ok,\s*removed,\s*remove_err\s*=\s*pcall/);
-    assert.match(source, /local\s+remove_ok\s*=\s*pcall_ok and removed/);
-    assert.match(source, /status\s*=\s*remove_ok and 200 or 500/);
+    assert.match(luaFunctionBody(source, "route_delete"), /request_delete\(name\)/);
+    assert.doesNotMatch(luaFunctionBody(source, "route_delete"), /delete_photo_by_name\(name\)/);
+    assert.match(luaFunctionBody(source, "route_delete"), /status\s*=\s*queued and 202 or 409/);
+    assert.match(source, /APP\.pending_delete ~= ""/);
+    assert.match(source, /delete_photo_by_name\(name\)/);
     assert.match(source, /key\.on\(function\(evt_code,\s*evt_type/);
     assert.match(source, /evt_code\s*~=\s*key\.HOME/);
     assert.match(source, /request_capture\("home"\)/);
@@ -2022,6 +2072,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /SHUTTER_HIT_H/);
     assert.match(source, /GALLERY_THUMB_HIT_X/);
     assert.match(source, /GALLERY_THUMB_HIT_Y/);
+    assert.match(source, /GALLERY_DELETE_HIT_X/);
+    assert.match(source, /local function touch_hits_gallery_delete\(x,\s*y\)/);
     assert.match(source, /CAMERA_PHOTO_W\s*=\s*160/);
     assert.match(source, /CAMERA_PHOTO_H\s*=\s*120/);
     assert.match(source, /local function show_gallery\(\)/);
@@ -2032,6 +2084,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(luaFunctionBody(source, "center_gallery_image"), /lv_obj_set_size\(APP\.ui\.gallery_image,\s*APP\.CAMERA_PHOTO_W,\s*APP\.CAMERA_PHOTO_H\)/);
     assert.match(luaFunctionBody(source, "show_gallery"), /center_gallery_image\(\)/);
     assert.match(luaFunctionBody(source, "draw_gallery_current"), /lv_img_set_src\(APP\.ui\.gallery_image,\s*gallery_photo_src\(name\)\)/);
+    assert.match(luaFunctionBody(source, "draw_gallery_current"), /set_label\(APP\.ui\.gallery_delete,\s*"Delete"\)/);
     assert.match(luaFunctionBody(source, "show_gallery"), /draw_gallery_current\(\)/);
     assert.doesNotMatch(luaFunctionBody(source, "show_gallery"), /lv_img_set_zoom\(APP\.ui\.gallery_image,\s*512\)/);
     assert.match(source, /local function leave_gallery\(\)/);
@@ -2041,6 +2094,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /move_gallery\(-1\)/);
     assert.match(source, /move_gallery\(1\)/);
     assert.match(source, /leave_gallery\(\)/);
+    assert.match(source, /delete_current_gallery_photo\(\)/);
     assert.match(source, /show_gallery\(\)/);
     assert.match(source, /if evt == touch\.UP and touch_hits_shutter\(x,\s*y\) then/);
     assert.match(source, /request_capture\("touch"\)/);
@@ -2052,11 +2106,24 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /app\.route\("\/capture",\s*dispatch_route\)/);
     assert.match(source, /app\.route\("\/delete",\s*dispatch_route\)/);
     assert.match(source, /\/sd\/file\?path=data\/camera\/photos\//);
+    assert.match(source, /download_url\(photo\.name\)/);
+    assert.match(source, /delete_url\(photo\.name\)/);
+    assert.match(luaFunctionBody(source, "route_index"), /local actions = "<p>No photos<\/p>"/);
+    assert.doesNotMatch(luaFunctionBody(source, "route_index"), /<table>/);
     assert.doesNotMatch(source, /if app and app\.exiting[\s\S]*stop_camera\(\)/);
     assert.match(source, /if APP\.pending_capture ~= "" and not APP\.capturing then/);
     assert.match(source, /capture_photo\(trigger\)/);
     assert.match(source, /metrics\.json/);
     assert.doesNotMatch(source, /LV_ALIGN_BOTTOM_MID/);
+  });
+
+  it("keeps enough HTTP handler slots for install, app, and delete routes", () => {
+    const installService = readRequired(installServiceSourcePath);
+
+    assert.match(
+      installService,
+      /config\.max_uri_handlers\s*=\s*(?:2[0-9]|[3-9][0-9]);/,
+    );
   });
 
   it("registers a sandboxed Lua file module", () => {
@@ -2089,6 +2156,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /VB_LUA_FILE_DATA_PREFIX/);
     assert.match(source, /file data path escapes app sandbox/);
     assert.match(source, /allow_data_write/);
+    assert.match(source, /allow_photos_camera_photo_write/);
+    assert.match(source, /strcmp\(app_id,\s*"photos"\)\s*!=\s*0/);
+    assert.match(source, /camera\/photos\//);
+    assert.match(source, /is_camera_photo_name/);
+    assert.match(source, /strcmp\(cursor,\s*"\.bmp"\)\s*==\s*0/);
     assert.match(source, /strcmp\(path,\s*"\/sd\/data"\)\s*==\s*0/);
     assert.match(source, /relative\[app_id_len\]\s*==\s*'\\0'\s*\|\|\s*relative\[app_id_len\]\s*==\s*'\/'/);
     assert.match(source, /strncmp\(path,\s*VB_LUA_FILE_DATA_PREFIX/);
@@ -2857,6 +2929,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(main, /#include "runtime_wifi\.h"/);
     assert.match(main, /vb_runtime_wifi_load_config_from_sd\(&wifi_config\)/);
     assert.match(main, /vb_runtime_wifi_start_config\(&wifi_config\)/);
+    assert.doesNotMatch(main, /vb_board_camera_reserve_internal_dma/);
     assert.match(
       main,
       /vb_board_start_storage\(&board\)[\s\S]*vb_runtime_wifi_load_config_from_sd\(&wifi_config\)[\s\S]*vb_board_unmount_sd\(&board\)[\s\S]*vb_runtime_wifi_start_config\(&wifi_config\)[\s\S]*vb_board_mount_sd\(&board\)[\s\S]*vb_board_start_display\(&board\)[\s\S]*vb_install_service_start\(&s_install_context\)/,
@@ -3806,7 +3879,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(info, /name = Photos/);
     assert.match(info, /entry = main\.lua/);
-    assert.match(info, /capabilities = lvgl,timer,input,file/);
+    assert.match(info, /capabilities = lvgl,timer,input,file,webui/);
+    assert.match(info, /allow_webui = true/);
     assert.match(source, /PHOTOS_APP/);
     assert.match(source, /APP_DIR\s*=\s*"\/sd\/apps\/photos"/);
     assert.match(source, /PHOTO_DIR\s*=\s*"photos"/);
@@ -3827,7 +3901,18 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(source, /lv_obj_set_size\(APP\.ui\.image,\s*128,\s*128\)/);
     assert.match(source, /key\.on/);
     assert.match(source, /key\.off/);
+    assert.match(source, /local function delete_current_camera_photo\(\)/);
+    assert.match(luaFunctionBody(source, "delete_current_camera_photo"), /entry\.source ~= "Camera"/);
+    assert.match(luaFunctionBody(source, "delete_current_camera_photo"), /file\.remove\(APP\.CAMERA_PHOTO_DIR \.\. "\/" \.\. entry\.name\)/);
+    assert.match(luaFunctionBody(source, "delete_current_camera_photo"), /APP\.images = scan_images\(\)/);
+    assert.match(source, /local function route_delete_current\(_req\)/);
+    assert.match(luaFunctionBody(source, "route_delete_current"), /delete_current_camera_photo\(\)/);
+    assert.match(source, /app\.route\("\/delete_current",\s*dispatch_route\)/);
+    assert.match(source, /app\.set_home_exit\(false\)/);
+    assert.match(source, /app\.set_home_exit\(true\)/);
     assert.match(source, /metrics\.json/);
+    assert.match(luaFunctionBody(source, "write_metrics"), /file\.putcontents\(APP\.METRICS_PATH,\s*body\)/);
+    assert.match(luaFunctionBody(source, "write_metrics"), /file\.write\(APP\.METRICS_PATH,\s*body\)/);
     assert.match(source, /photos_ready/);
     assert.match(source, /image_count/);
     assert.match(source, /selection_changes/);
@@ -3835,7 +3920,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /app\.exiting\(\)/);
     assert.doesNotMatch(source, /lv_canvas_draw_img/);
     assert.doesNotMatch(source, /http\./);
-    assert.doesNotMatch(source, /app\.set_webui/);
+    assert.match(source, /app\.set_webui\(true\)/);
   });
 
   it("ships Plane as a minimal sprite game migration", () => {

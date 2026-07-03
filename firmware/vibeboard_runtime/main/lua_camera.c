@@ -558,10 +558,13 @@ static int camera_save(lua_State *L)
                 strerror(errno));
         }
     }
+    int flush_result = write_ok ? fflush(file) : 0;
     int close_result = fclose(file);
-    if (!write_ok || close_result != 0) {
+    if (!write_ok || flush_result != 0 || close_result != 0) {
         if (close_result != 0) {
             set_save_error(save_error, sizeof(save_error), "close failed: %s", strerror(errno));
+        } else if (flush_result != 0) {
+            set_save_error(save_error, sizeof(save_error), "flush failed: %s", strerror(errno));
         } else if (save_error[0] == '\0') {
             set_save_error(save_error, sizeof(save_error), "save failed");
         }

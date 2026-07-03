@@ -535,7 +535,7 @@ static vb_camera_sd_service_guard_t camera_sd_service_pause_preview(void)
     }
 
     ESP_LOGI(TAG, "stopping camera before SD service read");
-    vb_board_camera_stop();
+    vb_board_camera_standby();
     guard.resume_preview = true;
     return guard;
 }
@@ -1145,8 +1145,11 @@ static esp_err_t launch_handler(httpd_req_t *req)
 
     esp_err_t scan_err = vb_app_registry_scan(s_context->registry);
     if (scan_err != ESP_OK) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(scan_err));
-        return ESP_FAIL;
+        if (scan_err != ESP_ERR_NOT_FOUND || s_context->registry->stored_app_count == 0) {
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(scan_err));
+            return ESP_FAIL;
+        }
+        ESP_LOGW(TAG, "launch using cached app registry after scan failed: %s", esp_err_to_name(scan_err));
     }
 
     vb_app_registry_entry_t selected_app = {0};
@@ -1485,7 +1488,7 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
     config.server_port = 8080;
     config.stack_size = VB_INSTALL_HTTPD_STACK_SIZE;
     config.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 20;
     config.uri_match_fn = match_uri_without_query;
 
     err = httpd_start(&s_server, &config);

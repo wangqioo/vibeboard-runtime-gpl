@@ -54,6 +54,29 @@ static const char *get_app_id_from_dir(const char *app_dir)
     return slash != NULL ? slash + 1 : app_dir;
 }
 
+static bool is_camera_photo_name(const char *name)
+{
+    if (name == NULL || strncmp(name, "capture_", strlen("capture_")) != 0) {
+        return false;
+    }
+    const char *cursor = name + strlen("capture_");
+    bool has_digit = false;
+    while (*cursor >= '0' && *cursor <= '9') {
+        has_digit = true;
+        cursor++;
+    }
+    return has_digit && strcmp(cursor, ".bmp") == 0;
+}
+
+static bool allow_photos_camera_photo_write(const char *relative, const char *app_id)
+{
+    static const char prefix[] = "camera/photos/";
+    if (strcmp(app_id, "photos") != 0 || strncmp(relative, prefix, strlen(prefix)) != 0) {
+        return false;
+    }
+    return is_camera_photo_name(relative + strlen(prefix));
+}
+
 static bool allow_data_write(const char *path, const char *app_dir)
 {
     if (path == NULL || app_dir == NULL) {
@@ -71,6 +94,9 @@ static bool allow_data_write(const char *path, const char *app_dir)
     }
     const char *relative = path + strlen(VB_LUA_FILE_DATA_PREFIX);
     size_t app_id_len = strlen(app_id);
+    if (allow_photos_camera_photo_write(relative, app_id)) {
+        return true;
+    }
     return strncmp(relative, app_id, app_id_len) == 0 && (relative[app_id_len] == '\0' || relative[app_id_len] == '/');
 }
 

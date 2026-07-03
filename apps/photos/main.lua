@@ -20,9 +20,11 @@ PHOTOS_APP = {
   ticks = 0,
   last_key = "",
   last_error = "",
+  last_deleted = "",
   current_name = "",
   current_src = "",
   images = {},
+  routes = {},
   timers = {},
   ui = {}
 }
@@ -98,7 +100,6 @@ local function json_escape(value)
 end
 
 local function write_metrics()
-  if not file or not file.write then return end
   local body = "{"
     .. '"photos_ready":' .. tostring(APP.photos_ready)
     .. ',"image_count":' .. tostring(APP.image_count)
@@ -106,6 +107,7 @@ local function write_metrics()
     .. ',"selection_changes":' .. tostring(APP.selection_changes)
     .. ',"ticks":' .. tostring(APP.ticks)
     .. ',"last_key":"' .. json_escape(APP.last_key) .. '"'
+    .. ',"last_deleted":"' .. json_escape(APP.last_deleted) .. '"'
     .. ',"current_name":"' .. json_escape(APP.current_name) .. '"'
     .. ',"current_src":"' .. json_escape(APP.current_src) .. '"'
     .. ',"last_error":"' .. json_escape(APP.last_error) .. '"'
@@ -117,7 +119,11 @@ local function write_metrics()
     .. ',"perf_stop_requested":' .. tostring(APP.perf.stop_requested == true)
     .. ',"perf_last_error":"' .. json_escape(APP.perf.last_error or "") .. '"'
     .. "}"
-  pcall(function() file.write(APP.METRICS_PATH, body) end)
+  if file and file.putcontents then
+    pcall(function() file.putcontents(APP.METRICS_PATH, body) end)
+  elseif file and file.write then
+    pcall(function() file.write(APP.METRICS_PATH, body) end)
+  end
 end
 
 local function set_text(obj, text)
@@ -334,6 +340,84 @@ local function move_selection(delta)
   show_current()
 end
 
+local function delete_current_camera_photo()
+  local entry = current_image_entry()
+  if type(entry) ~= "table" or entry.source ~= "Camera" then
+    APP.last_error = "current photo is read-only"
+    write_metrics()
+    return false
+  end
+  if not file or type(file.remove) ~= "function" then
+    APP.last_error = "file.remove missing"
+    write_metrics()
+    return false
+  end
+  local ok, err = file.remove(APP.CAMERA_PHOTO_DIR .. "/" .. entry.name)
+  if ok then
+    APP.last_deleted = entry.name
+    APP.last_error = ""
+    APP.images = scan_images()
+    APP.image_count = #APP.images
+    APP.selected_index = wrap_index(APP.selected_index)
+    show_current()
+    return true
+  end
+  APP.last_error = tostring(err or "delete failed")
+  write_metrics()
+  return false
+end
+
+local function route_api(_req)
+  return {
+    status = 200,
+    type = "application/json",
+    body = "{"
+      .. "\"ok\":true,"
+      .. "\"photos_ready\":" .. tostring(APP.photos_ready) .. ","
+      .. "\"image_count\":" .. tostring(APP.image_count) .. ","
+      .. "\"selected_index\":" .. tostring(APP.selected_index) .. ","
+      .. "\"current_name\":\"" .. json_escape(APP.current_name) .. "\","
+      .. "\"last_deleted\":\"" .. json_escape(APP.last_deleted) .. "\","
+      .. "\"last_error\":\"" .. json_escape(APP.last_error) .. "\""
+      .. "}\n",
+  }
+end
+
+local function route_delete_current(_req)
+  local before = APP.current_name
+  local ok = delete_current_camera_photo()
+  return {
+    status = ok and 200 or 409,
+    type = "application/json",
+    body = "{"
+      .. "\"ok\":" .. tostring(ok) .. ","
+      .. "\"deleted\":\"" .. json_escape(ok and before or "") .. "\","
+      .. "\"current\":\"" .. json_escape(APP.current_name) .. "\","
+      .. "\"error\":\"" .. json_escape(APP.last_error) .. "\""
+      .. "}\n",
+  }
+end
+
+local function dispatch_route(req)
+  local path = tostring(req and req.path or "")
+  local handler = APP.routes[path] or route_api
+  return handler(req)
+end
+
+local function register_webui()
+  APP.routes["/"] = route_api
+  APP.routes["/api"] = route_api
+  APP.routes["/delete_current"] = route_delete_current
+  if app and app.set_webui then
+    pcall(function() app.set_webui(true) end)
+  end
+  if app and app.route then
+    pcall(function() app.route("/", dispatch_route) end)
+    pcall(function() app.route("/api", dispatch_route) end)
+    pcall(function() app.route("/delete_current", dispatch_route) end)
+  end
+end
+
 local function accepts_event(evt_type)
   return evt_type == key.SHORT or evt_type == key.LONG_START
 end
@@ -345,6 +429,8 @@ local function on_key(evt_code, evt_type, _ts_ms)
     move_selection(-1)
   elseif evt_code == key.RIGHT then
     move_selection(1)
+  elseif (evt_code == key.HOME or evt_code == key.EXIT) and evt_type == key.LONG_START then
+    delete_current_camera_photo()
   elseif evt_code == key.HOME or evt_code == key.EXIT then
     if app and app.exit then pcall(function() app.exit() end) end
   end
@@ -362,6 +448,7 @@ function APP.stop(_reason)
     APP.timers[name] = nil
   end
   if key and key.off then pcall(function() key.off() end) end
+  if app and app.set_home_exit then pcall(function() app.set_home_exit(true) end) end
   if APP.ui.image and lv_img_set_src then
     pcall(function() lv_img_set_src(APP.ui.image, "") end)
   end
@@ -379,9 +466,15 @@ end
 
 draw_ui()
 
+if app and app.set_home_exit then
+  pcall(function() app.set_home_exit(false) end)
+end
+
 if key and key.on then
   key.on(on_key)
 end
+
+register_webui()
 
 if tmr and tmr.create then
   APP.timers.tick = tmr.create()

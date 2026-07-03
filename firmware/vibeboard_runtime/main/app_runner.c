@@ -117,7 +117,6 @@ static bool prewarm_camera_if_needed(const vb_app_registry_entry_t *entry)
         return false;
     }
     if (strcmp(entry->id, "camera") == 0) {
-        vb_board_camera_reserve_internal_dma(8192);
         return false;
     }
 
@@ -488,9 +487,15 @@ static esp_err_t preload_lua_file(const char *path, vb_lua_script_t *script, cha
 
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
-        snprintf(error, error_size, "cannot open %s", path ? path : "(null)");
-        xSemaphoreGive(s_script_reader_mutex);
-        return ESP_ERR_NOT_FOUND;
+        for (int attempt = 0; file == NULL && attempt < 3; attempt++) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            file = fopen(path, "rb");
+        }
+        if (file == NULL) {
+            snprintf(error, error_size, "cannot open %s", path ? path : "(null)");
+            xSemaphoreGive(s_script_reader_mutex);
+            return ESP_ERR_NOT_FOUND;
+        }
     }
 
     if (fseek(file, 0, SEEK_END) != 0) {

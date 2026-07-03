@@ -34,7 +34,7 @@ extern "C" {
 #define VB_CAMERA_LCD_STRIPE_ROWS 8
 
 #define VB_SD_MOUNT_POINT "/sdcard"
-#define VB_SD_MAX_OPEN_FILES 16
+#define VB_SD_MAX_OPEN_FILES 32
 #define VB_SD_CLK GPIO_NUM_47
 #define VB_SD_CMD GPIO_NUM_48
 #define VB_SD_D0 GPIO_NUM_21
@@ -118,6 +118,7 @@ void vb_board_camera_release_internal_dma_reserve(void);
 esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame);
 esp_err_t vb_board_camera_draw(const vb_board_camera_frame_t *frame);
 void vb_board_camera_return(vb_board_camera_frame_t *frame);
+void vb_board_camera_standby(void);
 void vb_board_camera_stop(void);
 esp_err_t vb_board_input_start(vb_board_input_callback_t callback, void *user_data);
 void vb_board_input_stop(void);
