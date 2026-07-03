@@ -346,6 +346,18 @@ static int camera_overlay_busy(lua_State *L)
     return 1;
 }
 
+static int camera_overlay_photo(lua_State *L)
+{
+    vb_lua_camera_state_t *state = get_state(L);
+    if (state == NULL) {
+        return luaL_error(L, "camera state unavailable");
+    }
+    (void)state;
+    vb_board_camera_overlay_photo_set(lua_toboolean(L, 1));
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 static const char *get_app_dir(lua_State *L)
 {
     lua_getfield(L, LUA_REGISTRYINDEX, VB_LUA_FILE_APP_DIR_REGISTRY_KEY);
@@ -685,6 +697,7 @@ void vb_lua_camera_register(lua_State *L, vb_lua_camera_state_t *state)
         {"draw", camera_draw},
         {"overlay", camera_overlay},
         {"overlay_busy", camera_overlay_busy},
+        {"overlay_photo", camera_overlay_photo},
         {"preview_start", camera_preview_start},
         {"preview_start_low", camera_preview_start_low},
         {"preview_stop", camera_preview_stop},

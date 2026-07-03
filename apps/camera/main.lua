@@ -170,6 +170,15 @@ local function set_capture_busy(busy)
   end
 end
 
+local function sync_overlay_photo()
+  if not APP.preview then
+    return
+  end
+  if camera and type(camera.overlay_photo) == "function" then
+    pcall(function() camera.overlay_photo(#APP.photos > 0) end)
+  end
+end
+
 local function build_ui()
   if not lv_scr_act or not lv_label_create then
     return
@@ -237,6 +246,7 @@ local function list_photos()
   end
   table.sort(result, function(a, b) return (a.index or 0) > (b.index or 0) end)
   APP.photos = result
+  sync_overlay_photo()
   return result
 end
 
@@ -266,6 +276,7 @@ local function remember_photo(name, size)
     index = index,
   }
   table.sort(APP.photos, function(a, b) return (a.index or 0) > (b.index or 0) end)
+  sync_overlay_photo()
 end
 
 local function forget_photo(name)
@@ -274,6 +285,7 @@ local function forget_photo(name)
       table.remove(APP.photos, index)
     end
   end
+  sync_overlay_photo()
 end
 
 local function photo_url(name)
@@ -337,6 +349,7 @@ local function start_preview()
     if camera and type(camera.overlay) == "function" then
       pcall(function() camera.overlay(true) end)
     end
+    sync_overlay_photo()
     set_status("preview " .. APP.preview_mode)
     return true
   end

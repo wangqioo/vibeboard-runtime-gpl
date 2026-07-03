@@ -114,6 +114,7 @@ void vb_board_camera_preview_stop(void);
 const char *vb_board_camera_preview_mode(uint16_t *width, uint16_t *height);
 void vb_board_camera_overlay_set(bool enabled);
 void vb_board_camera_overlay_busy_set(bool busy);
+void vb_board_camera_overlay_photo_set(bool has_photo);
 void vb_board_camera_reserve_internal_dma(size_t size);
 void vb_board_camera_release_internal_dma_reserve(void);
 esp_err_t vb_board_camera_capture(vb_board_camera_frame_t *frame);

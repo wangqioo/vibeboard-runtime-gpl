@@ -54,6 +54,7 @@ static bool s_camera_direct_draw_disabled;
 static bool s_camera_overlay_enabled;
 static bool s_camera_overlay_dirty;
 static bool s_camera_overlay_busy;
+static bool s_camera_overlay_has_photo;
 static TaskHandle_t s_camera_preview_task;
 static TaskHandle_t s_camera_preview_stop_waiter;
 static volatile bool s_camera_preview_stop_requested;
@@ -760,6 +761,7 @@ void vb_board_camera_overlay_set(bool enabled)
     } else {
         s_camera_overlay_dirty = false;
         s_camera_overlay_busy = false;
+        s_camera_overlay_has_photo = false;
     }
     s_camera_overlay_enabled = enabled;
 }
@@ -770,6 +772,14 @@ void vb_board_camera_overlay_busy_set(bool busy)
         s_camera_overlay_dirty = true;
     }
     s_camera_overlay_busy = busy;
+}
+
+void vb_board_camera_overlay_photo_set(bool has_photo)
+{
+    if (s_camera_overlay_has_photo != has_photo) {
+        s_camera_overlay_dirty = s_camera_overlay_enabled;
+    }
+    s_camera_overlay_has_photo = has_photo;
 }
 
 static esp_err_t vb_board_camera_draw_overlay_rect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color)
@@ -839,7 +849,7 @@ static esp_err_t vb_board_camera_draw_shutter_button(uint16_t x, uint16_t y)
 
 static esp_err_t vb_board_camera_draw_latest_thumb(uint16_t x, uint16_t y)
 {
-    return vb_board_camera_draw_overlay_rect(x, y, VB_CAMERA_OVERLAY_THUMB_W, VB_CAMERA_OVERLAY_THUMB_H, 0x39e7);
+    return vb_board_camera_draw_overlay_rect(x, y, VB_CAMERA_OVERLAY_THUMB_W, VB_CAMERA_OVERLAY_THUMB_H, s_camera_overlay_has_photo ? 0x7dd3 : 0x39e7);
 }
 
 static esp_err_t vb_board_camera_draw_status_chip(uint16_t x, uint16_t y)
@@ -1077,6 +1087,7 @@ void vb_board_camera_preview_stop(void)
     s_camera_overlay_enabled = false;
     s_camera_overlay_dirty = false;
     s_camera_overlay_busy = false;
+    s_camera_overlay_has_photo = false;
     if (s_camera_preview_task == NULL) {
         s_camera_preview_mode = VB_CAMERA_PREVIEW_MODE_STOPPED;
         s_camera_preview_width = 0;
@@ -1124,6 +1135,7 @@ void vb_board_camera_standby(void)
     s_camera_overlay_enabled = false;
     s_camera_overlay_dirty = false;
     s_camera_overlay_busy = false;
+    s_camera_overlay_has_photo = false;
     s_camera_snapshot_requested = false;
     s_camera_direct_draw_disabled = false;
     vb_board_camera_release_internal_dma_reserve();
