@@ -2062,6 +2062,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /delete_photo_by_name\(name\)/);
     assert.match(source, /key\.on\(function\(evt_code,\s*evt_type/);
     assert.match(source, /evt_code\s*~=\s*key\.HOME/);
+    assert.match(luaFunctionBody(source, "register_input"), /if APP\.capturing or APP\.pending_capture ~= "" then[\s\S]*return[\s\S]*end/);
     assert.match(source, /request_capture\("home"\)/);
     assert.match(source, /touch\.on/);
     assert.match(source, /local function touch_hits_shutter\(x,\s*y\)/);
@@ -2098,6 +2099,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(source, /show_gallery\(\)/);
     assert.match(source, /if evt == touch\.UP and touch_hits_shutter\(x,\s*y\) then/);
     assert.match(source, /request_capture\("touch"\)/);
+    assert.match(luaFunctionBody(source, "request_capture"), /APP\.pending_capture ~= ""/);
     assert.match(source, /app\.set_home_exit\(false\)/);
     assert.match(source, /app\.set_webui\(true\)/);
     assert.match(source, /app\.route\("\/",\s*dispatch_route\)/);

@@ -609,6 +609,9 @@ local function request_capture(trigger)
   if APP.capturing then
     return false, "busy"
   end
+  if APP.pending_capture ~= "" then
+    return false, "capture queued"
+  end
   APP.pending_capture = text(trigger)
   set_status("queued capture")
   return true
@@ -835,6 +838,9 @@ local function register_input()
       APP.key_events = APP.key_events + 1
       print("[camera] key code=" .. tostring(evt_code) .. " event=" .. tostring(evt_type))
       write_metrics()
+      if APP.capturing or APP.pending_capture ~= "" then
+        return
+      end
       if evt_code ~= key.HOME then
         if APP.mode == "gallery" and evt_type == key.SHORT and evt_code == key.LEFT then
           move_gallery(-1)
@@ -856,6 +862,9 @@ local function register_input()
     touch.on(function(evt, x, y, _ts_ms)
       APP.touch_events = APP.touch_events + 1
       write_metrics()
+      if APP.capturing or APP.pending_capture ~= "" then
+        return
+      end
       if evt == touch.UP and APP.mode == "gallery" then
         local px = tonumber(x) or 0
         if touch_hits_gallery_delete(x, y) then
