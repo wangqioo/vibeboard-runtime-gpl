@@ -1842,7 +1842,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(boardSource, /s_camera_direct_draw_disabled/);
     assert.match(boardSource, /s_camera_overlay_enabled/);
     assert.match(boardSource, /s_camera_overlay_dirty/);
+    assert.match(boardSource, /s_camera_overlay_busy/);
     assert.match(boardSource, /vb_board_camera_overlay_set/);
+    assert.match(boardHeader, /vb_board_camera_overlay_busy_set/);
+    assert.match(boardSource, /vb_board_camera_overlay_busy_set/);
     assert.match(boardSource, /vb_board_camera_draw_overlay/);
     assert.match(boardSource, /if\s*\(!s_camera_overlay_dirty\)\s*\{\s*return\s+ESP_OK;\s*\}/);
     assert.match(boardSource, /VB_CAMERA_OVERLAY_THUMB_W/);
@@ -1855,10 +1858,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(boardSource, /const\s+uint16_t\s+accent\s*=\s*s_camera_latest_frame_valid/);
     assert.match(boardSource, /vb_board_camera_draw_status_chip/);
     assert.match(boardSource, /vb_board_camera_draw_overlay_rect\(x,\s*y,\s*VB_CAMERA_OVERLAY_STATUS_W,\s*VB_CAMERA_OVERLAY_STATUS_H/);
+    assert.match(boardSource, /s_camera_overlay_busy\s*\?\s*0xffe0\s*:\s*0x39e7/);
     assert.doesNotMatch(boardSource, /for\s*\(uint16_t\s+chip_x/);
     assert.doesNotMatch(boardSource, /const\s+uint16_t\s+chip_y/);
     assert.doesNotMatch(boardSource, /const\s+uint16_t\s+dot\s*=/);
     assert.match(boardSource, /vb_board_camera_draw_shutter_button/);
+    assert.match(boardSource, /const\s+uint16_t\s+accent\s*=\s*s_camera_overlay_busy\s*\?\s*0xffe0\s*:\s*0xf800/);
     assert.match(boardSource, /VB_CAMERA_OVERLAY_SHUTTER_HIT_X/);
     assert.match(boardSource, /VB_CAMERA_OVERLAY_SHUTTER_HIT_Y/);
     assert.match(boardSource, /vb_board_camera_draw_overlay\(\)/);
@@ -1887,6 +1892,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(cameraSource, /"capture",\s*camera_capture/);
     assert.match(cameraSource, /"clone",\s*camera_clone/);
     assert.match(cameraSource, /"overlay",\s*camera_overlay/);
+    assert.match(cameraSource, /camera_overlay_busy/);
+    assert.match(cameraSource, /"overlay_busy",\s*camera_overlay_busy/);
     assert.match(cameraSource, /"preview_start_low",\s*camera_preview_start_low/);
     assert.match(cameraSource, /static\s+bool\s+has_frame/);
     assert.match(cameraSource, /if\s*\(!has_frame\(&state->held_frame\)\)/);
@@ -2065,6 +2072,11 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(luaFunctionBody(source, "register_input"), /if APP\.capturing or APP\.pending_capture ~= "" then[\s\S]*return[\s\S]*end/);
     assert.match(source, /request_capture\("home"\)/);
     assert.match(source, /touch\.on/);
+    assert.match(source, /local function set_capture_busy\(busy\)/);
+    assert.match(luaFunctionBody(source, "request_capture"), /set_capture_busy\(true\)/);
+    assert.match(luaFunctionBody(source, "capture_photo"), /set_status\("saving"\)/);
+    assert.match(luaFunctionBody(source, "capture_photo"), /set_capture_busy\(false\)/);
+    assert.match(luaFunctionBody(source, "capture_photo"), /set_status\("saved "\s*\.\.\s*filename\)/);
     assert.match(source, /local function touch_hits_shutter\(x,\s*y\)/);
     assert.match(source, /local function touch_hits_gallery_thumb\(x,\s*y\)/);
     assert.match(source, /SHUTTER_HIT_X/);

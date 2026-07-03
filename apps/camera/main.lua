@@ -164,6 +164,12 @@ local function set_overlay(enabled)
   end
 end
 
+local function set_capture_busy(busy)
+  if camera and type(camera.overlay_busy) == "function" then
+    pcall(function() camera.overlay_busy(busy) end)
+  end
+end
+
 local function build_ui()
   if not lv_scr_act or not lv_label_create then
     return
@@ -537,12 +543,14 @@ local function capture_photo(trigger)
   APP.last_trigger = text(trigger)
   APP.last_error = ""
   set_status("capturing")
+  set_capture_busy(true)
 
   local frame, capture_err = camera.capture()
   if not frame then
     APP.last_error = text(capture_err or "capture failed")
     start_preview()
     APP.capturing = false
+    set_capture_busy(false)
     set_status(APP.last_error)
     return false
   end
@@ -555,6 +563,7 @@ local function capture_photo(trigger)
       APP.last_error = text(clone_err or "clone failed")
       start_preview()
       APP.capturing = false
+      set_capture_busy(false)
       set_status(APP.last_error)
       return false
     end
@@ -573,6 +582,7 @@ local function capture_photo(trigger)
 
   local filename = string.format("capture_%06d.bmp", APP.next_index)
   local path = APP.PHOTO_DIR .. "/" .. filename
+  set_status("saving")
   print("[camera] saving " .. path)
   local save_ok, save_result, save_detail = pcall(function()
     return camera.save(cloned, path)
@@ -601,6 +611,7 @@ local function capture_photo(trigger)
     print("[camera] restarted preview")
   end
   APP.capturing = false
+  set_capture_busy(false)
   write_metrics()
   return save_ok and save_result and true or false
 end
@@ -614,6 +625,7 @@ local function request_capture(trigger)
   end
   APP.pending_capture = text(trigger)
   set_status("queued capture")
+  set_capture_busy(true)
   return true
 end
 

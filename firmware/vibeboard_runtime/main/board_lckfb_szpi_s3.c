@@ -53,6 +53,7 @@ static bool s_camera_display_taken;
 static bool s_camera_direct_draw_disabled;
 static bool s_camera_overlay_enabled;
 static bool s_camera_overlay_dirty;
+static bool s_camera_overlay_busy;
 static TaskHandle_t s_camera_preview_task;
 static TaskHandle_t s_camera_preview_stop_waiter;
 static volatile bool s_camera_preview_stop_requested;
@@ -758,8 +759,17 @@ void vb_board_camera_overlay_set(bool enabled)
         s_camera_overlay_dirty = true;
     } else {
         s_camera_overlay_dirty = false;
+        s_camera_overlay_busy = false;
     }
     s_camera_overlay_enabled = enabled;
+}
+
+void vb_board_camera_overlay_busy_set(bool busy)
+{
+    if (s_camera_overlay_busy != busy) {
+        s_camera_overlay_dirty = true;
+    }
+    s_camera_overlay_busy = busy;
 }
 
 static esp_err_t vb_board_camera_draw_overlay_rect(uint16_t x, uint16_t y, uint16_t width, uint16_t height, uint16_t color)
@@ -788,8 +798,8 @@ static esp_err_t vb_board_camera_draw_overlay_rect(uint16_t x, uint16_t y, uint1
 static esp_err_t vb_board_camera_draw_shutter_button(uint16_t x, uint16_t y)
 {
     const uint16_t border = 0xffff;
-    const uint16_t fill = 0x1082;
-    const uint16_t accent = 0xf800;
+    const uint16_t fill = s_camera_overlay_busy ? 0x39e7 : 0x1082;
+    const uint16_t accent = s_camera_overlay_busy ? 0xffe0 : 0xf800;
     const int center_x = VB_CAMERA_OVERLAY_BUTTON_W / 2;
     const int center_y = VB_CAMERA_OVERLAY_BUTTON_H / 2;
     const int outer_r = 18;
@@ -834,7 +844,7 @@ static esp_err_t vb_board_camera_draw_latest_thumb(uint16_t x, uint16_t y)
 
 static esp_err_t vb_board_camera_draw_status_chip(uint16_t x, uint16_t y)
 {
-    return vb_board_camera_draw_overlay_rect(x, y, VB_CAMERA_OVERLAY_STATUS_W, VB_CAMERA_OVERLAY_STATUS_H, 0x39e7);
+    return vb_board_camera_draw_overlay_rect(x, y, VB_CAMERA_OVERLAY_STATUS_W, VB_CAMERA_OVERLAY_STATUS_H, s_camera_overlay_busy ? 0xffe0 : 0x39e7);
 }
 
 static esp_err_t vb_board_camera_draw_overlay(void)
@@ -1066,6 +1076,7 @@ void vb_board_camera_preview_stop(void)
 {
     s_camera_overlay_enabled = false;
     s_camera_overlay_dirty = false;
+    s_camera_overlay_busy = false;
     if (s_camera_preview_task == NULL) {
         s_camera_preview_mode = VB_CAMERA_PREVIEW_MODE_STOPPED;
         s_camera_preview_width = 0;
@@ -1112,6 +1123,7 @@ void vb_board_camera_standby(void)
     vb_board_camera_preview_stop();
     s_camera_overlay_enabled = false;
     s_camera_overlay_dirty = false;
+    s_camera_overlay_busy = false;
     s_camera_snapshot_requested = false;
     s_camera_direct_draw_disabled = false;
     vb_board_camera_release_internal_dma_reserve();
