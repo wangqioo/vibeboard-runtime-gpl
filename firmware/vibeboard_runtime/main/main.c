@@ -35,19 +35,19 @@ void app_main(void)
         vb_board_unmount_sd(&board);
     }
 
-    if (wifi_config.found) {
-        esp_err_t wifi_err = vb_runtime_wifi_start_config(&wifi_config);
-        if (wifi_err != ESP_OK) {
-            ESP_LOGW(TAG, "runtime WiFi unavailable: %s", esp_err_to_name(wifi_err));
-        }
-    }
-
     esp_err_t remount_err = vb_board_mount_sd(&board);
     if (remount_err != ESP_OK) {
         ESP_LOGW(TAG, "runtime SD remount unavailable: %s", esp_err_to_name(remount_err));
     }
 
     ESP_ERROR_CHECK(vb_board_start_display(&board));
+
+    if (wifi_config.found) {
+        esp_err_t wifi_err = vb_runtime_wifi_start_config(&wifi_config);
+        if (wifi_err != ESP_OK) {
+            ESP_LOGW(TAG, "runtime WiFi unavailable: %s", esp_err_to_name(wifi_err));
+        }
+    }
 
     ESP_ERROR_CHECK(vb_app_registry_init());
     s_apps = heap_caps_calloc(1, sizeof(*s_apps), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

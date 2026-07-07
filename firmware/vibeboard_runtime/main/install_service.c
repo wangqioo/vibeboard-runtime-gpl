@@ -20,6 +20,7 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -43,10 +44,16 @@ static const char *TAG = "install_service";
 #define VB_SHA256_BYTES 32
 #define VB_SHA256_HEX_LEN 64
 #define VB_HASH_BUFFER_SIZE 512
+#define VB_FILE_RESPONSE_BUFFER_SIZE (4 * 1024)
+#define VB_FILE_RESPONSE_MAX_BUFFER_SIZE (16 * 1024)
+#define VB_SD_BENCH_MAX_FILE_BYTES (256 * 1024)
+#define VB_SD_BENCH_BLOCK_COUNT 5
+#define VB_SD_BENCH_MAX_BLOCK_SIZE 32768
 #define VB_LAUNCH_DEFERRED_STACK_SIZE 4096
 #define VB_LAUNCH_DEFERRED_DELAY_MS 50
 #define VB_REBOOT_DEFERRED_STACK_SIZE 2048
 #define VB_REBOOT_DEFERRED_DELAY_MS 250
+static const size_t s_sd_bench_block_sizes[] = {512, 1024, 4096, 16384, 32768};
 static httpd_handle_t s_server;
 static bool s_netif_ready;
 static vb_install_service_context_t *s_context;
@@ -66,6 +73,54 @@ static void send_json(httpd_req_t *req, const char *json);
 static vb_camera_sd_service_guard_t camera_sd_service_pause_preview(void);
 static void camera_sd_service_resume_preview(vb_camera_sd_service_guard_t guard);
 
+static uint64_t bytes_per_second(size_t bytes, int64_t elapsed_us)
+{
+    if (elapsed_us <= 0) {
+        return 0;
+    }
+    return ((uint64_t)bytes * 1000000ULL) / (uint64_t)elapsed_us;
+}
+
+static uint8_t *alloc_internal_dma_buffer(size_t preferred_size, size_t *allocated_size)
+{
+    while (preferred_size >= 512) {
+        uint8_t *buffer = heap_caps_malloc(preferred_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA | MALLOC_CAP_8BIT);
+        if (buffer != NULL) {
+            if (allocated_size != NULL) {
+                *allocated_size = preferred_size;
+            }
+            return buffer;
+        }
+        preferred_size /= 2;
+    }
+    if (allocated_size != NULL) {
+        *allocated_size = 0;
+    }
+    return NULL;
+}
+
+static size_t get_file_response_buffer_size(httpd_req_t *req)
+{
+    char query[192] = {0};
+    char value[24] = {0};
+    esp_err_t err = httpd_req_get_url_query_str(req, query, sizeof(query));
+    if (err != ESP_OK || httpd_query_key_value(query, "chunk", value, sizeof(value)) != ESP_OK || value[0] == '\0') {
+        return VB_FILE_RESPONSE_BUFFER_SIZE;
+    }
+    char *end = NULL;
+    long requested = strtol(value, &end, 10);
+    if (end == value || *end != '\0' || requested <= 0) {
+        return VB_FILE_RESPONSE_BUFFER_SIZE;
+    }
+    if (requested < 512) {
+        return 512;
+    }
+    if (requested > VB_FILE_RESPONSE_MAX_BUFFER_SIZE) {
+        return VB_FILE_RESPONSE_MAX_BUFFER_SIZE;
+    }
+    return (size_t)requested;
+}
+
 static esp_err_t send_file_response(httpd_req_t *req, const char *full_path)
 {
     vb_camera_sd_service_guard_t camera_guard = camera_sd_service_pause_preview();
@@ -78,17 +133,29 @@ static esp_err_t send_file_response(httpd_req_t *req, const char *full_path)
 
     esp_err_t result = ESP_OK;
     httpd_resp_set_type(req, "application/octet-stream");
-    char buffer[512];
+    size_t buffer_size = 0;
+    uint8_t *buffer = alloc_internal_dma_buffer(get_file_response_buffer_size(req), &buffer_size);
+    if (buffer == NULL) {
+        fclose(file);
+        camera_sd_service_resume_preview(camera_guard);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "buffer allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
+    char chunk_header[24];
+    int written = snprintf(chunk_header, sizeof(chunk_header), "%zu", buffer_size);
+    if (written > 0 && written < (int)sizeof(chunk_header)) {
+        httpd_resp_set_hdr(req, "X-VibeBoard-File-Chunk", chunk_header);
+    }
     while (true) {
-        size_t read = fread(buffer, 1, sizeof(buffer), file);
+        size_t read = fread(buffer, 1, buffer_size, file);
         if (read > 0) {
-            esp_err_t err = httpd_resp_send_chunk(req, buffer, read);
+            esp_err_t err = httpd_resp_send_chunk(req, (const char *)buffer, read);
             if (err != ESP_OK) {
                 result = err;
                 break;
             }
         }
-        if (read < sizeof(buffer)) {
+        if (read < buffer_size) {
             if (ferror(file)) {
                 result = ESP_FAIL;
                 httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "read failed");
@@ -96,6 +163,7 @@ static esp_err_t send_file_response(httpd_req_t *req, const char *full_path)
             break;
         }
     }
+    heap_caps_free(buffer);
     fclose(file);
     if (result == ESP_OK) {
         result = httpd_resp_send_chunk(req, NULL, 0);
@@ -1105,6 +1173,127 @@ static esp_err_t sd_file_handler(httpd_req_t *req)
     return send_file_response(req, full_path);
 }
 
+static esp_err_t sd_bench_handler(httpd_req_t *req)
+{
+    if (s_context == NULL || !s_context->sd_ok) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sd unavailable");
+        return ESP_FAIL;
+    }
+
+    char path[128] = {0};
+    if (get_query_value(req, "path", path, sizeof(path)) != ESP_OK || reject_unsafe_path(path)) {
+        strlcpy(path, "apps/weather/assets/bg/storm.bmp", sizeof(path));
+    }
+
+    char full_path[VB_APP_PATH_MAX];
+    if (build_storage_path(full_path, sizeof(full_path), "/sdcard", path, NULL) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "path too long");
+        return ESP_FAIL;
+    }
+
+    vb_camera_sd_service_guard_t camera_guard = camera_sd_service_pause_preview();
+    FILE *file = fopen(full_path, "rb");
+    if (file == NULL) {
+        camera_sd_service_resume_preview(camera_guard);
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "file not found");
+        return ESP_FAIL;
+    }
+
+    size_t buffer_size = 0;
+    uint8_t *buffer = alloc_internal_dma_buffer(VB_SD_BENCH_MAX_BLOCK_SIZE, &buffer_size);
+    if (buffer == NULL) {
+        fclose(file);
+        camera_sd_service_resume_preview(camera_guard);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "buffer allocation failed");
+        return ESP_ERR_NO_MEM;
+    }
+
+    struct stat st;
+    size_t target_bytes = VB_SD_BENCH_MAX_FILE_BYTES;
+    if (stat(full_path, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0 && (size_t)st.st_size < target_bytes) {
+        target_bytes = (size_t)st.st_size;
+    }
+
+    char item[160];
+    esp_err_t result = ESP_OK;
+    httpd_resp_set_type(req, "application/json");
+    int header_written = snprintf(item, sizeof(item), "{\"path\":\"%s\",\"size\":%zu,\"results\":[", path, target_bytes);
+    if (header_written < 0 || header_written >= (int)sizeof(item)) {
+        result = ESP_FAIL;
+    } else {
+        result = httpd_resp_sendstr_chunk(req, item);
+    }
+
+    if (result == ESP_OK) {
+        for (size_t i = 0; i < VB_SD_BENCH_BLOCK_COUNT; i++) {
+            size_t block_size = s_sd_bench_block_sizes[i];
+            size_t actual_block_size = block_size;
+            if (actual_block_size > buffer_size) {
+                actual_block_size = buffer_size;
+            }
+            if (fseek(file, 0, SEEK_SET) != 0) {
+                result = ESP_FAIL;
+                break;
+            }
+
+            size_t total_read = 0;
+            int64_t started_us = esp_timer_get_time();
+            while (total_read < target_bytes) {
+                size_t wanted = actual_block_size;
+                size_t remaining = target_bytes - total_read;
+                if (wanted > remaining) {
+                    wanted = remaining;
+                }
+                size_t got = fread(buffer, 1, wanted, file);
+                if (got == 0) {
+                    if (ferror(file)) {
+                        result = ESP_FAIL;
+                    }
+                    break;
+                }
+                total_read += got;
+                if (got < wanted) {
+                    break;
+                }
+            }
+            int64_t elapsed_us = esp_timer_get_time() - started_us;
+            uint64_t kbps = bytes_per_second(total_read, elapsed_us) / 1024ULL;
+            int64_t elapsed_ms = elapsed_us / 1000;
+            int written = snprintf(item,
+                                   sizeof(item),
+                                   "%s{\"block\":%zu,\"actual_block\":%zu,\"bytes\":%zu,\"ms\":%lld,\"kbps\":%llu}",
+                                   i == 0 ? "" : ",",
+                                   block_size,
+                                   actual_block_size,
+                                   total_read,
+                                   (long long)elapsed_ms,
+                                   (unsigned long long)kbps);
+            if (written < 0 || written >= (int)sizeof(item)) {
+                result = ESP_FAIL;
+                break;
+            }
+            result = httpd_resp_sendstr_chunk(req, item);
+            if (result != ESP_OK) {
+                break;
+            }
+        }
+    }
+
+    heap_caps_free(buffer);
+    fclose(file);
+    camera_sd_service_resume_preview(camera_guard);
+
+    if (result != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "bench failed");
+        return result;
+    }
+    result = httpd_resp_sendstr_chunk(req, "]}\n");
+    if (result == ESP_OK) {
+        result = httpd_resp_sendstr_chunk(req, NULL);
+    }
+    return result;
+}
+
 static esp_err_t rescan_handler(httpd_req_t *req)
 {
     if (s_context == NULL || s_context->registry == NULL || !s_context->sd_ok) {
@@ -1145,11 +1334,9 @@ static esp_err_t launch_handler(httpd_req_t *req)
 
     esp_err_t scan_err = vb_app_registry_scan(s_context->registry);
     if (scan_err != ESP_OK) {
-        if (scan_err != ESP_ERR_NOT_FOUND || s_context->registry->stored_app_count == 0) {
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(scan_err));
-            return ESP_FAIL;
-        }
-        ESP_LOGW(TAG, "launch using cached app registry after scan failed: %s", esp_err_to_name(scan_err));
+        ESP_LOGW(TAG, "launch rejected after registry scan failed: %s", esp_err_to_name(scan_err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, esp_err_to_name(scan_err));
+        return ESP_FAIL;
     }
 
     vb_app_registry_entry_t selected_app = {0};
@@ -1527,6 +1714,10 @@ esp_err_t vb_install_service_start(vb_install_service_context_t *context)
         return err;
     }
     err = register_handler("/sd/file", HTTP_GET, sd_file_handler);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = register_handler("/debug/sd-bench", HTTP_GET, sd_bench_handler);
     if (err != ESP_OK) {
         return err;
     }

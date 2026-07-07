@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const packageJsonPath = join(repoRoot, "package.json");
 const newAppGuidePath = join(repoRoot, "docs/new-app-development-guide.md");
+const appPackageFormatPath = join(repoRoot, "docs/app-package-format.md");
 const firmwareRoot = join(repoRoot, "firmware/vibeboard_runtime");
 const boardHeaderPath = join(firmwareRoot, "main/board_lckfb_szpi_s3.h");
 const boardSourcePath = join(firmwareRoot, "main/board_lckfb_szpi_s3.c");
@@ -252,6 +253,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(defaults, /# CONFIG_FATFS_ALLOC_PREFER_EXTRAM is not set/);
     assert.match(defaults, /CONFIG_LV_MEM_CUSTOM_INCLUDE="lvgl_runtime_alloc\.h"/);
     assert.doesNotMatch(defaults, /CONFIG_LV_MEM_CUSTOM_INCLUDE="stdlib\.h"/);
+    assert.match(board, /host\.max_freq_khz\s*=\s*SDMMC_FREQ_HIGHSPEED/);
     assert.match(board, /host\.flags\s*\|=\s*SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF/);
     assert.match(cmake, /idf_component_get_property\(lvgl_lib\s+lvgl__lvgl\s+COMPONENT_LIB\)/);
     assert.match(cmake, /target_include_directories\(\$\{lvgl_lib\}\s+PUBLIC\s+\$\{CMAKE_CURRENT_LIST_DIR\}\)/);
@@ -280,7 +282,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
       assert.match(source, /# CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE is not set/);
       assert.match(source, /# CONFIG_ESP_PHY_RF_CAL_PARTIAL is not set/);
       assert.match(source, /CONFIG_ESP_PHY_RF_CAL_FULL=y/);
-      assert.match(source, /CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6/);
+      assert.match(source, /CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=5/);
       assert.match(source, /CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=8/);
       assert.match(source, /CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=8/);
       assert.match(source, /CONFIG_ESP_WIFI_MGMT_SBUF_NUM=16/);
@@ -304,7 +306,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
 
     assert.match(
       main,
-      /vb_runtime_wifi_prepare\(\)[\s\S]*vb_board_start_storage\(&board\)[\s\S]*vb_runtime_wifi_load_config_from_sd\(&wifi_config\)[\s\S]*vb_board_unmount_sd\(&board\)[\s\S]*vb_runtime_wifi_start_config\(&wifi_config\)[\s\S]*vb_board_mount_sd\(&board\)[\s\S]*vb_board_start_display\(&board\)[\s\S]*vb_app_registry_init\(\)/,
+      /vb_runtime_wifi_prepare\(\)[\s\S]*vb_board_start_storage\(&board\)[\s\S]*vb_runtime_wifi_load_config_from_sd\(&wifi_config\)[\s\S]*vb_board_unmount_sd\(&board\)[\s\S]*vb_board_mount_sd\(&board\)[\s\S]*vb_board_start_display\(&board\)[\s\S]*vb_runtime_wifi_start_config\(&wifi_config\)[\s\S]*vb_app_registry_init\(\)/,
     );
     assert.match(boardHeader, /vb_board_unmount_sd/);
     assert.match(board, /esp_vfs_fat_sdcard_unmount\(VB_SD_MOUNT_POINT,\s*sd_card\)/);
@@ -1340,7 +1342,10 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(installService, /xTaskCreatePinnedToCore\(launch_deferred_task/);
     assert.match(installService, /scan_err\s*=\s*vb_app_registry_scan\(s_context->registry\)/);
     assert.match(installService, /scan_err\s*!=\s*ESP_OK/);
-    assert.doesNotMatch(installService, /scan_err\s*!=\s*ESP_OK\s*&&\s*scan_err\s*!=\s*ESP_ERR_NOT_FOUND/);
+    assert.match(installService, /launch rejected after registry scan failed/);
+    assert.match(functionBody(installService, "launch_handler"), /httpd_resp_send_err\(req,\s*HTTPD_500_INTERNAL_SERVER_ERROR,\s*esp_err_to_name\(scan_err\)\)/);
+    assert.doesNotMatch(installService, /launch using cached app registry after scan failed/);
+    assert.doesNotMatch(functionBody(installService, "launch_handler"), /scan_err\s*!=\s*ESP_ERR_NOT_FOUND\s*\|\|\s*s_context->registry->stored_app_count\s*==\s*0/);
     assert.match(installService, /send_json\(req,\s*body\)[\s\S]*return\s+ESP_OK/);
     assert.match(installService, /selected_index/);
     assert.match(installService, /queue_launch_after_response\(s_context->registry,\s*selected_index\)/);
@@ -1622,8 +1627,8 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(installService, /vb_board_camera_preview_mode\(&preview_width,\s*&preview_height\)/);
     assert.match(installService, /vb_board_camera_standby\(\)/);
     assert.match(installService, /vb_board_camera_preview_start_low_memory\(\)/);
-    assert.match(installService, /launch using cached app registry after scan failed/);
-    assert.match(functionBody(installService, "launch_handler"), /scan_err != ESP_ERR_NOT_FOUND \|\| s_context->registry->stored_app_count == 0/);
+    assert.match(installService, /launch rejected after registry scan failed/);
+    assert.doesNotMatch(installService, /launch using cached app registry after scan failed/);
     assert.match(installService, /vb_camera_sd_service_guard_t\s+camera_guard\s*=\s*camera_sd_service_pause_preview\(\)/);
     assert.match(installService, /camera_sd_service_resume_preview\(camera_guard\)/);
     assert.match(installService, /rescan_handler[\s\S]*camera_sd_service_pause_preview\(\)/);
@@ -1638,6 +1643,31 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(installService, /reject_unsafe_path\(path\)/);
     assert.match(installService, /fopen\(full_path,\s*"rb"\)/);
     assert.match(installService, /httpd_resp_send_chunk/);
+  });
+
+  it("exposes SD throughput diagnostics and avoids tiny HTTP file chunks", () => {
+    const installService = readRequired(installServiceSourcePath);
+
+    assert.match(installService, /#define\s+VB_FILE_RESPONSE_BUFFER_SIZE\s+\(4\s*\*\s*1024\)/);
+    assert.match(installService, /#define\s+VB_FILE_RESPONSE_MAX_BUFFER_SIZE\s+\(16\s*\*\s*1024\)/);
+    assert.match(installService, /#define\s+VB_SD_BENCH_MAX_FILE_BYTES\s+\(256\s*\*\s*1024\)/);
+    assert.match(installService, /#define\s+VB_SD_BENCH_BLOCK_COUNT\s+5/);
+    assert.match(installService, /static\s+const\s+size_t\s+s_sd_bench_block_sizes\[\]\s*=\s*\{\s*512,\s*1024,\s*4096,\s*16384,\s*32768\s*\}/);
+    assert.match(installService, /static\s+uint8_t\s+\*alloc_internal_dma_buffer\(size_t preferred_size,\s*size_t \*allocated_size\)/);
+    assert.match(installService, /alloc_internal_dma_buffer[\s\S]*while\s*\(preferred_size\s*>=\s*512\)/);
+    assert.match(installService, /alloc_internal_dma_buffer[\s\S]*preferred_size\s*\/=\s*2/);
+    assert.match(installService, /static\s+esp_err_t\s+sd_bench_handler\(httpd_req_t\s+\*req\)/);
+    assert.match(installService, /static\s+size_t\s+get_file_response_buffer_size\(httpd_req_t\s+\*req\)/);
+    assert.match(installService, /httpd_query_key_value\(query,\s*"chunk"/);
+    assert.match(installService, /X-VibeBoard-File-Chunk/);
+    assert.match(installService, /alloc_internal_dma_buffer\(get_file_response_buffer_size\(req\),\s*&buffer_size\)/);
+    assert.match(installService, /alloc_internal_dma_buffer\(VB_SD_BENCH_MAX_BLOCK_SIZE,\s*&buffer_size\)/);
+    assert.match(installService, /esp_timer_get_time\(\)/);
+    assert.match(installService, /\\"block\\":%zu,\\"actual_block\\":%zu,\\"bytes\\":%zu,\\"ms\\":%lld,\\"kbps\\":%llu/);
+    assert.match(functionBody(installService, "get_file_response_buffer_size"), /VB_FILE_RESPONSE_BUFFER_SIZE/);
+    assert.match(functionBody(installService, "send_file_response"), /get_file_response_buffer_size\(req\)/);
+    assert.doesNotMatch(functionBody(installService, "send_file_response"), /char\s+buffer\[(?:512|4096)\]/);
+    assert.match(installService, /register_handler\("\/debug\/sd-bench",\s*HTTP_GET,\s*sd_bench_handler\)/);
   });
 
   it("bridges board touch coordinates into a Lua touch module through the runner loop", () => {
@@ -2397,6 +2427,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.ok(Number(initialDelayMatch[1]) >= 1000, "weather leaves a stop window before the first network request");
 
     assert.match(weatherSource, /UI_BOOT_DELAY_MS\s*=\s*\d+/);
+    assert.match(weatherSource, /LAZY_BACKGROUND\s*=\s*true/);
     assert.match(weatherSource, /local function init_startup_shell\(\)/);
     assert.match(weatherSource, /local function stage_full_ui\(\)/);
     assert.match(weatherSource, /local function stage_fonts\(\)/);
@@ -2427,24 +2458,93 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(weatherSource, /\\"background_ready\\":/);
     assert.match(weatherSource, /\\"background_attempts\\":/);
     assert.match(weatherSource, /\\"background_error\\":/);
+    assert.match(weatherSource, /\\"background_prefetch_ready\\":/);
+    assert.match(weatherSource, /\\"background_prefetch_error\\":/);
+    assert.match(weatherSource, /\\"perf_ui_ms\\":/);
+    assert.match(weatherSource, /\\"perf_fonts_ms\\":/);
+    assert.match(weatherSource, /\\"perf_visual_assets_ms\\":/);
+    assert.match(weatherSource, /\\"perf_background_prefetch_ms\\":/);
+    assert.match(weatherSource, /\\"perf_background_cache_hit\\":/);
+    assert.match(weatherSource, /\\"perf_background_cache_read_ms\\":/);
     assert.match(weatherSource, /\\"boot_stage\\":/);
     assert.match(weatherSource, /stage_full_ui\(\)[\s\S]*write_metrics\(\)/);
     assert.match(weatherSource, /stage_fonts\(\)[\s\S]*write_metrics\(\)/);
     assert.match(weatherSource, /stage_assets\(\)[\s\S]*write_metrics\(\)/);
+    assert.match(weatherSource, /APP\.perf\.ui_ms\s*=\s*now_ms\(\)\s*-\s*resource_start/);
+    assert.match(weatherSource, /APP\.perf\.fonts_ms\s*=\s*now_ms\(\)\s*-\s*resource_start/);
+    assert.match(weatherSource, /APP\.perf\.visual_assets_ms\s*=\s*now_ms\(\)\s*-\s*visual_assets_start/);
+    const initFontsBody = weatherSource.match(/local function init_fonts\(\)([\s\S]*?)\n    end\n\n    local function release_fonts\(\)/);
+    assert.ok(initFontsBody, "weather init_fonts body is present");
+    assert.match(initFontsBody[1], /weather_ui_12\.bin/);
+    assert.match(initFontsBody[1], /weather_ui_16\.bin/);
+    assert.match(initFontsBody[1], /weather_temp_34\.bin/);
+    assert.doesNotMatch(initFontsBody[1], /weather_tiny_10\.bin/);
+    assert.doesNotMatch(initFontsBody[1], /weather_num_28\.bin/);
+    assert.doesNotMatch(initFontsBody[1], /weather_time_40\.bin/);
     assert.match(weatherSource, /stage_assets\(\)[\s\S]*APP\.state\.last_error\s*=\s*"assets ready"/);
     assert.match(weatherSource, /local function lazy_load_visual_assets\(\)/);
     assert.match(weatherSource, /lazy_load_visual_assets\(\)[\s\S]*APP\.state\.visual_assets_ready\s*=\s*true/);
+    assert.match(weatherSource, /local function icon_asset_path\(name\)/);
+    assert.match(weatherSource, /return sd_to_lv\(APP\.ASSET_DIR \.\. "\/icons\/" \.\. name \.\. "\.bmp"\)/);
+    assert.match(weatherSource, /return icon_asset_path\(kind\)/);
+    for (const name of [
+      "cloudy",
+      "fog",
+      "humidity_sm",
+      "night",
+      "partly",
+      "precip_sm",
+      "rain",
+      "snow",
+      "storm",
+      "sunny",
+      "wind_sm"
+    ]) {
+      const iconPath = join(repoRoot, "apps/weather/assets/icons", `${name}.bmp`);
+      assert.ok(
+        existsSync(iconPath),
+        `weather ships BMP icon ${name}.bmp`
+      );
+      const icon = readFileSync(iconPath);
+      assert.equal(icon.readUInt16LE(28), 32, `weather BMP icon ${name}.bmp keeps alpha`);
+      assert.ok(icon.readInt32LE(22) < 0, `weather BMP icon ${name}.bmp is top-down for direct row reads`);
+    }
     assert.match(weatherSource, /local function lazy_load_background\(\)/);
+    assert.match(weatherSource, /local hide_startup_page\s+local function prefetch_background\(\)/);
     const backgroundBody = weatherSource.match(/local function lazy_load_background\(\)([\s\S]*?)\n    end\n\n    local function schedule_background_load\(\)/);
     assert.ok(backgroundBody, "weather lazy background body is present");
     assert.match(backgroundBody[1], /APP\.state\.background_error\s*=\s*"loading"/);
-    assert.match(backgroundBody[1], /lv_canvas_load_bmp\(APP\.ui\.bg_canvas,\s*background_asset_path\(weather_kind\(\)\)\)/);
+    assert.match(backgroundBody[1], /local background_start = now_ms\(\)/);
+    assert.match(backgroundBody[1], /local stats = nil/);
+    assert.match(backgroundBody[1], /pcall_fn\(lv_canvas_load_vbimg,\s*APP\.ui\.bg_canvas,\s*background_vbimg_path\(weather_kind\(\)\)\)/);
+    assert.match(backgroundBody[1], /local _, bmp_stats = lv_canvas_load_bmp\(APP\.ui\.bg_canvas,\s*background_asset_path\(weather_kind\(\)\)\)/);
+    assert.match(backgroundBody[1], /stats = bmp_stats/);
+    assert.match(backgroundBody[1], /APP\.perf\.background_read_ms\s*=\s*stats\.read_ms or 0/);
+    assert.match(backgroundBody[1], /APP\.perf\.background_read_chunk_bytes\s*=\s*stats\.read_chunk_bytes or 0/);
+    assert.match(backgroundBody[1], /APP\.perf\.background_largest_dma_before\s*=\s*stats\.largest_dma_before or 0/);
+    assert.match(backgroundBody[1], /APP\.perf\.background_largest_dma_after\s*=\s*stats\.largest_dma_after or 0/);
+    assert.match(backgroundBody[1], /APP\.perf\.background_convert_ms\s*=\s*stats\.convert_ms or 0/);
+    assert.match(backgroundBody[1], /APP\.perf\.background_lvgl_ms\s*=\s*stats\.lvgl_ms or 0/);
+    assert.match(backgroundBody[1], /APP\.perf\.background_fast_path\s*=\s*stats\.fast_path and true or false/);
+    assert.match(backgroundBody[1], /APP\.perf\.background_cache_hit\s*=\s*stats\.cache_hit and true or false/);
+    assert.match(backgroundBody[1], /APP\.perf\.background_cache_read_ms\s*=\s*stats\.cache_read_ms or 0/);
+    assert.match(backgroundBody[1], /APP\.perf\.background_ms\s*=\s*now_ms\(\)\s*-\s*background_start/);
     assert.match(backgroundBody[1], /APP\.state\.background_ready\s*=\s*true/);
+    assert.match(backgroundBody[1], /hide_startup_page\(\)/);
     assert.doesNotMatch(backgroundBody[1], /lv_obj_set_style_bg_color/);
+    assert.match(weatherSource, /local function prefetch_background\(\)/);
+    const prefetchBody = weatherSource.match(/local function prefetch_background\(\)([\s\S]*?)\n    end\n\n    local function lazy_load_background\(\)/);
+    assert.ok(prefetchBody, "weather background prefetch body is present");
+    assert.match(prefetchBody[1], /APP\.state\.background_prefetch_error\s*=\s*"loading"/);
+    assert.match(prefetchBody[1], /pcall_fn\(lv_canvas_prefetch_vbimg,\s*background_vbimg_path\(weather_kind\(\)\)\)/);
+    assert.match(prefetchBody[1], /APP\.state\.background_prefetch_ready\s*=\s*true/);
+    assert.match(prefetchBody[1], /APP\.perf\.background_prefetch_ms\s*=\s*now_ms\(\)\s*-\s*prefetch_start/);
     assert.match(weatherSource, /local function schedule_background_load\(\)/);
     assert.match(weatherSource, /APP\.state\.background_error\s*=\s*"queued"/);
-    assert.match(weatherSource, /APP\.timers\.stage_boot\s*=\s*nil\s+end\s+APP\.state\.background_pending\s*=\s*true/);
-    assert.match(weatherSource, /APP\.state\.background_pending\s*=\s*false\s+schedule_background_load\(\)[\s\S]*lazy_load_background\(\)/);
+    assert.match(weatherSource, /if APP\.LAZY_BACKGROUND then\s+APP\.state\.background_pending\s*=\s*true/);
+    assert.match(weatherSource, /APP\.state\.background_ready\s*=\s*true\s+APP\.state\.background_error\s*=\s*"skipped"/);
+    assert.match(weatherSource, /if lv_canvas_prefetch_vbimg and not APP\.state\.background_prefetch_ready and APP\.state\.background_prefetch_error == "" then\s+prefetch_background\(\)[\s\S]*APP\.state\.background_pending\s*=\s*false\s+lazy_load_background\(\)/);
+    assert.match(weatherSource, /if not APP\.LAZY_BACKGROUND or APP\.state\.background_ready then\s+hide_startup_page\(\)/);
     assert.doesNotMatch(weatherSource, /APP\.timers\.background\s*=/);
     assert.doesNotMatch(weatherSource, /timer:alarm\(APP\.BACKGROUND_LOAD_DELAY_MS/);
     assert.match(weatherSource, /stage_assets\(\)[\s\S]*lazy_load_visual_assets\(\)/);
@@ -2469,6 +2569,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
   it("documents the standard workflow for new runtime apps", () => {
     const guide = readRequired(newAppGuidePath);
     const readme = readRequired(join(repoRoot, "README.md"));
+    const packageFormat = readRequired(appPackageFormatPath);
 
     assert.match(readme, /docs\/new-app-development-guide\.md/);
     assert.match(guide, /# New App Development Guide/);
@@ -2482,6 +2583,12 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(guide, /file/);
     assert.match(guide, /audio/);
     assert.match(guide, /Image Assets/);
+    assert.match(guide, /Resource Layering/);
+    assert.match(guide, /large static backgrounds/);
+    assert.match(guide, /vbimg/);
+    assert.match(guide, /32-bit BMP alpha/);
+    assert.match(guide, /LVGL native widgets/);
+    assert.match(guide, /camera previews, game frames, and animated streams/);
     assert.match(guide, /Fonts/);
     assert.match(guide, /LV_FONT_COMMON_CN_13/);
     assert.match(guide, /Runtime Native Interfaces/);
@@ -2498,6 +2605,15 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(guide, /metrics\.json/);
     assert.match(guide, /npm test/);
     assert.match(guide, /idf\.py build/);
+    assert.match(packageFormat, /Preconverted Image Resources/);
+    assert.match(packageFormat, /Resource layering contract/);
+    assert.match(packageFormat, /large static images/);
+    assert.match(packageFormat, /small transparent icons/);
+    assert.match(packageFormat, /32-bit BMP alpha/);
+    assert.match(packageFormat, /bmp-bgra-alpha/);
+    assert.match(packageFormat, /transparent-icon/);
+    assert.match(packageFormat, /LVGL object tree/);
+    assert.match(packageFormat, /dynamic frame producers/);
   });
 
   it("keeps Voice AI on the shared audio helper contract", () => {
@@ -2932,7 +3048,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     );
   });
 
-  it("starts optional runtime Wi-Fi from SD before serving installs", () => {
+  it("starts optional runtime Wi-Fi from SD after display buffers are allocated", () => {
     const header = readRequired(runtimeWifiHeaderPath);
     const source = readRequired(runtimeWifiSourcePath);
     const cmake = readRequired(cmakePath);
@@ -2960,7 +3076,7 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.doesNotMatch(main, /vb_board_camera_reserve_internal_dma/);
     assert.match(
       main,
-      /vb_board_start_storage\(&board\)[\s\S]*vb_runtime_wifi_load_config_from_sd\(&wifi_config\)[\s\S]*vb_board_unmount_sd\(&board\)[\s\S]*vb_runtime_wifi_start_config\(&wifi_config\)[\s\S]*vb_board_mount_sd\(&board\)[\s\S]*vb_board_start_display\(&board\)[\s\S]*vb_install_service_start\(&s_install_context\)/,
+      /vb_board_start_storage\(&board\)[\s\S]*vb_runtime_wifi_load_config_from_sd\(&wifi_config\)[\s\S]*vb_board_unmount_sd\(&board\)[\s\S]*vb_board_mount_sd\(&board\)[\s\S]*vb_board_start_display\(&board\)[\s\S]*vb_runtime_wifi_start_config\(&wifi_config\)[\s\S]*vb_install_service_start\(&s_install_context\)/,
     );
   });
 
@@ -3142,14 +3258,20 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(defaults, /CONFIG_LV_USE_BMP=y/);
     assert.match(projectCmake, /patch_lvgl_bmp_runtime\.cmake/);
     assert.match(bmpPatch, /VB_LVGL_BMP_SOURCE/);
-    assert.match(bmpPatch, /b\.bpp != 16 && b\.bpp != 24/);
+    assert.match(bmpPatch, /b\.bpp != 16 && b\.bpp != 24 && b\.bpp != 32/);
     assert.match(bmpPatch, /if\(b->bpp == 24\)/);
+    assert.match(bmpPatch, /if\(b->bpp == 32\)/);
+    assert.match(bmpPatch, /LV_IMG_CF_TRUE_COLOR_ALPHA/);
+    assert.match(bmpPatch, /int32_t source_y/);
     assert.match(bmpPatch, /lv_color_make\(bgr\[2\], bgr\[1\], bgr\[0\]\)/);
     assert.match(bmpSource, /lv_fs_open\(&b\.f,\s*dsc->src,\s*LV_FS_MODE_RD\)/);
     assert.match(bmpSource, /if\(res != LV_FS_RES_OK\) return LV_RES_INV;/);
     assert.doesNotMatch(bmpSource, /if\(res == LV_RES_OK\) return LV_RES_INV;/);
-    assert.match(bmpSource, /LV_COLOR_DEPTH == 16 && \(b\.bpp != 16 && b\.bpp != 24\)/);
+    assert.match(bmpSource, /LV_COLOR_DEPTH == 16 && \(b\.bpp != 16 && b\.bpp != 24 && b\.bpp != 32\)/);
     assert.match(bmpSource, /b->bpp == 24/);
+    assert.match(bmpSource, /b->bpp == 32/);
+    assert.match(bmpSource, /LV_IMG_CF_TRUE_COLOR_ALPHA/);
+    assert.match(bmpSource, /int32_t source_y/);
     assert.match(bmpSource, /lv_color_make/);
     assert.match(bmpSource, /dsc->img_data = NULL;/);
     assert.match(bmpSource, /static lv_res_t decoder_read_line/);
@@ -3163,6 +3285,47 @@ describe("vibeboard runtime firmware static guardrails", () => {
     assert.match(canvasSource, /vb_lua_lvgl_resolve_asset_path\(src,\s*resolved,\s*sizeof\(resolved\)\)/);
     assert.match(canvasSource, /fread\(header,\s*1,\s*sizeof\(header\),\s*file\)/);
     assert.match(canvasSource, /heap_caps_malloc\(sizeof\(s_canvas_buffer\),\s*MALLOC_CAP_SPIRAM \| MALLOC_CAP_8BIT\)/);
+    assert.match(canvasSource, /static bool bmp_is_rgb565\(uint32_t compression,\s*const uint8_t \*header\)/);
+    assert.match(canvasSource, /red_mask == 0x0000f800U/);
+    assert.match(canvasSource, /green_mask == 0x000007e0U/);
+    assert.match(canvasSource, /blue_mask == 0x0000001fU/);
+    assert.match(canvasSource, /static void reverse_bmp_rows\(uint8_t \*pixels,\s*uint32_t row_size,\s*int32_t height\)/);
+    assert.match(canvasSource, /static void convert_rgb565_buffer_to_lv_color\(lv_color_t \*dest,\s*int32_t width,\s*int32_t height\)/);
+    assert.match(canvasSource, /#if LV_COLOR_16_SWAP/);
+    assert.match(canvasSource, /__builtin_bswap16\(raw\)/);
+    assert.match(canvasSource, /bool use_rgb565_fast_path/);
+    assert.match(canvasSource, /#define\s+VB_BMP_READ_CHUNK_SIZE\s+\(4\s*\*\s*1024\)/);
+    assert.match(canvasSource, /#include "esp_attr\.h"/);
+    assert.match(canvasSource, /static\s+DMA_ATTR\s+uint8_t\s+s_bmp_read_chunk\[VB_BMP_READ_CHUNK_SIZE\]/);
+    assert.match(canvasSource, /#define\s+VB_IMAGE_READ_CHUNK_MAX_SIZE\s+\(32\s*\*\s*1024\)/);
+    assert.match(canvasSource, /static uint8_t \*alloc_image_read_chunk\(size_t preferred_size,\s*size_t \*allocated_size\)/);
+    assert.match(canvasSource, /heap_caps_malloc\(preferred_size,\s*MALLOC_CAP_INTERNAL \| MALLOC_CAP_DMA \| MALLOC_CAP_8BIT\)/);
+    assert.match(canvasSource, /return s_bmp_read_chunk/);
+    assert.match(canvasSource, /static void free_image_read_chunk\(uint8_t \*buffer\)/);
+    assert.match(canvasSource, /static\s+bool\s+read_bmp_pixels_dma\(FILE \*file,[\s\S]*size_t \*largest_dma_before,[\s\S]*size_t \*largest_dma_after\)/);
+    assert.match(canvasSource, /heap_caps_get_largest_free_block\(MALLOC_CAP_INTERNAL \| MALLOC_CAP_DMA \| MALLOC_CAP_8BIT\)/);
+    assert.match(canvasSource, /alloc_image_read_chunk\(VB_IMAGE_READ_CHUNK_MAX_SIZE,\s*&chunk_size\)/);
+    assert.match(canvasSource, /\*read_chunk_bytes = chunk_size/);
+    assert.match(canvasSource, /fread\(chunk,\s*1,\s*wanted,\s*file\)/);
+    assert.match(canvasSource, /memcpy\(dest \+ total_read,\s*chunk,\s*got\)/);
+    assert.match(canvasSource, /free_image_read_chunk\(chunk\)/);
+    assert.doesNotMatch(canvasSource, /alloc_bmp_dma_read_buffer/);
+    assert.doesNotMatch(canvasSource, /s_bmp_read_chunk\[\s*\(?\s*(?:8|16|32)\s*\*\s*1024\s*\)?\s*\]/);
+    assert.match(canvasSource, /size_t pixel_bytes = \(size_t\)row_size \* \(size_t\)height/);
+    assert.match(canvasSource, /read_bmp_pixels_dma\(file,[\s\S]*\(uint8_t \*\)scratch,[\s\S]*pixel_bytes,[\s\S]*&read_us,[\s\S]*&read_chunk_bytes,[\s\S]*&largest_dma_before,[\s\S]*&largest_dma_after\)/);
+    assert.doesNotMatch(canvasSource, /fread\(\(uint8_t \*\)scratch,\s*1,\s*pixel_bytes,\s*file\)/);
+    assert.match(canvasSource, /reverse_bmp_rows\(\(uint8_t \*\)scratch,\s*row_size,\s*height\)/);
+    assert.match(canvasSource, /convert_rgb565_buffer_to_lv_color\(scratch,\s*width,\s*height\)/);
+    assert.match(canvasSource, /#include "esp_timer\.h"/);
+    assert.match(canvasSource, /esp_timer_get_time\(\)/);
+    assert.match(canvasSource, /lua_setfield\(L,\s*-2,\s*"read_ms"\)/);
+    assert.match(canvasSource, /lua_setfield\(L,\s*-2,\s*"read_chunk_bytes"\)/);
+    assert.match(canvasSource, /lua_setfield\(L,\s*-2,\s*"largest_dma_before"\)/);
+    assert.match(canvasSource, /lua_setfield\(L,\s*-2,\s*"largest_dma_after"\)/);
+    assert.match(canvasSource, /lua_setfield\(L,\s*-2,\s*"convert_ms"\)/);
+    assert.match(canvasSource, /lua_setfield\(L,\s*-2,\s*"lvgl_ms"\)/);
+    assert.match(canvasSource, /lua_setfield\(L,\s*-2,\s*"fast_path"\)/);
+    assert.match(canvasSource, /return 2;/);
     assert.match(canvasSource, /lv_color_make/);
     assert.match(canvasSource, /memcpy\(s_canvas_buffer,\s*scratch,\s*sizeof\(s_canvas_buffer\)\)/);
     assert.match(canvasSource, /lv_obj_invalidate\(canvas\)/);
@@ -3172,10 +3335,37 @@ describe("vibeboard runtime firmware static guardrails", () => {
     const backgroundBody = weatherSource.match(/local function lazy_load_background\(\)([\s\S]*?)\n    end\n\n    local function schedule_background_load\(\)/);
     assert.ok(backgroundBody, "weather lazy background body is present");
     assert.match(backgroundBody[1], /APP\.state\.background_error\s*=\s*"loading"/);
-    assert.match(backgroundBody[1], /lv_canvas_load_bmp\(APP\.ui\.bg_canvas,\s*background_asset_path\(weather_kind\(\)\)\)/);
+    assert.match(backgroundBody[1], /pcall_fn\(lv_canvas_load_vbimg,\s*APP\.ui\.bg_canvas,\s*background_vbimg_path\(weather_kind\(\)\)\)/);
+    assert.match(backgroundBody[1], /local _, bmp_stats = lv_canvas_load_bmp\(APP\.ui\.bg_canvas,\s*background_asset_path\(weather_kind\(\)\)\)/);
     assert.match(backgroundBody[1], /APP\.state\.background_ready\s*=\s*true/);
     assert.doesNotMatch(backgroundBody[1], /APP\.state\.background_error\s*=\s*"probe"/);
     assert.doesNotMatch(backgroundBody[1], /asset_path\("bg"/);
+  });
+
+  it("uses a preconverted vbimg canvas fast path for large weather backgrounds", () => {
+    const canvasSource = readRequired(luaLvglCanvasSourcePath);
+    const weatherSource = readRequired(weatherSourcePath);
+
+    assert.match(canvasSource, /VBIMG1/);
+    assert.match(canvasSource, /static int l_lv_canvas_load_vbimg\(lua_State \*L\)/);
+    assert.match(canvasSource, /"lv_canvas_load_vbimg"/);
+    assert.match(canvasSource, /static int l_lv_canvas_prefetch_vbimg\(lua_State \*L\)/);
+    assert.match(canvasSource, /"lv_canvas_prefetch_vbimg"/);
+    assert.match(canvasSource, /s_vbimg_cache/);
+    assert.match(canvasSource, /heap_caps_malloc\(sizeof\(s_canvas_buffer\),\s*MALLOC_CAP_SPIRAM \| MALLOC_CAP_8BIT\)/);
+    assert.match(canvasSource, /vbimg_cache_load/);
+    assert.match(canvasSource, /vbimg_cache_release/);
+    assert.match(canvasSource, /lua_setfield\(L,\s*-2,\s*"cache_hit"\)/);
+    assert.match(canvasSource, /lua_setfield\(L,\s*-2,\s*"cache_read_ms"\)/);
+    assert.match(canvasSource, /read_vbimg_pixels_dma/);
+    assert.match(canvasSource, /lua_setfield\(L,\s*-2,\s*"format"\)/);
+    assert.match(weatherSource, /local function background_vbimg_path\(kind\)/);
+    assert.match(weatherSource, /APP\.ASSET_DIR \.\. "\/bg\/" \.\. tostring\(kind or "partly"\) \.\. "\.vbimg"/);
+    assert.match(weatherSource, /pcall_fn\(lv_canvas_prefetch_vbimg,\s*background_vbimg_path\(weather_kind\(\)\)\)/);
+    assert.match(weatherSource, /pcall_fn\(lv_canvas_load_vbimg,\s*APP\.ui\.bg_canvas,\s*background_vbimg_path\(weather_kind\(\)\)\)/);
+    assert.match(weatherSource, /lv_canvas_load_bmp\(APP\.ui\.bg_canvas,\s*background_asset_path\(weather_kind\(\)\)\)/);
+    assert.match(weatherSource, /APP\.state\.background_prefetch_ready\s*=\s*true/);
+    assert.match(weatherSource, /APP\.perf\.background_cache_hit\s*=\s*stats\.cache_hit and true or false/);
   });
 
   it("registers LVGL canvas drawing for MatrixRain-style apps", () => {

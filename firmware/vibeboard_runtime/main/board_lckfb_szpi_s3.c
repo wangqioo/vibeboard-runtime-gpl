@@ -1423,6 +1423,7 @@ esp_err_t vb_board_mount_sd(vb_board_status_t *status)
         .allocation_unit_size = 16 * 1024,
     };
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
     host.flags |= SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF;
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     slot_config.width = 1;
