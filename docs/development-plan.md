@@ -1,6 +1,6 @@
 # VibeBoard Runtime GPL 开发计划
 
-更新时间：2026-06-25
+更新时间：2026-07-03
 
 ## 一句话目标
 
@@ -49,6 +49,8 @@
 - Lua VM 已改为 PSRAM allocator，Lua App 运行期间 `/status` 和 `/stop` 仍可响应；这修复了 handoff 后 HTTP 连接被 reset 的内存压力问题。
 - Lua 脚本在创建 Lua task 前预读到 PSRAM，避免 Lua task 内直接 SD 文件 IO 导致的崩溃/读失败路径。
 - 2026-06-29 启动 post-v0.1 性能基线首个切片：Lua HTTP callback dispatch 已改为 `lua_pcall` 保护路径，但 HTTP 请求执行仍按本切片设计保持同步；`weather`、`photos`、`voice_ai` 已在各自 `metrics.json` 中加入 `perf_first_paint_ms`、`perf_ready_ms`、`perf_resource_ms`、`perf_http_ms`、`perf_timer_max_ms`、`perf_stop_requested` 和 `perf_last_error`。本轮是可比较指标基线，不代表启动/动画卡顿已经解决；下一步仍是异步 HTTP、资源调度和真机指标对比。
+- 2026-07-03 Camera/Photos 用户闭环已进入当前基线：`apps/camera` 通过 Runtime camera 模块启动实时预览、拍照保存 BMP 到 `/sd/data/camera/photos`、提供 `/app/api` / `/app/photos` / `/app/capture`，并在设备端提供相册浏览/删除；standalone `apps/photos` 也已能显示同一批实拍 BMP。用户已确认拍照不再退回 Launcher，相机内相册和系统 Photos 应用均能正常显示照片。
+- 2026-07-03 音频/Voice AI 当前基线也已从 mock/metrics 推进到物理路径：用户确认扬声器 440 Hz tone 可听，文件式录音/回放经过通道和采样率调校后可用，`apps/voice_ai` 已通过本机桌面 bridge 的 local Apple Speech 路径完成真实语音识别并把结果显示回设备。剩余不是基础链路，而是云 STT/LLM provider 凭证/端点、隐私日志、长时间音频 soak、生产级增益/噪声和弱网/无 bridge 体验。
 - 2026-06-22 新增窄口 HTTP 输入 smoke hook：`POST /input/key?code=<LEFT|RIGHT|UP|DOWN|HOME|EXIT|START>&event=<SHORT|LONG_START|LONG_REPEAT|LONG_END>`。该接口只接受白名单名称，复用 `vb_app_runner_enqueue_key`，不直接调用 Lua。已重新构建并刷入 `/dev/cu.usbmodem112301`，板端验证空闲时返回 `400 no active app`，`smoke_key` 运行时 LEFT/HOME 注入返回 `ok`，HOME 通过正常 Lua runner 默认退出路径让 app 回到 idle。
 - 2026-06-23 继续把输入 smoke 自动化做成可回归证据：`apps/smoke_key` 现在声明 `file` capability，写出 `metrics.json` 事件计数，并让 `key.repeat_start(key.UP, 250, 500)` 跨 timer tick 运行，避免立即 stop 导致 `LONG_REPEAT` 不稳定。`tools/input-smoke` 新增 active app 启动等待、`--metrics-polls` 和 `--require-event CODE:EVENT`，可直接要求 `UP:LONG_REPEAT` / `UP:LONG_END` 出现在 app metrics。第一次板端复测暴露旧版 `smoke_key` 卡在 `state=stopping`；修复后 app 在 `app.exiting()` 时停止 timer。重启 Runtime、上传新版 app 后，`npm run input:smoke -- --board http://192.168.1.32:8080 --app smoke_key --key LEFT:SHORT --expect-state running --delay-ms 500 --metrics-polls 14 --require-event UP:LONG_REPEAT --require-event UP:LONG_END` 返回 `input smoke ok: smoke_key 1 keys final=running metrics_count=9`，随后 `/stop` 返回 `{"ok":true,"stopped":true}`，最终 `/status` 回到 `state=idle`。
 - 2026-06-22 修复一次真实回归：`vb_app_registry_scan()` 原本在确认 `/sdcard/apps` 可打开前会先清空传入 registry，短暂扫描失败会导致 `/status.app_count=0`、`/apps=[]`、上传 commit 失败。现在扫描先写入 PSRAM/heap 临时 registry，只有扫描成功后才覆盖缓存；同时避免把 32-entry registry 放到任务栈上导致启动重启。修复后已刷入 `/dev/cu.usbmodem111301`，`/status`、`/apps`、`/rescan`、stop 后 `/apps` 均保持 `app_count=31`。
@@ -260,6 +262,8 @@ AI 生成一个受限 Lua/LVGL App
 - 重点检查资源路径：图片/GIF/PNG/BMP 解码、字体加载、PSRAM/SDMMC DMA 内存、SD 读放大、资源格式转换和首次渲染顺序；
 - 重点检查调度路径：Lua timer、LVGL lock、display takeover、HTTPD、WiFi、SD、metrics 写入和 native task 之间是否互相抢占；
 - 优化结论必须用上板指标或 smoke/soak 数据闭环，避免只凭主观感觉或单点代码判断。
+
+2026-07-06 SD 读取专项结论：立创官方教程确认本板是 SDMMC 1-bit，不是 4-bit；Runtime 的引脚和挂载策略已与官方例程一致。新增 `/debug/sd-bench` 后，Weather `storm.bmp` 153666 字节在 20 MHz 下直读约 151-155 ms，在 40 MHz `SDMMC_FREQ_HIGHSPEED` 下直读约 119-124 ms，约 1.2 MB/s。HTTP `/apps/file` 已从固定 512B 栈缓冲改为内部 DMA 动态缓冲，默认 4KB，并用 `X-VibeBoard-File-Chunk` 暴露实际块大小；固定 16KB 在真机上会因内部 DMA 连续块不足失败，所以不能作为默认。最新端到端 HTTP 下载同一 BMP 仍约 1.13-1.34 秒，说明后续网页/远程资源慢要继续拆 HTTP/WiFi、解码转换、LVGL 锁和首屏调度，不能只归因于 SD 卡物理读取。
 
 第七优先级：上游兼容和高级能力。
 
@@ -1130,11 +1134,12 @@ dist/apps/<app-id>/
 | `hwmon` | `apps/hwmon/` | HTTP host state fetch、JSON decode、app-local config、metrics、LVGL hardware monitor panel | board lifecycle smoke with local mock host metrics；真实 host_monitor、上游 WebUI route/httpd 和照片待补 |
 | `Spectrum` | `apps/spectrum/` | real I2S microphone capture、Goertzel band analyzer、single-label LVGL visualizer、timer animation、key mode toggle、metrics | board lifecycle smoke with real I2S metrics + clean stop；物理 microphone 响应照片、上游 FFT/`spectrum` module 和更丰富视觉仍待补 |
 | `videos` | `apps/videos/` | app-local GIF playlist、`lv_gif_create`/`lv_gif_set_src`、file.listdir、key navigation、metrics | board lifecycle smoke + HTTP key injection metrics；真实视频/多 GIF 媒体集和照片待补 |
-| `photos` | `apps/photos/` | app-local PNG/BMP image playlist、`lv_img_create`/`lv_img_set_src`、file.listdir、key navigation、metrics | board lifecycle smoke + HTTP key injection metrics；上游 canvas slideshow、多图片集和照片待补 |
+| `photos` | `apps/photos/` | app-local PNG/BMP image playlist、`lv_img_create`/`lv_img_set_src`、file.listdir、key navigation、metrics；已适配 Camera 保存的 BMP 照片尺寸 | board lifecycle smoke + HTTP key injection metrics；2026-07-03 用户确认可正常显示 Camera 实拍照片；上游 canvas slideshow、多图片集和长稳照片 sweep 待补 |
+| `camera` | `apps/camera/` | Runtime GC2145 preview、capture/save BMP、capture busy overlay、gallery-entry hint、on-device gallery、WebUI capture/list API、SD photo storage | 2026-07-03 board/user verified：可打开预览、拍照保存到 `/sd/data/camera/photos`、Camera 内相册显示、standalone Photos 显示；多次拍照/删除 soak、Web 下载/清理 polish 和进一步画质调优待补 |
 | `plane` | `apps/plane/` | app-local BMP sprites、`lv_img_create`/`lv_img_set_src`、timer game loop、key movement/shooting、metrics | board lifecycle smoke + HTTP key injection metrics；上游 Plane War 关卡/道具/boss/IMU 控制、游戏手感和照片待补 |
 | `lv-benchmark` | `apps/lv-benchmark/` | minimal LVGL benchmark panel、rect/label/arc/image transform、timer frame metrics | board lifecycle smoke + sustained frame metrics；完整上游 line/table/flex/monitor benchmark、FPS 统计和照片待补 |
 | `Weather` | `apps/weather/` | WiFi/HTTP/sjson/time、PNG/BMP、canvas、font、deferred background timer、lifecycle metrics | board lifecycle smoke；多天气态照片待补 |
-| `voice_ai` | `apps/voice_ai/` | audio/i2s/http bridge、mock/command provider、GIF/UI 状态 | board smoke；真实 STT/ES8311/可听输出待补 |
+| `voice_ai` | `apps/voice_ai/` | audio/i2s/http bridge、file-backed recording、PCM conversion/upload、mock/command provider、local Apple Speech STT、GIF/UI 状态 | board/user verified：录音、上传、local STT、回复显示已成功；云 STT/LLM provider、长音频 soak、生产增益/噪声和 GIF 肉眼回归待补 |
 | `nesgame` | `apps/nesgame/` | native facade、NES core、ROM selector、display DMA shim、gamepad host API、fallback PCM | board smoke；真实手柄/音频/长 soak 待补 |
 
 每个 App 的迁移流程：
@@ -1222,7 +1227,7 @@ Native module load failed
 
 目标：让 `voice_ai` 从 UI 样本变成可用设备 App。
 
-当前状态：I2S RX/TX、`audio.record_wav`、`i2s.write`、Voice AI mock provider 和 command provider 音频上传路径已经有本地/板端 smoke 证据；`apps/voice_ai` 能进入录音/上传/回复 UI 状态并通过 lifecycle smoke。仍缺真实 OpenAI-compatible STT provider 路由、ES8311/功放可听输出、麦克风实录质量、GIF/屏幕物理体验和弱网/无 bridge 人工验证。
+当前状态：I2S RX/TX、file-backed recording/playback、`i2s.write`、Voice AI mock provider、command provider 音频上传路径和本机 local Apple Speech STT 路径都有本地/板端证据；`apps/voice_ai` 能进入录音、上传、识别、回复显示 UI 状态，用户已确认设备端真实语音识别成功。ES8311/功放已有可听 tone 证据，麦克风实录质量经过通道/采样率调校后可用。仍缺生产云 STT/LLM provider 路由、凭证/隐私日志策略、长时间音频 soak、GIF/屏幕物理回归、弱网/无 bridge 人工验证，以及生产级增益/噪声调优。
 
 需要新增或修改：
 
@@ -1236,11 +1241,11 @@ docs/voice-ai-flow.md
 
 任务：
 
-1. 根据立创官方例程确认 ES7210/ES8311/功放/麦克风路径。**ES8311 register/speaker path 有静态覆盖，真实可听输出待补。**
+1. 根据立创官方例程确认 ES7210/ES8311/功放/麦克风路径。**已完成基础 bring-up：440 Hz tone 可听，file-backed 录音/回放可用；生产级噪声/增益和长稳待补。**
 2. 实现最小录音 API。**`audio.record_wav` 已实现并 smoke 覆盖。**
 3. 实现音频文件或流式上传。**command provider 上传路径已板端验证。**
-4. `voice_ai` 调桌面 bridge。**mock/command provider 已验证，真实 STT provider 待补。**
-5. bridge 返回中文回复和可选 LVGL UI snippet。**mock 文本回复已覆盖，真实 provider 和 UI snippet 仍待产品化。**
+4. `voice_ai` 调桌面 bridge。**mock/command provider 和 local Apple Speech STT 已验证；云 STT provider 待产品化。**
+5. bridge 返回中文回复和可选 LVGL UI snippet。**本地识别结果已能显示回设备；云 provider、UI snippet 和错误/隐私 UX 仍待产品化。**
 
 验收标准：
 
@@ -1339,6 +1344,28 @@ Native module ABI version
 - `tmr`、`file`、资源路径、基础 LVGL、网络模块、免拔 SD 远程启动、Launcher lifecycle 和本地 Web 管理已经完成到可验证阶段；
 - 当前最适合自动推进的工作是继续用真实 App 倒逼 API，而不是为抽象完整性补大而全绑定；
 - 真实音频、真实 STT、真实手柄和照片证据需要外部条件，适合在用户确认硬件环境后集中补。
+
+## 当前性能优化重点
+
+Weather 背景加载已经确认不是单纯 SD 卡物理读速问题：同一张 `storm.bmp`/`storm.vbimg`
+通过 `/debug/sd-bench` 约 `121-125 ms`，但 Weather 的 Lua/LVGL app 运行态背景路径仍
+明显更慢。2026-07-07 的实机 probe 确认了不能通过增大静态内部 DMA 读缓冲解决：
+`16 KB` 链接溢出，`8 KB`/`6 KB` 会让 LVGL 任务创建失败并重启。随后落地了
+Runtime-native `.vbimg` 格式：packager 把兼容 RGB565 BMP 预转换为 `.vbimg`，Weather
+优先调用 `lv_canvas_load_vbimg` 并保留 BMP fallback。板端 smoke 已证明
+`perf_background_fast_path=true`，但 app 运行态仍只能拿到 `2944-4608` 字节的最大连续
+内部 DMA 块，实际读块回退为 `4096`，`lv_canvas_load_vbimg` 冷读约 `610 ms`；一次 Lua
+侧同文件预读后，后续 canvas 读降到约 `331 ms`。这说明 `.vbimg` 解决了资源格式/解码
+契约，剩余瓶颈是 app-context SD 读取、缓存和调度。
+
+后续资源加载优化应优先走这些方向：
+
+- 继续保留 `.vbimg` 作为大图资源格式和 Runtime API 契约；
+- 增加 Runtime 级资源 cache/prewarm，让大资源在首屏后可观测地预读一次，后续页面或
+  背景切换复用缓存，而不是每个 Lua App 自己手写 loading 和探针；
+- 启动完成后尝试临时 DMA scratch，失败时回退稳定 `4 KB` 缓冲，并把实际 chunk、最大
+  DMA 连续块写入 metrics；
+- 降低重资源体积或改资源格式，让首屏和底图加载不争抢启动期内部内存。
 
 完成后，项目阶段可从：
 

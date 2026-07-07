@@ -6,7 +6,8 @@ This backlog tracks work that should continue after the `v0.1-runtime-milestone`
 
 Goal: confirm the apps look correct on the real 320x240 display, not only that metrics and lifecycle smoke pass.
 
-- Capture or observe `weather`, `photos`, `videos`, `spectrum`, `lv-benchmark`, `btc`, `settings`, `hwmon`, `plane`, `clock`, and `nixie_clock`.
+- Capture or observe `weather`, `videos`, `spectrum`, `lv-benchmark`, `btc`, `settings`, `hwmon`, `plane`, `clock`, and `nixie_clock`.
+- `camera` and `photos` now have a first physical pass: live preview, capture, on-device camera gallery, and standalone Photos display were user-verified on 2026-07-03. Keep them in later sweeps for regression and long-run capture/gallery soak, not as first-proof blockers.
 - Check CJK glyphs, fallback fonts, clipped text, overlapping labels, color depth, transparency, image scaling, GIF playback, and animation smoothness.
 - Record each app as pass/fail with a photo or explicit manual observation note in `docs/device-bringup.md`.
 
@@ -14,9 +15,9 @@ Goal: confirm the apps look correct on the real 320x240 display, not only that m
 
 Goal: move from driver and bridge metrics to real audible and provider-backed behavior.
 
-- Verify ES8311/amp/speaker output with an audible tone and Voice AI playback path.
-- Confirm microphone quality with real speech, not only nonzero PCM or command-provider mock paths.
-- Connect a provider/base URL that supports the chosen STT route and complete one real record -> transcript -> reply board smoke.
+- Verify ES8311/amp/speaker output with an audible tone and Voice AI playback path. The 440 Hz tone and file-backed record/playback path have first physical evidence; production gain/noise tuning and long audio soak remain.
+- Confirm microphone quality with real speech, not only nonzero PCM or command-provider mock paths. Local Apple Speech STT succeeded once through the desktop bridge after the microphone/channel tuning pass; keep this as first proof, not final audio quality sign-off.
+- Connect a provider/base URL that supports the chosen STT route and complete one real record -> transcript -> reply board smoke. The local desktop command-provider route is board/user verified; cloud STT/LLM provider endpoints, credentials, privacy logging, and failure UX remain.
 - Keep the privacy boundary documented: transcript-only reply path by default; raw audio forwarded only with explicit opt-in.
 
 ## Real Input Hardware

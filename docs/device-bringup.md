@@ -6528,3 +6528,311 @@ After reboot, Runtime returned `state=idle,app_count=48,install=ok`. Launching `
 Physical result: the user confirmed the camera preview was clearer and had no visible problems:
 no flower screen, flashing, freeze, or instability. This closes the previous QVGA clarity follow-up;
 the QQVGA scaled path remains as fallback.
+
+## 2026-07-03 Camera app, on-device gallery, Photos app, and Voice AI closure
+
+This pass records the latest user-facing hardware evidence after the Runtime camera/audio work moved
+past smoke apps.
+
+### Camera and photo gallery
+
+`apps/camera` is now a real Runtime app, not just the `smoke_camera` probe. It uses the Runtime
+`camera` Lua module for live preview and capture, stores photos under:
+
+```text
+/sd/data/camera/photos/capture_000000.bmp
+```
+
+The app exposes WebUI routes for capture and photo listing:
+
+```text
+/app/api
+/app/photos
+/app/capture
+```
+
+Board evidence on `http://192.168.1.32:8080` and `/dev/cu.usbmodem112301`:
+
+```text
+POST /launch?app=camera
+{"ok":true,"launched":"camera"}
+
+GET /status
+state=running,current_app=camera,last_status=ESP_OK
+
+GET /app/api
+{"ok":true,"captures":0,"preview":true,"mode":"qqvga-scaled",...}
+```
+
+The current app keeps capture requests serialized so repeated short presses or touches cannot start
+overlapping saves. While capture is pending, Runtime shows a native busy overlay and ignores further
+camera input. After a successful save, Runtime marks the gallery-entry area so the user can see that
+photos exist. The user verified that taking a photo no longer exits to the launcher and that the
+on-device gallery can show the captured image.
+
+The standalone `apps/photos` app was also updated to display the same captured BMP photo set at the
+captured photo size instead of showing blank white frames or stale `No data` placeholders. The user
+verified both the gallery entered from Camera and the standalone Photos app can display captured
+photos normally.
+
+Current remaining camera/photo work:
+
+- long-run capture/gallery soak across many captures and deletes;
+- optional Web UI download/purge polishing;
+- image-quality tuning beyond the current stable QVGA-first/QQVGA-fallback baseline.
+
+### Audio, local STT, and Voice AI
+
+The board audio path now has physical evidence beyond metrics:
+
+- the user confirmed the 440 Hz speaker tone was audible;
+- the user confirmed file-backed record/playback worked after microphone channel/rate tuning, with
+  the final path no longer having the previous severe metallic echo problem;
+- `apps/voice_ai` captured real speech, uploaded `pcm_s16le/16000/16/1` to the desktop bridge, and
+  displayed the returned local speech-recognition result on the device.
+
+The successful Voice AI route was the local desktop bridge command-provider path using local Apple
+Speech for STT. It proves the device-to-desktop raw PCM upload, local transcript generation, reply
+creation, and device display loop. It does not yet prove a production cloud STT/LLM provider, a
+credential policy, long-run audio soak, or production-grade gain/noise tuning.
+
+## 2026-07-06 SD resource-read throughput pass
+
+The LCKFB board SD wiring was rechecked against the official chapter 6 microSD example. This board
+uses SDMMC 1-bit mode, not 4-bit SDIO:
+
+```text
+CLK GPIO47
+CMD GPIO48
+D0  GPIO21
+SSR bus_width=1
+```
+
+The Runtime already matched the official pinout and safe mount policy:
+
+- `format_if_mount_failed = false`;
+- `allocation_unit_size = 16 * 1024`;
+- FATFS sector size 4096;
+- `SDMMC_HOST_FLAG_ALLOC_ALIGNED_BUF` enabled so SDMMC can use aligned internal buffers.
+
+The resource-loading bottleneck was then measured on the real board
+(`/dev/cu.usbmodem112301`, `MAC 10:51:db:80:e2:e8`) with the Weather storm background
+`apps/weather/assets/bg/storm.bmp` (`153666` bytes).
+
+Before this pass, the same file had been observed around 900 ms in the Weather BMP path, roughly
+160 KB/s effective. A first attempt to raise the HTTP file buffer to a fixed 16 KB failed on the
+board with `buffer allocation failed`, because a running Runtime cannot always provide that much
+contiguous internal DMA memory. The final implementation allocates an internal DMA-capable file
+buffer dynamically and falls back by halving the requested size down to 512 bytes. The normal
+`/apps/file` path now defaults to 4 KB chunks and exposes the actual chunk as
+`X-VibeBoard-File-Chunk` for diagnostics. A new narrow debug endpoint,
+`GET /debug/sd-bench?path=<sd-relative-path>`, measures raw SD read throughput without copying the
+whole file over HTTP.
+
+The SD host was also tested at high-speed mode:
+
+```c
+host.max_freq_khz = SDMMC_FREQ_HIGHSPEED; // 40 MHz
+```
+
+The board mounted SD successfully at 40 MHz and returned normal Runtime status:
+
+```text
+GET /status
+{"sd":true,"app_count":49,...,"last_status":"ESP_OK"}
+```
+
+Raw SD read benchmark at 40 MHz:
+
+```text
+512 B blocks:  123-124 ms, about 1.18 MB/s
+1 KB blocks:   121-122 ms, about 1.21 MB/s
+4 KB blocks:   119-122 ms, about 1.22 MB/s
+8 KB actual:   120-121 ms, about 1.22 MB/s
+```
+
+The previous 20 MHz run on the same endpoint was about 151-155 ms, roughly 0.96-0.99 MB/s. So the
+40 MHz setting gives a real board-measured improvement of about 25%, not a theoretical 2x, because
+FATFS, SD card behavior, internal DMA allocation, and scheduler overhead still dominate part of the
+path.
+
+End-to-end HTTP `/apps/file` reads remain limited by WiFi/httpd behavior. With the 4 KB default
+chunk, the same 153666-byte BMP typically downloaded in about 1.13-1.34 s in the latest run, while
+separate chunk probes showed substantial network-side variance. Conclusion: SD raw reads are now no
+longer the only bottleneck. Future "resource load feels slow" work should separate:
+
+- raw SD read time via `/debug/sd-bench`;
+- decode/format conversion time in the app or LVGL helper;
+- HTTP/WiFi transfer time for web or upload/download paths;
+- first-render scheduling and LVGL lock time.
+
+### 2026-07-07 Weather BMP load follow-up
+
+The Weather startup test was repeated after restoring the visible storm background. The board was
+the same `/dev/cu.usbmodem112301` device (`MAC 10:51:db:80:e2:e8`), and the Weather package was
+re-uploaded with `LAZY_BACKGROUND = true`.
+
+Observed Weather metrics after launch:
+
+```text
+perf_first_paint_ms=280-290
+perf_ready_ms=720-740
+perf_background_ms=600-630
+perf_background_read_ms=581-585
+perf_background_convert_ms=15
+perf_background_lvgl_ms=2
+perf_background_fast_path=true
+```
+
+The same `apps/weather/assets/bg/storm.bmp` file measured through `/debug/sd-bench` while Weather
+was running still read in about `122-125 ms` for 153666 bytes, so the visible slowness is not the raw
+SDMMC 1-bit card transfer alone. It is specific to the Weather/Lua/LVGL BMP load path and its task
+context.
+
+Two larger static DMA read-buffer probes were rejected on board:
+
+- `16 KB` static `DMA_ATTR` BMP read buffer failed at link time with `dram0_0_seg` overflow.
+- `8 KB` and `6 KB` static `DMA_ATTR` BMP read buffers built, but the board entered a reboot loop:
+  `lvgl_port_init(196): Create LVGL task fail!`, because startup internal memory left only an
+  `8192`-byte largest free block around WiFi start and LVGL needs an 8192-byte task stack.
+
+The firmware was restored to the stable `4 KB` static DMA BMP read buffer and reflashed. HTTP status
+returned, `/rescan` restored `app_count=49`, and the board was left usable. Future Weather/resource
+speed work must not reserve larger static internal DMA buffers at startup. Viable next options are:
+
+- move heavyweight background resources to a Runtime-native pre-decoded/display-list path that avoids
+  the Weather Lua/LVGL BMP loader;
+- add a runtime-time, fallible DMA scratch allocator after LVGL startup, with safe fallback to the
+  current 4 KB buffer and board metrics exposing the actual chunk size;
+- reduce Weather background resource size/format so the visible background can appear sooner without
+  competing for startup internal memory.
+
+### 2026-07-07 Runtime `.vbimg` resource path follow-up
+
+The Lichuang LCD example was checked as the reference for "fast image display". Its fast path is not
+SD BMP decode: the image is already a `320x240xRGB565` byte array compiled into firmware, copied to
+PSRAM, and drawn with `esp_lcd_panel_draw_bitmap`.
+
+Runtime now mirrors that idea without compiling app assets into firmware:
+
+- `tools/app-packager` preconverts compatible `320x240` 16-bit RGB565 BMP assets into `.vbimg`;
+- package manifests include the generated `.vbimg` files in `files[]` and record source/output
+  metadata in `resources[]`;
+- `lv_canvas_load_vbimg(canvas, path)` loads the preconverted payload, validates the header, copies
+  into a PSRAM scratch buffer, converts byte order when needed, then updates the LVGL canvas;
+- Weather prefers `.vbimg` and falls back to `lv_canvas_load_bmp` for old packages.
+
+Board verification on `/dev/cu.usbmodem112301` (`MAC 10:51:db:80:e2:e8`) used the Weather package
+with eight generated background `.vbimg` files. The lifecycle smoke passed:
+
+```text
+background_ready=true
+background_attempts=1
+background_error=""
+perf_background_fast_path=true
+```
+
+The important timing result is more nuanced. After flashing the `.vbimg` loader and re-uploading
+Weather, the board reported:
+
+```text
+perf_first_paint_ms=270-280
+perf_ready_ms=750-770
+perf_background_ms=630-690
+perf_background_read_ms=610 before cache probe, 331 after a Lua-side warm read
+perf_background_read_chunk_bytes=4096
+perf_background_largest_dma_before=2944-4608
+perf_background_largest_dma_after=2944-4608
+perf_background_convert_ms=12-14
+perf_background_lvgl_ms=2
+```
+
+The same `apps/weather/assets/bg/storm.vbimg` read through `/debug/sd-bench` stayed around
+`121-124 ms` for 153616 bytes. A one-off Lua `file.open(...):read(4096)` probe from inside Weather
+read the same `.vbimg` in about `320 ms`, and the following `lv_canvas_load_vbimg` read dropped to
+about `331 ms`. This proves:
+
+- `.vbimg` removes BMP header/row/reversal complexity and gives us a Runtime-native large-image
+  contract, but it does not by itself make app-context SD cold reads as fast as the HTTP diagnostic
+  task;
+- app runtime loading can only get a small contiguous internal DMA block (`largest_dma_before` below
+  5 KB), so the loader correctly falls back to the stable 4 KB buffer;
+- the remaining visible delay is now an app-context SD read/caching/scheduling problem, not network
+  transfer and not BMP color conversion.
+
+Future large-resource optimization should keep `.vbimg` as the package/runtime contract, then add a
+proper Runtime resource cache or prewarm phase so large app assets can be read once, observed through
+metrics, and reused without making every Lua app hand-roll loading screens and SD read probes.
+
+### 2026-07-07 Runtime `.vbimg` prefetch/cache completion
+
+The Runtime resource cache/prewarm follow-up was implemented and flashed to the same board:
+
+```text
+port=/dev/cu.usbmodem112301
+mac=10:51:db:80:e2:e8
+board=http://192.168.1.32:8080
+```
+
+Two boot-order issues were fixed while bringing this up on the real board:
+
+- WiFi used to start before LVGL display allocation. With the new `.vbimg` cache and existing large
+  subsystems, the display task could fail with `Not enough memory for LVGL buffer (buf1) allocation`.
+  Runtime startup now initializes the display before starting WiFi.
+- After that reorder, WiFi init reported `Expected to init 6 rx buffer, actual is 5` and failed with
+  `ESP_ERR_NO_MEM`. The board configuration now uses five static WiFi RX buffers.
+
+After rebuilding and flashing, the board HTTP service returned:
+
+```text
+GET /status -> {"sd":true,...,"install":"ok","state":"idle"...}
+POST /rescan -> app_count=49
+```
+
+Weather was re-packaged and uploaded. The final lifecycle smoke command required the new prefetch
+and cache-hit metrics:
+
+```text
+npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app weather \
+  --polls 35 --interval-ms 500 \
+  --metrics-polls 55 --metrics-interval-ms 500 \
+  --require-metrics ui_ready=true \
+  --require-metrics fonts_ready=true \
+  --require-metrics assets_ready=true \
+  --require-metrics background_prefetch_ready=true \
+  --require-metrics background_ready=true \
+  --require-metrics background_attempts=1 \
+  --require-metrics background_error= \
+  --require-metrics perf_background_fast_path=true \
+  --require-metrics perf_background_cache_hit=true \
+  --stop --stop-polls 35 --stop-interval-ms 500
+```
+
+It passed and returned to idle:
+
+```text
+lifecycle smoke ok: weather state=running current_app=weather polls=2 stop_state=idle
+```
+
+Important Weather metrics from that run:
+
+```text
+perf_first_paint_ms=360
+perf_ready_ms=830
+perf_resource_ms=700
+perf_background_prefetch_ms=140
+perf_background_cache_read_ms=126
+perf_background_ms=10
+perf_background_read_ms=0
+perf_background_lvgl_ms=2
+perf_background_fast_path=true
+perf_background_cache_hit=true
+background_prefetch_ready=true
+background_ready=true
+background_error=""
+```
+
+This confirms the intended architecture: the unavoidable SD read still happens during prefetch, but
+the visible background paint path is a PSRAM-cache hit and no longer performs the large SD read.
+The local weather bridge was not running during this resource smoke, so Weather correctly reported
+`last_error="body nil"`; that does not affect the resource/cache verification.
