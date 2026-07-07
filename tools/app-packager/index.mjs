@@ -57,6 +57,8 @@ export const DEFAULT_LVGL_API_REQUIREMENT = ">=0.1.0";
 
 const SKIP_NAMES = new Set([".DS_Store", "manifest.json"]);
 const SKIP_DIRS = new Set([".cache", "tmp", "dist"]);
+const VBIMG_HEADER_SIZE = 16;
+const VBIMG_FORMAT_RGB565 = 1;
 
 export function slugifyAppId(input) {
   const slug = String(input)
@@ -187,6 +189,151 @@ function copySharedLuaLibraries(repoRoot, metadata, outputDir) {
   }
 }
 
+function readBmpMetadata(buffer) {
+  if (buffer.length < 54) return null;
+  if (buffer.toString("ascii", 0, 2) !== "BM") return null;
+  const pixelOffset = buffer.readUInt32LE(10);
+  const dibHeaderSize = buffer.readUInt32LE(14);
+  if (dibHeaderSize < 40 || buffer.length < 14 + dibHeaderSize) return null;
+
+  const width = buffer.readInt32LE(18);
+  const signedHeight = buffer.readInt32LE(22);
+  const bpp = buffer.readUInt16LE(28);
+  const compression = buffer.readUInt32LE(30);
+  const height = Math.abs(signedHeight);
+  if (width <= 0 || height <= 0 || pixelOffset >= buffer.length) return null;
+
+  return {
+    pixelOffset,
+    dibHeaderSize,
+    width,
+    height,
+    signedHeight,
+    bpp,
+    compression,
+    topDown: signedHeight < 0
+  };
+}
+
+function isRgb565Bmp(buffer) {
+  const metadata = readBmpMetadata(buffer);
+  if (!metadata || metadata.bpp !== 16) return false;
+  const { compression } = metadata;
+  if (compression === 0) return true;
+  if (compression !== 3 || buffer.length < 66) return false;
+  return buffer.readUInt32LE(54) === 0x0000f800 &&
+    buffer.readUInt32LE(58) === 0x000007e0 &&
+    buffer.readUInt32LE(62) === 0x0000001f;
+}
+
+function convertRgb565BmpToVbimg(buffer) {
+  const metadata = readBmpMetadata(buffer);
+  if (!metadata || !isRgb565Bmp(buffer)) {
+    throw new Error("Only 16-bit RGB565 BMP assets can be converted to vbimg");
+  }
+
+  const { pixelOffset, width, signedHeight, height } = metadata;
+  const rowSize = Math.ceil((16 * width) / 32) * 4;
+  const pixelBytes = width * height * 2;
+  if (pixelOffset + rowSize * height > buffer.length) {
+    throw new Error("BMP pixel data is truncated");
+  }
+  if (width > 0xffff || height > 0xffff) {
+    throw new Error("BMP dimensions exceed vbimg limits");
+  }
+
+  const output = Buffer.alloc(VBIMG_HEADER_SIZE + pixelBytes);
+  output.write("VBIMG1", 0, "ascii");
+  output.writeUInt16LE(width, 6);
+  output.writeUInt16LE(height, 8);
+  output.writeUInt8(VBIMG_FORMAT_RGB565, 10);
+  output.writeUInt8(0, 11);
+  output.writeUInt32LE(pixelBytes, 12);
+
+  for (let y = 0; y < height; y++) {
+    const sourceY = signedHeight > 0 ? height - 1 - y : y;
+    const sourceStart = pixelOffset + sourceY * rowSize;
+    const outputStart = VBIMG_HEADER_SIZE + y * width * 2;
+    buffer.copy(output, outputStart, sourceStart, sourceStart + width * 2);
+  }
+
+  return output;
+}
+
+function bmpHasTransparentAlpha(buffer, metadata) {
+  if (metadata.bpp !== 32) return false;
+  const rowSize = Math.ceil((32 * metadata.width) / 32) * 4;
+  if (metadata.pixelOffset + rowSize * metadata.height > buffer.length) {
+    return false;
+  }
+
+  for (let y = 0; y < metadata.height; y++) {
+    const rowStart = metadata.pixelOffset + y * rowSize;
+    for (let x = 0; x < metadata.width; x++) {
+      if (buffer[rowStart + x * 4 + 3] !== 0xff) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function buildBmpAlphaResource(sourcePath, outputDir, buffer, metadata) {
+  const isSmallOverlay = metadata.width <= 128 && metadata.height <= 128;
+  return {
+    source: relative(outputDir, sourcePath).split(sep).join("/"),
+    type: "image",
+    role: isSmallOverlay ? "transparent-icon" : "transparent-image",
+    format: "bmp-bgra-alpha",
+    width: metadata.width,
+    height: metadata.height,
+    bpp: 32,
+    alpha: true,
+    transparent: bmpHasTransparentAlpha(buffer, metadata),
+    topDown: metadata.topDown,
+    size: buffer.length
+  };
+}
+
+function preconvertRuntimeAssets(outputDir) {
+  const resources = [];
+
+  function walk(currentDir) {
+    for (const dirent of readdirSync(currentDir, { withFileTypes: true })) {
+      const fullPath = join(currentDir, dirent.name);
+      if (dirent.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      if (!dirent.isFile() || !dirent.name.toLowerCase().endsWith(".bmp")) {
+        continue;
+      }
+
+      const source = readFileSync(fullPath);
+      const metadata = readBmpMetadata(source);
+      if (isRgb565Bmp(source)) {
+        const vbimg = convertRgb565BmpToVbimg(source);
+        const outputPath = `${fullPath.slice(0, -4)}.vbimg`;
+        writeFileSync(outputPath, vbimg);
+        resources.push({
+          source: relative(outputDir, fullPath).split(sep).join("/"),
+          output: relative(outputDir, outputPath).split(sep).join("/"),
+          type: "image",
+          format: "vbimg-rgb565",
+          width: vbimg.readUInt16LE(6),
+          height: vbimg.readUInt16LE(8),
+          size: vbimg.length
+        });
+      } else if (metadata?.bpp === 32) {
+        resources.push(buildBmpAlphaResource(fullPath, outputDir, source, metadata));
+      }
+    }
+  }
+
+  walk(outputDir);
+  return resources.sort((a, b) => (a.output || a.source).localeCompare(b.output || b.source));
+}
+
 function buildManifestCompatibility(metadata, appId, capabilities) {
   return {
     app: {
@@ -249,6 +396,7 @@ export function packageApp({ repoRoot = process.cwd(), appDir }) {
   mkdirSync(dirname(tmpPath), { recursive: true });
   copyAppFiles(absoluteAppDir, tmpPath);
   copySharedLuaLibraries(absoluteRepoRoot, validation.metadata, tmpPath);
+  const resources = preconvertRuntimeAssets(tmpPath);
   writeInstallNotes(tmpPath, validation.metadata, appId);
 
   const compatibility = buildManifestCompatibility(validation.metadata, appId, validation.capabilities);
@@ -263,6 +411,7 @@ export function packageApp({ repoRoot = process.cwd(), appDir }) {
     description: validation.metadata.description,
     ...compatibility,
     capabilities: validation.capabilities,
+    resources,
     files,
     integrity: {
       algorithm: "sha256",

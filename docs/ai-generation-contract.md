@@ -80,10 +80,12 @@ This list is checked against `tools/app-validator/index.mjs` by `npm run test:ai
 Allowed module calls:
 
 - `app.list()`, `app.rescan()`, `app.current()`, `app.exiting()`, `app.exit([reason])`, `app.launch(id)`, `app.set_home_exit(enabled)`, `app.set_webui(enabled)`, `app.route(path, callback)`, `app.route_base()`, `app.on("exit"|"launch"|"stop", callback)`
+- `camera.start(opts)`, `camera.preview_start([opts])`, `camera.preview_stop()`, `camera.capture()`, `camera.draw(frame)`, `camera.save(frame, path)`, `camera.release(frame)`, `camera.status()`, `camera.stop()`
 - `file.exists(path)`, `file.open(path, mode)`, `file.read(path)`, `file.getcontents(path)`, `file.write(path, text)`, `file.putcontents(path, text)`, `file.stat(path)`, `file.mkdir(path)`, `file.remove(path)`, `file.rename(from, to)`, `file.rmdir(path)`, `file.list(path)`, `file.listdir(path)`
 - `gamepad.state()`, `gamepad.start(opts)`, `gamepad.stop()`, `gamepad.on(event, callback)`, `gamepad.off([event])`, `gamepad.rescan()`, `gamepad.push_state(state)`
 - `http.get(url[, opts], callback)`, `http.post(url[, opts], body, callback)`, `http.cubicserver.get(path, headers, callback)`
 - `i2s.start(id, opts)`, `i2s.read(id, max_bytes[, timeout_ms])`, `i2s.write(id, data[, timeout_ms])`, `i2s.stop(id)`, `i2s.status(id)`
+- `imu.read()`, `imu.state()`, `imu.on(callback)`, `imu.off()`, `imu.push(sample)`
 - `json.decode(text)`, `json.encode(value)`, `sjson.decode(text)`, `sjson.encode(value)`
 - `key.on(callback)`, `key.off()`, `key.push(code, event)`, `key.repeat_start(code[, delay_ms, interval_ms])`, `key.repeat_stop(code)`
 - `sys()`, `sys.setbrightness(percent)`
@@ -109,7 +111,7 @@ Generated UI code may use only the LVGL symbols below. If the app needs another 
 - `lv_asset_exists`, `lv_resolve_asset_path`
 - `lv_bar_create`, `lv_bar_set_range`, `lv_bar_set_value`
 - `lv_btn_create`
-- `lv_canvas_begin`, `lv_canvas_create`, `lv_canvas_draw_rect`, `lv_canvas_draw_text`, `lv_canvas_end`, `lv_canvas_fill_bg`, `lv_canvas_frame_begin`, `lv_canvas_frame_end`, `lv_canvas_load_bmp`
+- `lv_canvas_begin`, `lv_canvas_create`, `lv_canvas_draw_rect`, `lv_canvas_draw_text`, `lv_canvas_end`, `lv_canvas_fill_bg`, `lv_canvas_frame_begin`, `lv_canvas_frame_end`, `lv_canvas_load_bmp`, `lv_canvas_load_vbimg`, `lv_canvas_prefetch_vbimg`
 - `lv_dropdown_create`, `lv_dropdown_get_selected`, `lv_dropdown_set_options`, `lv_dropdown_set_selected`
 - `lv_font_free`, `lv_font_load`
 - `lv_gif_create`, `lv_gif_set_src`
@@ -147,6 +149,22 @@ ad hoc tiny Chinese subsets for dynamic text:
 If an app needs a new text size or glyph set that is not covered by these fonts,
 return `Runtime update required` so the font can be added to firmware/runtime
 deliberately.
+
+## Large Image Resource Policy
+
+Generated apps must not solve large full-screen images by doing slow runtime
+decode work in Lua. For 320x240 RGB565 BMP backgrounds, keep the source `.bmp`
+in the app assets and let `npm run package:app` generate the matching `.vbimg`
+file. Lua code should call `lv_canvas_prefetch_vbimg(path)` during a loading or
+prewarm stage when that API exists, then call
+`lv_canvas_load_vbimg(canvas, path)` when the background becomes visible. This
+uses the Runtime PSRAM `.vbimg` cache and avoids a second SD read on the visible
+paint path. Fall back to `lv_canvas_load_bmp(...)` only for old packages or
+unsupported assets.
+
+This keeps the Runtime app model dynamic: the asset still lives on SD storage,
+but the expensive image conversion happens in the host toolchain instead of on
+the ESP32-S3 during app startup.
 
 Examples that must return `Runtime update required`: `app.set_status_text(...)`, `gamepad.connect(...)`, `tmr.delay(...)`, unsupported `lv_*` bindings, native ABI changes, or hardware driver work.
 

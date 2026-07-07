@@ -24,10 +24,14 @@ The runtime has been built, flashed, and verified on real hardware. The latest b
 - Native `VibeBoard Apps` launcher with touch/BOOT launch and stop/refresh lifecycle controls.
 - Lua/LVGL apps loaded from `/sdcard/apps/<app-id>/main.lua`.
 - Runtime modules for `app`, `camera`, `file`, `gamepad`, `http`, `i2s`, `json`/`sjson`, `key`, `sys`, `time`, `tmr`, `touch`, and `wifi`.
-- LVGL bindings for labels, objects, images, GIFs, canvas BMP backgrounds, common widgets, styles, fonts, and animations.
+- LVGL bindings for labels, objects, images, GIFs, preconverted `.vbimg` canvas backgrounds, BMP fallback backgrounds, common widgets, styles, fonts, and animations.
 - NES native module smoke paths, Voice AI bridge paths, I2S RX/TX smoke paths, and app lifecycle smoke tools.
 
-Recent known-good board evidence includes `app_count=48`, HTTP Runtime status at `http://192.168.1.32:8080/status`, `device:check` passing, `2048` launch/stop lifecycle smoke returning to idle, and `smoke_camera` showing a board-confirmed live GC2145 preview through the Runtime camera stack on `/dev/cu.usbmodem112301`.
+Recent known-good board evidence includes `app_count=49`, HTTP Runtime status at `http://192.168.1.32:8080/status`, `device:check` passing, `2048` launch/stop lifecycle smoke returning to idle, `smoke_camera` showing a board-confirmed live GC2145 preview, and the user-facing `camera` app running through the Runtime camera stack on `/dev/cu.usbmodem112301`.
+
+The latest productized hardware path is the Camera/Photos loop: `apps/camera` starts a Runtime-owned GC2145 preview, captures BMP photos to `/sd/data/camera/photos`, exposes a narrow WebUI/API surface for capture and photo listing, and hands captured photos to an on-device gallery plus the standalone `photos` app. The board-verified baseline uses QVGA-first preview with QQVGA-scaled fallback, capture-busy input suppression, a native busy overlay, and a native gallery-entry hint when photos exist.
+
+The current release-candidate closure is recorded in [docs/releases/v0.1-release-candidate.md](docs/releases/v0.1-release-candidate.md). It includes the fresh local `npm test`, `package:demos`, ESP-IDF build, and `git diff --check` evidence for the v0.1 baseline.
 
 ## Repository Layout
 
@@ -136,6 +140,18 @@ Package all curated apps:
 npm run package:demos
 ```
 
+The packager also preconverts compatible 320x240 RGB565 `.bmp` assets into
+Runtime-native `.vbimg` files. Apps should prefer `.vbimg` for large full-screen
+images and keep BMP as a fallback, so SD app deployment stays dynamic without
+paying BMP decode cost on every launch. Apps with a loading screen can call
+`lv_canvas_prefetch_vbimg(path)` first, then later call
+`lv_canvas_load_vbimg(canvas, path)`; the Runtime keeps the decoded pixels in a
+single PSRAM cache so the visible canvas update avoids a second SD read.
+For layered LVGL apps, use `.vbimg` for large static backgrounds, `32-bit BMP
+alpha` for small transparent icons, native LVGL widgets for text/cards/buttons,
+and Runtime-native frame paths for camera previews, games, and other dynamic
+streams. This is the current Weather reference architecture.
+
 Upload a packaged app:
 
 ```bash
@@ -176,6 +192,7 @@ Migrated or curated user-facing apps:
 
 - `2048`
 - `btc`
+- `camera`
 - `clock`
 - `codex_buddy`
 - `conway_life`
@@ -213,6 +230,7 @@ npm run input:smoke -- --board http://192.168.1.32:8080 --app smoke_key --key LE
 npm run gamepad:smoke -- --board http://192.168.1.32:8080 --inject-gamepad --require-updates 1
 npm run i2s:smoke -- --board http://192.168.1.32:8080 --require-write --require-tone-writes 8
 npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app smoke_camera --allow-starting --require-metrics camera_ready=true --require-metrics 'captures>=1' --require-metrics preview=true --stop
+npm run lifecycle:smoke -- --board http://192.168.1.32:8080 --app camera --allow-starting --require-metrics preview=true --stop
 npm run nes:rom:smoke -- --board http://192.168.1.32:8080 --app smoke_nes --path roms/smoke.nes
 npm run nes:smoke -- --board http://192.168.1.32:8080 --require-rom --require-frame-growth 120
 npm run nesgame:smoke -- --board http://192.168.1.32:8080 --require-frame-growth 120

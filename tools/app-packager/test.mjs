@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
+  statSync,
   writeFileSync
 } from "node:fs";
 import { createHash } from "node:crypto";
@@ -256,6 +257,47 @@ describe("packageApp", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it("records Runtime image resources in the package manifest", () => {
+    const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
+    const result = packageApp({
+      repoRoot,
+      appDir: join(repoRoot, "apps/weather")
+    });
+
+    const vbimgPath = join(result.outputPath, "assets/bg/storm.vbimg");
+    const vbimg = readFileSync(vbimgPath);
+    const manifest = JSON.parse(readFileSync(join(result.outputPath, "manifest.json"), "utf8"));
+
+    assert.equal(vbimg.toString("ascii", 0, 6), "VBIMG1");
+    assert.equal(vbimg.readUInt16LE(6), 320);
+    assert.equal(vbimg.readUInt16LE(8), 240);
+    assert.equal(vbimg.readUInt8(10), 1);
+    assert.equal(vbimg.readUInt8(11), 0);
+    assert.equal(vbimg.length, 16 + 320 * 240 * 2);
+    assert.equal(statSync(vbimgPath).size, vbimg.length);
+    assert.ok(manifest.files.some((file) => file.path === "assets/bg/storm.vbimg" && file.size === vbimg.length));
+    assert.ok(manifest.resources.some((resource) =>
+      resource.source === "assets/bg/storm.bmp" &&
+      resource.output === "assets/bg/storm.vbimg" &&
+      resource.format === "vbimg-rgb565"
+    ));
+
+    const transparentIcon = manifest.resources.find((resource) => resource.source === "assets/icons/partly.bmp");
+    assert.deepEqual(transparentIcon, {
+      source: "assets/icons/partly.bmp",
+      type: "image",
+      role: "transparent-icon",
+      format: "bmp-bgra-alpha",
+      width: 64,
+      height: 64,
+      bpp: 32,
+      alpha: true,
+      transparent: true,
+      topDown: true,
+      size: 16522
+    });
   });
 });
 

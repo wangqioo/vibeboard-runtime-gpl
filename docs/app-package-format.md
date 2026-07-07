@@ -95,6 +95,83 @@ the commit and preserve the previously installed app. Direct uploads of ad-hoc
 directories without `manifest.json` remain supported for development, but do
 not get this integrity gate.
 
+## Preconverted Image Resources
+
+`tools/app-packager` scans image assets and records Runtime resource metadata in
+`resources[]`. Compatible 16-bit RGB565 BMP files are preconverted into
+Runtime-native `.vbimg` files. The generated file remains inside the packaged
+app on SD storage and is included in `files[]` and `resources[]`.
+
+Example manifest resource entry:
+
+```json
+{
+  "source": "assets/bg/storm.bmp",
+  "output": "assets/bg/storm.vbimg",
+  "type": "image",
+  "format": "vbimg-rgb565",
+  "width": 320,
+  "height": 240,
+  "size": 153616
+}
+```
+
+Small transparent 32-bit BMP icons are not rewritten, but the packager records
+their role and pixel format so tooling can verify that layered apps are using
+the expected LVGL alpha-image path:
+
+```json
+{
+  "source": "assets/icons/partly.bmp",
+  "type": "image",
+  "role": "transparent-icon",
+  "format": "bmp-bgra-alpha",
+  "width": 64,
+  "height": 64,
+  "bpp": 32,
+  "alpha": true,
+  "transparent": true,
+  "topDown": true,
+  "size": 16522
+}
+```
+
+Lua apps should prefer the `.vbimg` path for large full-screen backgrounds:
+
+```lua
+if lv_canvas_prefetch_vbimg then
+  lv_canvas_prefetch_vbimg("assets/bg/storm.vbimg")
+end
+lv_canvas_load_vbimg(canvas, "assets/bg/storm.vbimg")
+```
+
+`lv_canvas_prefetch_vbimg(path)` reads and validates the generated file into the
+Runtime's single PSRAM `.vbimg` cache. A later
+`lv_canvas_load_vbimg(canvas, path)` for the same asset copies from that cache
+into the canvas instead of reading SD again. Apps with a loading page should
+prefetch during the loading stage and only hide the loading page after the
+canvas load returns. Retain `lv_canvas_load_bmp(...)` as a fallback for old
+packages or assets that the packager could not preconvert. This mirrors the fast
+path used by board vendor examples without compiling app assets into firmware.
+
+### Resource layering contract
+
+Runtime apps should keep visual resources split by how the board consumes them:
+
+- large static images: use packager-generated `vbimg` files and load them
+  through `lv_canvas_prefetch_vbimg(...)` / `lv_canvas_load_vbimg(...)`;
+- small transparent icons: use `32-bit BMP alpha` files through normal LVGL
+  image objects, so LVGL can blend the icon over the background;
+- UI chrome: use the LVGL object tree for labels, cards, buttons, lines, bars,
+  and other simple widgets instead of flattening them into a background image;
+- dynamic frame producers: use Runtime-native camera, game, video, or canvas
+  frame paths instead of repeatedly loading image files from SD.
+
+This contract keeps SD-card app deployment dynamic while avoiding expensive
+per-launch image parsing for large assets. Weather is the reference app:
+full-screen backgrounds are `.vbimg`, weather icons are `32-bit BMP alpha`, and
+text/glass panels remain LVGL objects above the canvas.
+
 ## File Paths
 
 Apps that declare `capabilities = file` can use the runtime `file` module.

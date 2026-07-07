@@ -60,14 +60,40 @@ setup through timers so stop/switch requests remain responsive.
 
 Put images under the app directory, usually `assets/`.
 
+### Resource Layering
+
+Use the Runtime resource layering model for visual apps:
+
+- large static backgrounds and other full-screen images: ship a compatible
+  RGB565 BMP source and let the packager generate a `vbimg` file. Prefetch the
+  `vbimg` while a loading shell is visible, then call
+  `lv_canvas_load_vbimg(...)` when the canvas can be updated.
+- small transparent icons, badges, and overlays: use `32-bit BMP alpha` assets
+  through `lv_img_set_src(...)`. The Runtime LVGL BMP decoder converts BGRA to
+  the screen's RGB565 color plus alpha byte, so edges stay transparent without
+  Lua-side masking.
+- text, cards, buttons, dividers, bars, and simple shapes: use LVGL native widgets
+  and styles. Keep them in the LVGL object tree above the background
+  canvas instead of baking UI chrome into one large image.
+- camera previews, game frames, and animated streams: use Runtime native
+  interfaces or a framebuffer/canvas path that writes batches of pixels. Do not
+  model these as repeatedly loaded image files from SD.
+
+For a startup path, paint a lightweight shell first, then stage fonts, small
+icons, large `vbimg` prefetch, and network requests. Only hide the loading
+shell after the visible background load has returned.
+
 Preferred formats:
 
-- BMP/BMP565 for predictable LVGL canvas loading.
-- PNG or GIF only when the firmware feature is enabled and the app has a
-  static guard or smoke test covering it.
+- `vbimg` for large static images that must appear quickly from SD.
+- `32-bit BMP alpha` for small transparent images.
+- 16-bit RGB565 BMP as the source/fallback for packager-generated `vbimg`.
+- PNG or GIF only when the firmware feature is enabled and the app has a static
+  guard or smoke test covering it.
 
 Load assets lazily when they are large. Weather is the current reference for
-staged background loading and keeping stale data visible while assets refresh.
+staged background loading, `vbimg` prefetch/cache, alpha BMP icons, and keeping
+stale data visible while assets refresh.
 
 ## Fonts
 

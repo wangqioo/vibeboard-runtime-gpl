@@ -18,6 +18,7 @@
     INITIAL_FETCH_DELAY_MS = 2000,
     UI_BOOT_DELAY_MS = 50,
     BACKGROUND_LOAD_DELAY_MS = 1500,
+    LAZY_BACKGROUND = true,
 
     TZ_OFFSET_SEC = 8 * 3600,
     TIMEZONE = "CST-8",
@@ -121,6 +122,8 @@
     background_attempts = 0,
     background_error = "",
     background_pending = false,
+    background_prefetch_ready = false,
+    background_prefetch_error = "",
     fonts_ready = false,
     boot_stage = 0,
     displayed_icon_code = nil,
@@ -204,6 +207,8 @@
         .. "\"background_ready\":" .. json_bool(APP.state.background_ready) .. ","
         .. "\"background_attempts\":" .. tostring(APP.state.background_attempts or 0) .. ","
         .. "\"background_error\":" .. json_string(APP.state.background_error or "") .. ","
+        .. "\"background_prefetch_ready\":" .. json_bool(APP.state.background_prefetch_ready) .. ","
+        .. "\"background_prefetch_error\":" .. json_string(APP.state.background_prefetch_error or "") .. ","
         .. "\"boot_stage\":" .. tostring(APP.state.boot_stage or 0) .. ","
         .. "\"startup_visible\":" .. json_bool(APP.state.startup_visible) .. ","
         .. "\"valid\":" .. json_bool(APP.state.valid) .. ","
@@ -218,6 +223,20 @@
         .. "\"perf_first_paint_ms\":" .. tostring(APP.perf.first_paint_ms or 0) .. ","
         .. "\"perf_ready_ms\":" .. tostring(APP.perf.ready_ms or 0) .. ","
         .. "\"perf_resource_ms\":" .. tostring(APP.perf.resource_ms or 0) .. ","
+        .. "\"perf_ui_ms\":" .. tostring(APP.perf.ui_ms or 0) .. ","
+        .. "\"perf_fonts_ms\":" .. tostring(APP.perf.fonts_ms or 0) .. ","
+        .. "\"perf_visual_assets_ms\":" .. tostring(APP.perf.visual_assets_ms or 0) .. ","
+        .. "\"perf_background_prefetch_ms\":" .. tostring(APP.perf.background_prefetch_ms or 0) .. ","
+        .. "\"perf_background_ms\":" .. tostring(APP.perf.background_ms or 0) .. ","
+        .. "\"perf_background_read_ms\":" .. tostring(APP.perf.background_read_ms or 0) .. ","
+        .. "\"perf_background_read_chunk_bytes\":" .. tostring(APP.perf.background_read_chunk_bytes or 0) .. ","
+        .. "\"perf_background_largest_dma_before\":" .. tostring(APP.perf.background_largest_dma_before or 0) .. ","
+        .. "\"perf_background_largest_dma_after\":" .. tostring(APP.perf.background_largest_dma_after or 0) .. ","
+        .. "\"perf_background_convert_ms\":" .. tostring(APP.perf.background_convert_ms or 0) .. ","
+        .. "\"perf_background_lvgl_ms\":" .. tostring(APP.perf.background_lvgl_ms or 0) .. ","
+        .. "\"perf_background_fast_path\":" .. json_bool(APP.perf.background_fast_path) .. ","
+        .. "\"perf_background_cache_hit\":" .. json_bool(APP.perf.background_cache_hit) .. ","
+        .. "\"perf_background_cache_read_ms\":" .. tostring(APP.perf.background_cache_read_ms or 0) .. ","
         .. "\"perf_http_ms\":" .. tostring(APP.perf.http_ms or 0) .. ","
         .. "\"perf_timer_max_ms\":" .. tostring(APP.perf.timer_max_ms or 0) .. ","
         .. "\"perf_stop_requested\":" .. json_bool(APP.perf.stop_requested) .. ","
@@ -238,8 +257,16 @@
     return sd_to_lv(APP.ASSET_DIR .. "/" .. group .. "/" .. name .. ".png")
     end
 
+    local function icon_asset_path(name)
+    return sd_to_lv(APP.ASSET_DIR .. "/icons/" .. name .. ".bmp")
+    end
+
     local function background_asset_path(kind)
     return sd_to_lv(APP.ASSET_DIR .. "/bg/" .. tostring(kind or "partly") .. ".bmp")
+    end
+
+    local function background_vbimg_path(kind)
+    return sd_to_lv(APP.ASSET_DIR .. "/bg/" .. tostring(kind or "partly") .. ".vbimg")
     end
 
     local function qweather_icon_code(kind)
@@ -267,7 +294,7 @@
     end
 
     local function qweather_icon_path(kind)
-    return asset_path("icons", kind)
+    return icon_asset_path(kind)
     end
 
     local function qweather_icon_path_for(kind, code)
@@ -314,12 +341,11 @@
     end
 
     local function init_fonts()
-    FONT_10 = load_font_ref("/sd/apps/weather/font/weather_tiny_10.bin", FONT_10)
     FONT_12 = load_font_ref("/sd/apps/weather/font/weather_ui_12.bin", FONT_12)
     FONT_16 = load_font_ref("/sd/apps/weather/font/weather_ui_16.bin", FONT_16)
-    FONT_28 = load_font_ref("/sd/apps/weather/font/weather_num_28.bin", FONT_28)
     FONT_34 = load_font_ref("/sd/apps/weather/font/weather_temp_34.bin", FONT_28)
-    FONT_40 = load_font_ref("/sd/apps/weather/font/weather_time_40.bin", FONT_28)
+    FONT_28 = FONT_34
+    FONT_40 = FONT_34
     end
 
     local function release_fonts()
@@ -881,7 +907,7 @@
     call(lv_obj_set_size, group, item_w, 68)
 
     local value = create_label(group, "--", FONT_16, C.text, 0, 7, item_w, ALIGN_CENTER)
-    local icon_src = small_icon and asset_path("icons", icon_name .. "_sm") or asset_path("icons", icon_name)
+    local icon_src = small_icon and icon_asset_path(icon_name .. "_sm") or icon_asset_path(icon_name)
     local icon = nil
     if APP.state.assets_ready then
         icon = create_img(group, icon_src, icon_x, small_icon and 35 or 30, icon_zoom)
@@ -1008,8 +1034,15 @@
     APP.state.kind = kind
     APP.state.displayed_icon_code = nil
     set_img_src(APP.ui.weather_icon, qweather_icon_path(kind))
-    if APP.state.background_ready and APP.ui.bg_canvas and lv_canvas_load_bmp then
+    if APP.state.background_ready and APP.ui.bg_canvas then
+        if lv_canvas_load_vbimg then
+        local ok = call(lv_canvas_load_vbimg, APP.ui.bg_canvas, background_vbimg_path(kind))
+        if not ok and lv_canvas_load_bmp then
+            call(lv_canvas_load_bmp, APP.ui.bg_canvas, background_asset_path(kind))
+        end
+        elseif lv_canvas_load_bmp then
         call(lv_canvas_load_bmp, APP.ui.bg_canvas, background_asset_path(kind))
+        end
     end
     APP.state.displayed_icon_code = qweather_icon_code(kind)
     refresh_glass_panel()
@@ -1033,7 +1066,7 @@
 
     APP.state.visual_asset_attempts = (APP.state.visual_asset_attempts or 0) + 1
     APP.state.visual_asset_error = "loading"
-    write_metrics()
+    local visual_assets_start = now_ms()
 
     local ok, err = pcall_fn(function()
         local kind = weather_kind()
@@ -1042,13 +1075,13 @@
         APP.state.displayed_icon_code = qweather_icon_code(kind)
         end
         if APP.ui.precip and APP.ui.precip.icon == nil then
-        APP.ui.precip.icon = create_img(APP.ui.precip.group, asset_path("icons", "precip_sm"), 35, 35, 256)
+        APP.ui.precip.icon = create_img(APP.ui.precip.group, icon_asset_path("precip_sm"), 35, 35, 256)
         end
         if APP.ui.humidity and APP.ui.humidity.icon == nil then
-        APP.ui.humidity.icon = create_img(APP.ui.humidity.group, asset_path("icons", "humidity_sm"), 35, 35, 256)
+        APP.ui.humidity.icon = create_img(APP.ui.humidity.group, icon_asset_path("humidity_sm"), 35, 35, 256)
         end
         if APP.ui.wind and APP.ui.wind.icon == nil then
-        APP.ui.wind.icon = create_img(APP.ui.wind.group, asset_path("icons", "wind_sm"), 35, 35, 256)
+        APP.ui.wind.icon = create_img(APP.ui.wind.group, icon_asset_path("wind_sm"), 35, 35, 256)
         end
     end)
 
@@ -1058,6 +1091,38 @@
     else
         APP.state.visual_assets_ready = false
         APP.state.visual_asset_error = tostring(err)
+    end
+    APP.perf.visual_assets_ms = now_ms() - visual_assets_start
+    write_metrics()
+    end
+
+    local hide_startup_page
+
+    local function prefetch_background()
+    if not APP.running or APP.state.background_prefetch_ready or not lv_canvas_prefetch_vbimg then
+        return
+    end
+
+    APP.state.background_prefetch_error = "loading"
+    local prefetch_start = now_ms()
+
+    local ok, err = pcall_fn(function()
+        local preload_ok, _, stats = pcall_fn(lv_canvas_prefetch_vbimg, background_vbimg_path(weather_kind()))
+        if not preload_ok then
+        error("vbimg prefetch failed")
+        end
+        if type(stats) == "table" then
+        APP.perf.background_cache_read_ms = stats.cache_read_ms or stats.read_ms or 0
+        end
+    end)
+    APP.perf.background_prefetch_ms = now_ms() - prefetch_start
+
+    if ok then
+        APP.state.background_prefetch_ready = true
+        APP.state.background_prefetch_error = ""
+    else
+        APP.state.background_prefetch_ready = false
+        APP.state.background_prefetch_error = tostring(err)
     end
     write_metrics()
     end
@@ -1069,17 +1134,42 @@
 
     APP.state.background_attempts = (APP.state.background_attempts or 0) + 1
     APP.state.background_error = "loading"
-    write_metrics()
+    local background_start = now_ms()
 
     local ok, err = pcall_fn(function()
-        if APP.ui.bg_canvas and lv_canvas_load_bmp then
-        lv_canvas_load_bmp(APP.ui.bg_canvas, background_asset_path(weather_kind()))
+        if APP.ui.bg_canvas then
+        local stats = nil
+        if lv_canvas_load_vbimg then
+            local load_ok, _, fast_stats = pcall_fn(lv_canvas_load_vbimg, APP.ui.bg_canvas, background_vbimg_path(weather_kind()))
+            if load_ok then
+            stats = fast_stats
+            else
+            APP.state.background_error = "vbimg fallback"
+            end
+        end
+        if not stats and lv_canvas_load_bmp then
+            local _, bmp_stats = lv_canvas_load_bmp(APP.ui.bg_canvas, background_asset_path(weather_kind()))
+            stats = bmp_stats
+        end
+        if type(stats) == "table" then
+            APP.perf.background_read_ms = stats.read_ms or 0
+            APP.perf.background_read_chunk_bytes = stats.read_chunk_bytes or 0
+            APP.perf.background_largest_dma_before = stats.largest_dma_before or 0
+            APP.perf.background_largest_dma_after = stats.largest_dma_after or 0
+            APP.perf.background_convert_ms = stats.convert_ms or 0
+            APP.perf.background_lvgl_ms = stats.lvgl_ms or 0
+            APP.perf.background_fast_path = stats.fast_path and true or false
+            APP.perf.background_cache_hit = stats.cache_hit and true or false
+            APP.perf.background_cache_read_ms = stats.cache_read_ms or 0
+        end
         end
     end)
+    APP.perf.background_ms = now_ms() - background_start
 
     if ok then
         APP.state.background_ready = true
         APP.state.background_error = ""
+        hide_startup_page()
     else
         APP.state.background_ready = false
         APP.state.background_error = tostring(err)
@@ -1093,7 +1183,6 @@
     end
 
     APP.state.background_error = "queued"
-    write_metrics()
     end
 
     local function init_ui()
@@ -1138,6 +1227,9 @@
         APP.ui.bg_canvas = lv_canvas_create(root, APP.SCREEN_W, APP.SCREEN_H)
         call(lv_obj_set_pos, APP.ui.bg_canvas, 0, 0)
         call(lv_obj_set_size, APP.ui.bg_canvas, APP.SCREEN_W, APP.SCREEN_H)
+        if lv_canvas_fill_bg then
+        call(lv_canvas_fill_bg, APP.ui.bg_canvas, C.bg_top, 255)
+        end
     end
 
     local now_page = lv_obj_create(root)
@@ -1304,7 +1396,7 @@ end
 
     local release_startup_page
 
-    local function hide_startup_page()
+    hide_startup_page = function()
     if not APP.state.startup_visible then
         return
     end
@@ -1638,6 +1730,7 @@ end
 
     local resource_start = now_ms()
     init_ui()
+    APP.perf.ui_ms = now_ms() - resource_start
     mark_resource(resource_start)
     mark_first_paint()
     APP.state.ui_ready = true
@@ -1654,6 +1747,7 @@ end
 
     local resource_start = now_ms()
     init_fonts()
+    APP.perf.fonts_ms = now_ms() - resource_start
     mark_resource(resource_start)
     APP.state.fonts_ready = true
     render_clock()
@@ -1679,7 +1773,6 @@ end
     render_clock()
     render_weather()
     render_forecast()
-    hide_startup_page()
     APP.perf.ready_ms = perf_elapsed()
     write_metrics()
     end
@@ -1720,8 +1813,13 @@ end
             pcall_fn(function() APP.timers.stage_boot:unregister() end)
             APP.timers.stage_boot = nil
         end
+        if APP.LAZY_BACKGROUND then
         APP.state.background_pending = true
         APP.state.background_error = "pending"
+        else
+        APP.state.background_ready = true
+        APP.state.background_error = "skipped"
+        end
         write_metrics()
         end
         mark_perf_timer(tick_start)
@@ -1730,7 +1828,9 @@ end
     APP.timers.startup = tmr.create()
     APP.timers.startup:alarm(STARTUP_HOLD_MS, tmr.ALARM_SINGLE or 0, function()
         local tick_start = now_ms()
+        if not APP.LAZY_BACKGROUND or APP.state.background_ready then
         hide_startup_page()
+        end
         APP.timers.startup = nil
         mark_perf_timer(tick_start)
     end)
@@ -1754,9 +1854,13 @@ end
         end
         if APP.state.background_pending then
         local resource_start = now_ms()
-        APP.state.background_pending = false
         schedule_background_load()
-        lazy_load_background()
+        if lv_canvas_prefetch_vbimg and not APP.state.background_prefetch_ready and APP.state.background_prefetch_error == "" then
+            prefetch_background()
+        else
+            APP.state.background_pending = false
+            lazy_load_background()
+        end
         mark_resource(resource_start)
         end
         render_clock()
